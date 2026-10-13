@@ -101,6 +101,16 @@ class User extends Authenticatable
         return $this->hasMany(Conversation::class, 'seller_id');
     }
 
+    public function followedShops(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(self::class, 'shop_follows', 'user_id', 'seller_id')->withTimestamps();
+    }
+
+    public function followers(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(self::class, 'shop_follows', 'seller_id', 'user_id')->withTimestamps();
+    }
+
     public function soldOrders(): HasMany
     {
         return $this->hasMany(Order::class, 'seller_id');

@@ -783,6 +783,8 @@
                                 <span>My Orders</span>
                             </a>
 
+                            <x-account-recent-chats />
+
                             <div class="account-menu-divider"></div>
                             <form method="POST" action="{{ route('logout') }}">
                                 @csrf

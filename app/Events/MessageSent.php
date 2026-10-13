@@ -31,14 +31,9 @@ class MessageSent implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        return [
-            'id'              => $this->message->id,
+        return array_merge($this->message->toChatArray(), [
             'conversation_id' => $this->message->conversation_id,
-            'sender_id'       => $this->message->sender_id,
-            'sender_name'     => $this->message->sender->name,
-            'body'            => $this->message->body,
-            'created_at'      => $this->message->created_at->toIso8601String(),
-        ];
+        ]);
     }
 
     public function broadcastAs(): string

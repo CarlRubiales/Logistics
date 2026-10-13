@@ -321,10 +321,30 @@
                         </div>
                     </div>
                     <div class="store-actions">
-                        <button class="store-action primary" type="button" disabled title="Shop following is not available yet.">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-4.5-9.2-8.5A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.2 6.5C19 16.5 12 21 12 21Z"/></svg>
-                            Follow Shop
-                        </button>
+                        @php
+                            $isOwnShop = Auth::id() && (int) Auth::id() === (int) $seller->id;
+                            $isFollowing = Auth::check() && ! $isOwnShop
+                                && Auth::user()->followedShops()->where('shop_follows.seller_id', $seller->id)->exists();
+                        @endphp
+                        @if ($isOwnShop)
+                            <button class="store-action primary" type="button" disabled title="You cannot follow your own shop.">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-4.5-9.2-8.5A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.2 6.5C19 16.5 12 21 12 21Z"/></svg>
+                                Follow Shop
+                            </button>
+                        @elseif (Auth::check())
+                            <form method="POST" action="{{ route('buyer.shops.follow', $seller->id) }}">
+                                @csrf
+                                <button class="store-action {{ $isFollowing ? '' : 'primary' }}" type="submit" aria-pressed="{{ $isFollowing ? 'true' : 'false' }}">
+                                    <svg viewBox="0 0 24 24" fill="{{ $isFollowing ? 'currentColor' : 'none' }}" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-4.5-9.2-8.5A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.2 6.5C19 16.5 12 21 12 21Z"/></svg>
+                                    {{ $isFollowing ? 'Following' : 'Follow Shop' }}
+                                </button>
+                            </form>
+                        @else
+                            <a class="store-action primary" href="{{ route('login') }}">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-4.5-9.2-8.5A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.2 6.5C19 16.5 12 21 12 21Z"/></svg>
+                                Follow Shop
+                            </a>
+                        @endif
                         @if (Auth::id() && (int) Auth::id() === (int) $seller->id)
                             <button class="store-action" type="button" disabled title="You cannot chat with your own shop.">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/></svg>
@@ -566,5 +586,6 @@
         }
     });
 </script>
+<x-follow-success-modal stay-label="Stay in shop" />
 </body>
 </html>

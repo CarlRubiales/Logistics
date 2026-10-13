@@ -25,7 +25,7 @@
         .topbar{min-height:78px;display:flex;align-items:center;border-bottom:1px solid var(--line);background:rgba(255,253,252,.96)}
         .topbar-inner,.start-shell{width:min(1080px,calc(100% - 48px));margin:0 auto}
         .topbar-inner{display:flex;align-items:center;justify-content:space-between;gap:18px}
-        .topbar-action{position:relative;width:42px;height:42px;display:grid;place-items:center;border:1px solid var(--line);border-radius:999px;background:var(--paper);color:var(--plum)}
+        .topbar-action svg{width:18px;height:18px;display:block}.topbar-action{position:relative;width:42px;height:42px;display:grid;place-items:center;border:1px solid var(--line);border-radius:999px;background:var(--paper);color:var(--plum)}
         .topbar-badge{position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;display:grid;place-items:center;border-radius:999px;background:var(--rose);color:white;font-size:10px;font-weight:700}
         .start-shell{min-height:calc(100vh - 78px);display:grid;place-items:center;padding:42px 0}
         .modal-card{width:min(620px,100%);border:1px solid var(--line);border-radius:24px;background:var(--paper);box-shadow:0 24px 70px rgba(59,30,52,.14);overflow:hidden}

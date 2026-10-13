@@ -92,6 +92,19 @@
                     ? 'align-self:flex-end;background:#5B1A35;color:#fff;padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:70%;font-size:13px;'
                     : 'align-self:flex-start;background:#fff;border:1px solid #F0E2DA;padding:8px 12px;border-radius:12px 12px 12px 2px;max-width:70%;font-size:13px;';
                 bubble.textContent = msg.body;
+                if (msg.attachment_url) {
+                    const link = document.createElement('a');
+                    link.href = msg.attachment_url; link.target = '_blank'; link.rel = 'noopener';
+                    link.style.cssText = 'display:block;margin-top:6px;color:inherit;font-size:12px;text-decoration:underline;';
+                    if ((msg.attachment_mime || '').startsWith('image/')) {
+                        const img = document.createElement('img');
+                        img.src = msg.attachment_url; img.style.cssText = 'display:block;max-width:100%;max-height:180px;border-radius:8px;';
+                        link.appendChild(img);
+                    } else {
+                        link.textContent = '\uD83D\uDCCE ' + (msg.attachment_name || 'Attachment');
+                    }
+                    bubble.appendChild(link);
+                }
                 container.appendChild(bubble);
             });
 

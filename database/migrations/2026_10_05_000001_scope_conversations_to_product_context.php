@@ -9,8 +9,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('conversations', function (Blueprint $table) {
-            $table->dropUnique('conversations_buyer_seller_unique');
             $table->index(['buyer_id', 'seller_id', 'product_id'], 'conversations_buyer_seller_product_index');
+            $table->dropUnique('conversations_buyer_seller_unique');
         });
     }
 

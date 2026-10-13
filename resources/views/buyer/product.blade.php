@@ -18,7 +18,10 @@
         .topbar { min-height:78px; display:flex; align-items:center; background:rgba(255,253,251,.98); border-bottom:1px solid var(--line); }
         .topbar-inner { width:min(1380px,calc(100% - 48px)); margin:auto; display:flex; align-items:center; gap:20px; }
         .search { flex:1; height:44px; padding:0 19px; border:1px solid var(--line); border-radius:25px; background:white; font:inherit; color:var(--plum); }
-        .top-action { width:42px; height:42px; display:grid; place-items:center; border:1px solid var(--line); border-radius:50%; background:white; color:var(--plum); }
+        .top-action { position:relative; }
+    .cart-badge { position:absolute; top:-5px; right:-5px; min-width:18px; height:18px; padding:0 5px; display:flex; align-items:center; justify-content:center; border-radius:999px; background:#C0583A; color:#fff; border:2px solid #fff; box-sizing:content-box; font-size:10px; font-weight:700; line-height:1; }
+    .cart-badge.is-empty { display:none; }
+    .top-action { width:42px; height:42px; display:grid; place-items:center; border:1px solid var(--line); border-radius:50%; background:white; color:var(--plum); }
         .top-action svg { width:20px; height:20px; }
         .product-shell { width:min(1380px,calc(100% - 48px)); margin:0 auto; padding:22px 0 70px; }
         .flash { margin:0 0 18px; padding:12px 15px; border:1px solid var(--line); border-radius:8px; background:var(--paper); color:var(--rose); font-size:13px; }
@@ -187,7 +190,7 @@
             <x-logo :href="route('shop.index')" aria-label="Lumora shop" />
             <input class="search" type="search" placeholder="Search skincare, makeup, fragrance..." aria-label="Search products">
             <button class="top-action" type="button" aria-label="Add to wishlist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></button>
-            <a class="top-action" href="{{ route('buyer.cart') }}" aria-label="View cart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 1.9-1.4L21 8H7"/><circle cx="10" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg><span data-cart-count>{{ session('lumora_cart') ? collect(session('lumora_cart'))->sum('quantity') : 0 }}</span></a>
+            <a class="top-action" href="{{ route('buyer.cart') }}" aria-label="View cart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 1.9-1.4L21 8H7"/><circle cx="10" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg><span class="cart-badge" data-cart-count>{{ session('lumora_cart') ? collect(session('lumora_cart'))->sum('quantity') : 0 }}</span></a>
         </div>
     </header>
 
@@ -451,10 +454,30 @@
                                         Chat Seller
                                     </a>
                                 @endif
-                                <button class="shop-action secondary" type="button" disabled title="Shop following is not available yet.">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 21s-7-4.5-9.2-8.5A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.2 6.5C19 16.5 12 21 12 21Z"/></svg>
-                                    Follow Shop
-                                </button>
+                                @php
+                                    $isOwnShop = Auth::id() && (int) Auth::id() === (int) $product->seller_id;
+                                    $isFollowing = Auth::check() && ! $isOwnShop
+                                        && Auth::user()->followedShops()->where('shop_follows.seller_id', $product->seller_id)->exists();
+                                @endphp
+                                @if ($isOwnShop)
+                                    <button class="shop-action secondary" type="button" disabled title="You cannot follow your own shop.">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 21s-7-4.5-9.2-8.5A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.2 6.5C19 16.5 12 21 12 21Z"/></svg>
+                                        Follow Shop
+                                    </button>
+                                @elseif (Auth::check())
+                                    <form method="POST" action="{{ route('buyer.shops.follow', $product->seller_id) }}">
+                                        @csrf
+                                        <button class="shop-action secondary" type="submit" aria-pressed="{{ $isFollowing ? 'true' : 'false' }}">
+                                            <svg viewBox="0 0 24 24" fill="{{ $isFollowing ? 'currentColor' : 'none' }}" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 21s-7-4.5-9.2-8.5A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.2 6.5C19 16.5 12 21 12 21Z"/></svg>
+                                            {{ $isFollowing ? 'Following' : 'Follow Shop' }}
+                                        </button>
+                                    </form>
+                                @else
+                                    <a class="shop-action secondary" href="{{ route('login') }}">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 21s-7-4.5-9.2-8.5A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.2 6.5C19 16.5 12 21 12 21Z"/></svg>
+                                        Follow Shop
+                                    </a>
+                                @endif
                             </div>
                         </div>
                         <div class="shop-stats" aria-label="Shop statistics">
@@ -599,5 +622,15 @@
         document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
 </script>
+<script>
+(function () {
+    document.querySelectorAll('.cart-badge').forEach(function (badge) {
+        var sync = function () { badge.classList.toggle('is-empty', (parseInt(badge.textContent, 10) || 0) <= 0); };
+        sync();
+        new MutationObserver(sync).observe(badge, { childList: true, characterData: true, subtree: true });
+    });
+})();
+</script>
+<x-follow-success-modal />
 </body>
 </html>
