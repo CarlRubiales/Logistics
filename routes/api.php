@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\RiderApiController;
 use App\Http\Controllers\Api\ShipmentController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Middleware\AuthenticateIntegration;
@@ -16,6 +17,22 @@ Route::prefix('v1')->group(function () {
         ]);
     });
 
+    // Mobile Rider API (Public)
+    Route::post('/rider/login', [RiderApiController::class, 'login']);
+    Route::post('/rider/register', [RiderApiController::class, 'register']);
+
+    // Mobile Rider API (Protected via Sanctum)
+    Route::middleware('auth:sanctum')->prefix('rider')->group(function () {
+        Route::get('/me', [RiderApiController::class, 'me']);
+        Route::post('/logout', [RiderApiController::class, 'logout']);
+        Route::post('/availability', [RiderApiController::class, 'updateAvailability']);
+        Route::get('/deliveries', [RiderApiController::class, 'deliveries']);
+        Route::get('/deliveries/available', [RiderApiController::class, 'availableDeliveries']);
+        Route::post('/deliveries/{id}/accept', [RiderApiController::class, 'acceptDelivery']);
+        Route::patch('/deliveries/{id}/status', [RiderApiController::class, 'updateDeliveryStatus']);
+        Route::get('/earnings', [RiderApiController::class, 'earnings']);
+    });
+
     Route::post('/webhooks/order-events', [WebhookController::class, 'store']);
 
     Route::middleware(AuthenticateIntegration::class)->group(function () {
@@ -29,3 +46,4 @@ Route::prefix('v1')->group(function () {
         Route::post('/shipments/{shipment}/status', [ShipmentController::class, 'updateStatus']);
     });
 });
+
