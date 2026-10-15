@@ -9,7 +9,7 @@ class DestinationArea extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['store_id', 'name', 'code', 'coverage_rules', 'cities', 'postal_codes', 'is_active'];
+    protected $fillable = ['store_id', 'name', 'province', 'code', 'coverage_rules', 'cities', 'postal_codes', 'is_active'];
 
     protected function casts(): array
     {

@@ -148,4 +148,33 @@ class ParcelIntakeTest extends TestCase
             ParcelScan::flushEventListeners();
         }
     }
+
+    public function test_assigning_rider_without_prior_area_auto_links_area_and_assigns_parcel(): void
+    {
+        $storeId = Store::where('is_active', true)->value('id');
+        $area = DestinationArea::create(['store_id' => $storeId, 'name' => 'Calamba', 'code' => 'CAL', 'is_active' => true]);
+        $this->post('/sorting-center/receive', $this->payload())->assertSessionHasNoErrors();
+        $parcel = Parcel::sole();
+        $this->post('/sorting-center/'.$parcel->id.'/sort', ['destination_area_id' => $area->id])->assertSessionHasNoErrors();
+
+        $riderUser = User::factory()->create(['role' => 'rider']);
+        $rider = \App\Models\RiderProfile::create(['user_id' => $riderUser->id, 'registration_status' => 'approved', 'availability' => 'offline']);
+
+        // Note: rider has NO areas assigned prior to this
+        $this->assertDatabaseMissing('rider_area_assignments', [
+            'rider_profile_id' => $rider->id,
+            'destination_area_id' => $area->id,
+        ]);
+
+        $this->post('/sorting-center/'.$parcel->id.'/assign', ['assigned_rider_id' => $rider->id])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect();
+
+        $this->assertSame($rider->id, $parcel->fresh()->assigned_rider_id);
+        $this->assertSame('assigned', $parcel->fresh()->status);
+        $this->assertDatabaseHas('rider_area_assignments', [
+            'rider_profile_id' => $rider->id,
+            'destination_area_id' => $area->id,
+        ]);
+    }
 }

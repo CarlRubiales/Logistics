@@ -12,6 +12,8 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class RiderApiController extends Controller
@@ -120,6 +122,53 @@ class RiderApiController extends Controller
             'license_number' => ['nullable', 'string', 'max:80'],
         ]);
 
+        $vehicleType = match (strtolower(trim($validated['vehicle_type'] ?? 'motorcycle'))) {
+            'tricycle' => 'Tricycle',
+            default => 'Motorcycle',
+        };
+
+        // Handle Driver's License upload (file or base64)
+        $licensePath = null;
+        if ($request->hasFile('license_photo')) {
+            $licensePath = $request->file('license_photo')->store('rider_documents', 'public');
+        } elseif ($request->hasFile('drivers_license')) {
+            $licensePath = $request->file('drivers_license')->store('rider_documents', 'public');
+        } elseif ($request->filled('license_photo') || $request->filled('drivers_license')) {
+            $raw = $request->input('license_photo') ?: $request->input('drivers_license');
+            if (str_starts_with($raw, 'http') || str_starts_with($raw, 'rider_documents')) {
+                $licensePath = $raw;
+            } else {
+                $cleaned = preg_replace('#^data:image/\w+;base64,#i', '', $raw);
+                $binary = base64_decode($cleaned, true);
+                if ($binary !== false && strlen($binary) > 0) {
+                    $name = 'license_' . Str::uuid() . '.jpg';
+                    Storage::disk('public')->put('rider_documents/' . $name, $binary);
+                    $licensePath = 'rider_documents/' . $name;
+                }
+            }
+        }
+
+        // Handle OR/CR upload (file or base64)
+        $orCrPath = null;
+        if ($request->hasFile('or_cr_photo')) {
+            $orCrPath = $request->file('or_cr_photo')->store('rider_documents', 'public');
+        } elseif ($request->hasFile('or_cr')) {
+            $orCrPath = $request->file('or_cr')->store('rider_documents', 'public');
+        } elseif ($request->filled('or_cr_photo') || $request->filled('or_cr')) {
+            $raw = $request->input('or_cr_photo') ?: $request->input('or_cr');
+            if (str_starts_with($raw, 'http') || str_starts_with($raw, 'rider_documents')) {
+                $orCrPath = $raw;
+            } else {
+                $cleaned = preg_replace('#^data:image/\w+;base64,#i', '', $raw);
+                $binary = base64_decode($cleaned, true);
+                if ($binary !== false && strlen($binary) > 0) {
+                    $name = 'or_cr_' . Str::uuid() . '.jpg';
+                    Storage::disk('public')->put('rider_documents/' . $name, $binary);
+                    $orCrPath = 'rider_documents/' . $name;
+                }
+            }
+        }
+
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
@@ -130,8 +179,10 @@ class RiderApiController extends Controller
         $profile = RiderProfile::create([
             'user_id' => $user->id,
             'phone' => $validated['phone'] ?? null,
-            'vehicle_type' => $validated['vehicle_type'] ?? 'Motorcycle',
+            'vehicle_type' => $vehicleType,
             'license_number' => $validated['license_number'] ?? null,
+            'license_photo_path' => $licensePath,
+            'or_cr_photo_path' => $orCrPath,
             'registration_status' => 'pending',
             'availability' => 'offline',
         ]);
@@ -143,7 +194,10 @@ class RiderApiController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                'vehicle_type' => $profile->vehicle_type,
                 'registration_status' => $profile->registration_status,
+                'has_license' => ! empty($profile->license_photo_path),
+                'has_or_cr' => ! empty($profile->or_cr_photo_path),
             ],
         ], 201);
     }
@@ -516,7 +570,7 @@ class RiderApiController extends Controller
         }
 
         $newStatus = match ($scanType) {
-            'handoff', 'intake', 'pickup' => 'in_transit',
+            'handoff', 'intake', 'pickup', 'picked_up', 'rider_received' => 'rider_received',
             'out_for_delivery' => 'out_for_delivery',
             'delivery', 'delivered' => 'delivered',
             'exception' => 'exception',
@@ -527,7 +581,7 @@ class RiderApiController extends Controller
         if (! empty($validated['barcode']) && ! $parcel->barcode) {
             $updateData['barcode'] = $validated['barcode'];
         }
-        if (in_array($newStatus, ['in_transit', 'out_for_delivery']) && ! $parcel->rider_received_at) {
+        if (in_array($newStatus, ['rider_received', 'in_transit', 'out_for_delivery']) && ! $parcel->rider_received_at) {
             $updateData['rider_received_at'] = now();
         }
 
@@ -797,7 +851,7 @@ class RiderApiController extends Controller
 
         return match ($normalized) {
             'assigned_to_rider', 'assigned', 'accepted', 'pending' => 'assigned',
-            'picked_up_from_hub', 'pickedup', 'picked_up', 'rider_received', 'sorted' => 'rider_received',
+            'picked_up_from_hub', 'pickedup', 'picked_up', 'pickup', 'picked', 'rider_received', 'sorted' => 'rider_received',
             'out_for_delivery', 'outfordelivery', 'arrived', 'arrived_at_stop' => 'out_for_delivery',
             'delivered', 'delivery', 'completed' => 'delivered',
             'delivery_failed', 'failed', 'exception', 'rescheduled' => 'exception',

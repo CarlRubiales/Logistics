@@ -12,6 +12,8 @@ use App\Models\RiderProfile;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class RiderController extends Controller
 {
@@ -24,9 +26,26 @@ class RiderController extends Controller
             'email' => ['required', 'email', 'unique:users,email'],
             'password' => ['required', 'min:8', 'confirmed'],
             'phone' => ['required', 'string', 'max:40'],
-            'vehicle_type' => ['required', 'string', 'max:80'],
+            'vehicle_type' => ['required', 'string', Rule::in(['Motorcycle', 'Tricycle', 'motorcycle', 'tricycle'])],
             'license_number' => ['nullable', 'string', 'max:80'],
+            'drivers_license' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,webp', 'max:10240'],
+            'or_cr' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,webp', 'max:10240'],
         ]);
+
+        $vehicleType = match (strtolower(trim($data['vehicle_type']))) {
+            'tricycle' => 'Tricycle',
+            default => 'Motorcycle',
+        };
+
+        $licensePath = null;
+        if ($request->hasFile('drivers_license')) {
+            $licensePath = $request->file('drivers_license')->store('rider_documents', 'public');
+        }
+
+        $orCrPath = null;
+        if ($request->hasFile('or_cr')) {
+            $orCrPath = $request->file('or_cr')->store('rider_documents', 'public');
+        }
 
         $user = User::create([
             'name' => $data['name'],
@@ -38,13 +57,32 @@ class RiderController extends Controller
         RiderProfile::create([
             'user_id' => $user->id,
             'phone' => $data['phone'],
-            'vehicle_type' => $data['vehicle_type'],
+            'vehicle_type' => $vehicleType,
             'license_number' => $data['license_number'] ?? null,
+            'license_photo_path' => $licensePath,
+            'or_cr_photo_path' => $orCrPath,
             'registration_status' => 'pending',
             'availability' => 'offline',
         ]);
 
-        return redirect()->route('login')->with('status', 'Registration submitted. An administrator must approve your rider account before access is enabled.');
+        return redirect()->route('login')->with('status', 'Registration submitted. An administrator will review your Driver’s License and OR/CR before approving your account.');
+    }
+
+    public function document(RiderProfile $rider, string $type)
+    {
+        $path = match ($type) {
+            'license', 'drivers_license' => $rider->license_photo_path,
+            'or_cr', 'orcr' => $rider->or_cr_photo_path,
+            default => null,
+        };
+
+        if ($path && str_starts_with($path, 'http')) {
+            return redirect()->away($path);
+        }
+
+        abort_unless($path && Storage::disk('public')->exists($path), 404, 'Document file not found.');
+
+        return Storage::disk('public')->response($path);
     }
 
     public function index(Request $request)

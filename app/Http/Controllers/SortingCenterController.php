@@ -78,7 +78,10 @@ class SortingCenterController extends Controller
         $area = $parcel->area ?: DestinationArea::where('store_id', $parcel->store_id)->where('is_active', true)->get()->first(function ($candidate) use ($parcel) {
             $cities = collect($candidate->cities ?? [])->map(fn ($city) => mb_strtolower(trim($city)));
             $postalCodes = collect($candidate->postal_codes ?? [])->map(fn ($code) => trim($code));
-            return ($parcel->city && $cities->contains(mb_strtolower(trim($parcel->city)))) || ($parcel->postal_code && $postalCodes->contains(trim($parcel->postal_code)));
+            $matchCity = $parcel->city && $cities->contains(mb_strtolower(trim($parcel->city)));
+            $matchPostal = $parcel->postal_code && $postalCodes->contains(trim($parcel->postal_code));
+            $matchProvince = $candidate->province && $parcel->province && mb_strtolower(trim($candidate->province)) === mb_strtolower(trim($parcel->province));
+            return $matchCity || $matchPostal || ($cities->isEmpty() && $postalCodes->isEmpty() && $matchProvince);
         });
         DB::transaction(function () use ($request, $parcel, $data, $area) {
         $parcel->update(['status' => 'scanned', 'scanned_at' => now(), 'barcode' => ($data['barcode'] ?? null) ?: $parcel->barcode, 'destination_area_id' => $parcel->destination_area_id ?: $area?->id]);
@@ -99,19 +102,65 @@ class SortingCenterController extends Controller
 
     public function assign(Request $request, Parcel $parcel)
     {
-        $data = $request->validate(['assigned_rider_id' => ['required', 'exists:rider_profiles,id'], 'commission_amount' => ['nullable', 'numeric', 'min:0']]);
-        $rider = RiderProfile::with('areas')->where('id', $data['assigned_rider_id'])->where('registration_status', 'approved')->firstOrFail();
+        $data = $request->validate([
+            'assigned_rider_id' => ['required', 'exists:rider_profiles,id'],
+            'commission_amount' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $rider = RiderProfile::with('areas')
+            ->where('id', $data['assigned_rider_id'])
+            ->where('registration_status', 'approved')
+            ->first();
+
+        if (! $rider) {
+            return back()->withErrors(['assigned_rider_id' => 'The selected rider is not an approved rider.']);
+        }
+
+        // If the rider is not yet assigned to this parcel's destination area, auto-assign the area so dispatch succeeds
         if ($parcel->destination_area_id && ! $rider->areas->contains('id', $parcel->destination_area_id)) {
-            $rider->areas()->syncWithoutDetaching([$parcel->destination_area_id]);
+            RiderAreaAssignment::updateOrCreate(
+                ['rider_profile_id' => $rider->id, 'destination_area_id' => $parcel->destination_area_id],
+                ['is_active' => true, 'is_primary' => $rider->areaAssignments()->doesntExist()]
+            );
+            $rider->load('areas');
         }
+
+        // If parcel does not have an area yet but the rider has one, adopt the rider's primary area
+        if (! $parcel->destination_area_id && $rider->areas->isNotEmpty()) {
+            $parcel->destination_area_id = $rider->areas->first()->id;
+        }
+
         DB::transaction(function () use ($request, $parcel, $data, $rider) {
-        $parcel->update(['assigned_rider_id' => $rider->id, 'status' => 'assigned', 'assigned_at' => now()]);
-        if ((float) ($data['commission_amount'] ?? 0) > 0) {
-            CommissionTransaction::updateOrCreate(['parcel_id' => $parcel->id, 'rider_profile_id' => $rider->id], ['amount' => $data['commission_amount'], 'status' => 'pending', 'description' => 'Delivery commission for '.$parcel->parcel_number, 'earned_at' => now()]);
-        }
-        $parcel->scans()->create(['user_id' => $request->user()->id, 'scan_type' => 'assign', 'note' => 'Assigned to '.$rider->user->name, 'scanned_at' => now()]);
+            $parcel->update([
+                'assigned_rider_id' => $rider->id,
+                'status' => 'assigned',
+                'assigned_at' => now(),
+                'destination_area_id' => $parcel->destination_area_id,
+            ]);
+
+            if ((float) ($data['commission_amount'] ?? 0) > 0) {
+                CommissionTransaction::updateOrCreate(
+                    ['parcel_id' => $parcel->id, 'rider_profile_id' => $rider->id],
+                    [
+                        'amount' => $data['commission_amount'],
+                        'status' => 'pending',
+                        'description' => 'Delivery commission for ' . $parcel->parcel_number,
+                        'earned_at' => now(),
+                    ]
+                );
+            }
+
+            $parcel->scans()->create([
+                'user_id' => $request->user()->id,
+                'scan_type' => 'assign',
+                'note' => 'Assigned to ' . $rider->user->name,
+                'scanned_at' => now(),
+            ]);
         });
-        return back()->with('success', "Parcel {$parcel->parcel_number} assigned to {$rider->user->name}.");
+
+        app(\App\Services\ParcelShipmentSyncService::class)->sync($parcel->fresh());
+
+        return back()->with('success', "Parcel {$parcel->parcel_number} successfully assigned to {$rider->user->name}.");
     }
 
     public function riderAccept(Request $request, Parcel $parcel)

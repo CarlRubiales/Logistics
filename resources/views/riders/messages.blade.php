@@ -174,11 +174,23 @@
 
                         <label class="full-span">
                             Message
+                            <div style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px;">
+                                <button type="button" class="preset-chip" style="background: #FAF6F0; border: 1px solid #EBDDD8; padding: 4px 8px; border-radius: 999px; font-size: 11px; cursor: pointer; white-space: nowrap;" onclick="insertRiderPreset('📍 Arrived at delivery address. Waiting for recipient.')">
+                                    📍 Arrived at address
+                                </button>
+                                <button type="button" class="preset-chip" style="background: #FAF6F0; border: 1px solid #EBDDD8; padding: 4px 8px; border-radius: 999px; font-size: 11px; cursor: pointer; white-space: nowrap;" onclick="insertRiderPreset('📞 Recipient phone is unreachable. Please verify contact number.')">
+                                    📞 Unreachable
+                                </button>
+                                <button type="button" class="preset-chip" style="background: #FAF6F0; border: 1px solid #EBDDD8; padding: 4px 8px; border-radius: 999px; font-size: 11px; cursor: pointer; white-space: nowrap;" onclick="insertRiderPreset('🏢 Heading back to sorting center for parcel handover.')">
+                                    🏢 Heading to hub
+                                </button>
+                            </div>
                             <textarea
                                 name="message"
-                                rows="5"
+                                id="riderMessageInput"
+                                rows="4"
                                 required
-                                placeholder="Type your message to sorting center operations (e.g. Arrived at Santa Cruz hub, recipient request to hold until 5 PM)..."
+                                placeholder="Type your message to operations staff..."
                                 style="width: 100%; border: 1px solid #EBDDD8; border-radius: 10px; padding: 12px; font-size: 13px; resize: vertical; background: #FFFDFB;"
                             ></textarea>
                         </label>
@@ -192,5 +204,19 @@
         </div>
     </main>
 </div>
+<script>
+    const threadContainer = document.querySelector('.chat-thread-container');
+    if (threadContainer) {
+        threadContainer.scrollTop = threadContainer.scrollHeight;
+    }
+
+    function insertRiderPreset(text) {
+        const input = document.getElementById('riderMessageInput');
+        if (input) {
+            input.value = text;
+            input.focus();
+        }
+    }
+</script>
 </body>
 </html>

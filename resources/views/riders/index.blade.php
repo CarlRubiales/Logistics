@@ -100,7 +100,7 @@
                         <select name="area_id" style="height: 36px; padding: 0 8px; font-size: 12px; border: 1px solid #EBDDD8; border-radius: 8px; background: #FAF6F0;">
                             <option value="">All Areas</option>
                             @foreach($areas as $area)
-                                <option value="{{ $area->id }}" @selected(request('area_id') == $area->id)>{{ $area->name }}</option>
+                                <option value="{{ $area->id }}" @selected(request('area_id') == $area->id)>{{ $area->name }} ({{ $area->province ?: 'Laguna' }})</option>
                             @endforeach
                         </select>
 
@@ -118,6 +118,7 @@
                             <tr>
                                 <th>Rider Info</th>
                                 <th>Vehicle & Phone</th>
+                                <th>Documents</th>
                                 <th>Account & Duty</th>
                                 <th>Assigned Delivery Areas</th>
                                 <th style="min-width: 170px;">Actions</th>
@@ -146,6 +147,30 @@
                                         @if($rider->license_number)
                                             <small style="color: #8A7B7E; display: block; font-size: 10px;">Lic: {{ $rider->license_number }}</small>
                                         @endif
+                                    </td>
+
+                                    <td>
+                                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                                            @if($rider->license_photo_path)
+                                                <a href="{{ route('riders.documents', [$rider, 'license']) }}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; padding: 4px 8px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; background: #FAF6F0; border: 1px solid #EBDDD8; border-radius: 6px; color: #3D1B3D; width: fit-content;" title="View Driver's License in new tab">
+                                                    🪪 Driver's License ↗
+                                                </a>
+                                            @else
+                                                <span style="font-size: 11px; color: #8A7B7E; display: inline-flex; align-items: center; gap: 4px;">
+                                                    🪪 <span style="font-size: 10px; opacity: 0.75;">No license file</span>
+                                                </span>
+                                            @endif
+
+                                            @if($rider->or_cr_photo_path)
+                                                <a href="{{ route('riders.documents', [$rider, 'or_cr']) }}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; padding: 4px 8px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; background: #FAF6F0; border: 1px solid #EBDDD8; border-radius: 6px; color: #3D1B3D; width: fit-content;" title="View Vehicle OR/CR in new tab">
+                                                    📄 Vehicle OR / CR ↗
+                                                </a>
+                                            @else
+                                                <span style="font-size: 11px; color: #8A7B7E; display: inline-flex; align-items: center; gap: 4px;">
+                                                    📄 <span style="font-size: 10px; opacity: 0.75;">No OR/CR file</span>
+                                                </span>
+                                            @endif
+                                        </div>
                                     </td>
 
                                     <td>
@@ -204,7 +229,7 @@
                                                     <select name="destination_area_id" required style="font-size: 11px; padding: 2px 6px; border-radius: 6px; border: 1px solid #EBDDD8; height: 26px; max-width: 130px; background: #FFF;">
                                                         <option value="">+ Area...</option>
                                                         @foreach($unassignedAreas as $area)
-                                                            <option value="{{ $area->id }}">{{ $area->name }}</option>
+                                                            <option value="{{ $area->id }}">{{ $area->name }} ({{ $area->province ?: 'Laguna' }})</option>
                                                         @endforeach
                                                     </select>
                                                     <button class="secondary-button" type="submit" style="padding: 2px 8px; height: 26px; font-size: 10.5px; font-weight: 700;">Add</button>
@@ -262,7 +287,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="5" style="text-align: center; padding: 30px; color: #8A7B7E;">
+                                    <td colspan="6" style="text-align: center; padding: 30px; color: #8A7B7E;">
                                         No riders match your search or filter criteria.
                                     </td>
                                 </tr>
