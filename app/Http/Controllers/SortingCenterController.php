@@ -27,8 +27,17 @@ class SortingCenterController extends Controller
 
         $parcels = $query->paginate(15)->withQueryString();
         $areas = DestinationArea::where('is_active', true)->orderBy('name')->get();
-        $riders = RiderProfile::with('user')->where('registration_status', 'approved')->where('availability', '!=', 'offline')->get();
+        $riders = RiderProfile::with(['user', 'areas'])->where('registration_status', 'approved')->get();
         $counts = Parcel::select('status', DB::raw('count(*) as total'))->groupBy('status')->pluck('total', 'status');
+
+        if ($request->wantsJson() || $request->query('format') === 'json') {
+            return response()->json([
+                'status' => 'success',
+                'counts' => $counts,
+                'total' => $parcels->total(),
+                'latest_update' => Parcel::max('updated_at'),
+            ]);
+        }
 
         return view('sorting-center.index', compact('parcels', 'areas', 'riders', 'counts'));
     }
@@ -92,7 +101,9 @@ class SortingCenterController extends Controller
     {
         $data = $request->validate(['assigned_rider_id' => ['required', 'exists:rider_profiles,id'], 'commission_amount' => ['nullable', 'numeric', 'min:0']]);
         $rider = RiderProfile::with('areas')->where('id', $data['assigned_rider_id'])->where('registration_status', 'approved')->firstOrFail();
-        abort_unless($parcel->destination_area_id && $rider->areas->contains('id', $parcel->destination_area_id), 422, 'This rider is not assigned to the parcel destination area.');
+        if ($parcel->destination_area_id && ! $rider->areas->contains('id', $parcel->destination_area_id)) {
+            $rider->areas()->syncWithoutDetaching([$parcel->destination_area_id]);
+        }
         DB::transaction(function () use ($request, $parcel, $data, $rider) {
         $parcel->update(['assigned_rider_id' => $rider->id, 'status' => 'assigned', 'assigned_at' => now()]);
         if ((float) ($data['commission_amount'] ?? 0) > 0) {
@@ -110,6 +121,7 @@ class SortingCenterController extends Controller
         DB::transaction(function () use ($parcel) {
         $parcel->update(['status' => 'rider_received', 'rider_received_at' => now()]);
         });
+        app(\App\Services\ParcelShipmentSyncService::class)->sync($parcel->fresh());
         return back()->with('success', 'Delivery assignment accepted.');
     }
 }

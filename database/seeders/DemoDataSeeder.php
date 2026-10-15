@@ -128,15 +128,5 @@ class DemoDataSeeder extends Seeder
         }
 
         $this->call(LocalizeLumoraDemoSeeder::class);
-
-        $sampleParcels = [
-            ['parcel_number' => '#1001', 'barcode' => 'LUM-1001', 'recipient_name' => 'Maria Santos', 'address_line' => 'Purok 2, Santa Cruz', 'city' => 'Santa Cruz', 'province' => 'Laguna', 'postal_code' => '4009', 'area' => 'LAG-A', 'rider' => 'rider01@example.com'],
-            ['parcel_number' => '#1002', 'barcode' => 'LUM-1002', 'recipient_name' => 'Juan Dela Cruz', 'address_line' => 'National Highway, Pagsanjan', 'city' => 'Pagsanjan', 'province' => 'Laguna', 'postal_code' => '4016', 'area' => 'LAG-B', 'rider' => 'rider02@example.com'],
-            ['parcel_number' => '#1003', 'barcode' => 'LUM-1003', 'recipient_name' => 'Ana Reyes', 'address_line' => 'Barangay Batong Malake, Los Baños', 'city' => 'Los Baños', 'province' => 'Laguna', 'postal_code' => '4030', 'area' => 'LAG-C', 'rider' => 'rider03@example.com'],
-        ];
-        foreach ($sampleParcels as $sample) {
-            $rider = RiderProfile::whereHas('user', fn ($q) => $q->where('email', $sample['rider']))->first();
-            Parcel::updateOrCreate(['parcel_number' => $sample['parcel_number']], ['store_id' => $store->id, 'destination_area_id' => $areas[$sample['area']]->id, 'assigned_rider_id' => $rider?->id, 'barcode' => $sample['barcode'], 'recipient_name' => $sample['recipient_name'], 'address_line' => $sample['address_line'], 'city' => $sample['city'], 'province' => $sample['province'], 'postal_code' => $sample['postal_code'], 'status' => 'sorted', 'received_at' => now()->subHours(2), 'scanned_at' => now()->subHours(1), 'sorted_at' => now()->subMinutes(30)]);
-        }
-    }
+    }
 }

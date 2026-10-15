@@ -9,7 +9,7 @@ class Parcel extends Model
     protected static function booted(): void
     {
         static::saved(function (Parcel $parcel) {
-            if ($parcel->shipment_id && ($parcel->wasRecentlyCreated || $parcel->wasChanged('status'))) {
+            if (($parcel->shipment_id || $parcel->parcel_number) && ($parcel->wasRecentlyCreated || $parcel->wasChanged('status'))) {
                 app(\App\Services\ParcelShipmentSyncService::class)->sync($parcel);
             }
         });

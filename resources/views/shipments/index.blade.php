@@ -34,5 +34,36 @@
         </div>
     </main>
 </div>
+<script>
+(function() {
+    let lastUpdate = null;
+    const pollInterval = 5000;
+
+    async function pollShipments() {
+        const active = document.activeElement;
+        const isInteracting = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
+        if (isInteracting) return;
+
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('format', 'json');
+            const res = await fetch(url.toString(), {
+                headers: { 'Accept': 'application/json' }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data && data.latest_update) {
+                if (lastUpdate && lastUpdate !== data.latest_update) {
+                    window.location.reload();
+                }
+                lastUpdate = data.latest_update;
+            }
+        } catch (e) {}
+    }
+
+    setInterval(pollShipments, pollInterval);
+    pollShipments();
+})();
+</script>
 </body>
 </html>

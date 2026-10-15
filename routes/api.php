@@ -29,8 +29,20 @@ Route::prefix('v1')->group(function () {
         Route::get('/deliveries', [RiderApiController::class, 'deliveries']);
         Route::get('/deliveries/available', [RiderApiController::class, 'availableDeliveries']);
         Route::post('/deliveries/{id}/accept', [RiderApiController::class, 'acceptDelivery']);
-        Route::patch('/deliveries/{id}/status', [RiderApiController::class, 'updateDeliveryStatus']);
+        Route::match(['post', 'patch'], '/deliveries/{id}/status', [RiderApiController::class, 'updateDeliveryStatus']);
         Route::get('/earnings', [RiderApiController::class, 'earnings']);
+
+        // Mobile Scanner & Parcel Workflow Contract
+        Route::get('/parcels', [RiderApiController::class, 'parcels']);
+        Route::get('/parcels/{code}', [RiderApiController::class, 'showParcel']);
+        Route::post('/parcels/{code}/scan', [RiderApiController::class, 'scanParcel']);
+        Route::match(['post', 'patch'], '/parcels/{code}/status', [RiderApiController::class, 'updateParcelStatus']);
+
+        // Operations Communication & Messages
+        Route::get('/messages', [RiderApiController::class, 'messages']);
+        Route::post('/messages', [RiderApiController::class, 'sendMessage']);
+        Route::post('/chat/messages', [RiderApiController::class, 'sendMessage']);
+        Route::get('/conversations', [RiderApiController::class, 'conversations']);
     });
 
     Route::post('/webhooks/order-events', [WebhookController::class, 'store']);

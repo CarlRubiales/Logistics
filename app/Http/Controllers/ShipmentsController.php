@@ -11,7 +11,7 @@ use Illuminate\View\View;
 
 class ShipmentsController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request)
     {
         $store = Store::where('is_active', true)->first();
         $status = $request->string('status')->toString();
@@ -47,17 +47,40 @@ class ShipmentsController extends Controller
             'delivered' => (clone $base)->where('status', 'delivered')->count(),
             'exceptions' => (clone $base)->whereIn('status', ['exception', 'failed'])->count(),
         ];
+
+        if ($request->wantsJson() || $request->query('format') === 'json') {
+            return response()->json([
+                'status' => 'success',
+                'stats' => $stats,
+                'total' => $shipments->total(),
+                'latest_update' => Shipment::max('updated_at'),
+            ]);
+        }
+
         return view('shipments.index', compact('shipments', 'stats', 'status', 'search', 'store'));
     }
 
-    public function show(Shipment $shipment): View
+    public function show(Request $request, Shipment $shipment)
     {
         $this->authorizeStore($shipment);
-        $shipment->load(['order.items', 'trackingEvents', 'fulfillmentLocation', 'parcels.area']);
+        $shipment->load(['order.items', 'trackingEvents', 'fulfillmentLocation', 'parcels.area', 'parcels.rider.user', 'parcels.scans']);
         $stages = ShipmentStatusService::STAGES;
         $currentStage = array_search($shipment->status, array_keys($stages), true);
         $allowedStatuses = collect($stages + array_combine(ShipmentStatusService::EXCEPTIONS, ['Exception', 'Failed Delivery', 'Cancelled']))
             ->filter(fn ($label, $status) => $status !== $shipment->status && ShipmentStatusService::allowed($shipment, $shipment->status, $status));
+
+        if ($request->wantsJson() || $request->query('format') === 'json') {
+            return response()->json([
+                'status' => 'success',
+                'shipment_status' => $shipment->status,
+                'status_label' => ShipmentStatusService::label($shipment->status),
+                'current_stage' => $currentStage,
+                'tracking_events_count' => $shipment->trackingEvents->count(),
+                'delivered_at' => $shipment->delivered_at?->timezone('Asia/Manila')->format('M j, Y · g:i A'),
+                'updated_at' => $shipment->updated_at?->timestamp,
+            ]);
+        }
+
         return view('shipments.show', compact('shipment', 'stages', 'currentStage', 'allowedStatuses'));
     }
 

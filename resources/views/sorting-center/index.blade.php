@@ -37,16 +37,47 @@
                 </article>
                 <article class="panel"><div class="panel-heading"><div><div class="section-kicker">WORKFLOW</div><h2>Processing sequence</h2></div></div><div class="exception-list"><div class="exception-item"><span class="exception-symbol coral-bg">1</span><span class="exception-copy"><strong>Receive</strong><small>Register the parcel and address.</small></span></div><div class="exception-item"><span class="exception-symbol plum-bg">2</span><span class="exception-copy"><strong>Scan</strong><small>Confirm barcode and parcel identity.</small></span></div><div class="exception-item"><span class="exception-symbol sage-bg">3</span><span class="exception-copy"><strong>Determine area</strong><small>Use the destination mapping or override.</small></span></div><div class="exception-item"><span class="exception-symbol gold-bg">4</span><span class="exception-copy"><strong>Assign rider</strong><small>Only riders assigned to that area are eligible.</small></span></div></div></article>
             </section>
-            <section class="panel shipments-panel"><div class="panel-heading shipments-heading"><div><div class="section-kicker">LIVE PARCEL QUEUE</div><h2>Sorting center parcels</h2></div><form method="GET"><input name="search" value="{{ request('search') }}" placeholder="Search parcel, recipient, city"><select name="status"><option value="">All statuses</option>@foreach(['received','scanned','sorted','assigned','rider_received','in_transit','out_for_delivery','delivered','exception','cancelled'] as $status)<option value="{{ $status }}" @selected(request('status') === $status)>{{ ucwords(str_replace('_',' ', $status)) }}</option>@endforeach</select><button class="secondary-button" type="submit">Filter</button></form></div>
+            <section class="panel shipments-panel"><div class="panel-heading shipments-heading"><div><div class="section-kicker" style="display: flex; align-items: center; gap: 8px;">LIVE PARCEL QUEUE <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: #1E6B37; font-weight: 700; background: rgba(30, 107, 55, 0.1); padding: 2px 8px; border-radius: 999px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #1E6B37; display: inline-block;"></span> Live Courier Sync</span></div><h2>Sorting center parcels</h2></div><form method="GET"><input name="search" value="{{ request('search') }}" placeholder="Search parcel, recipient, city"><select name="status"><option value="">All statuses</option>@foreach(['received','scanned','sorted','assigned','rider_received','in_transit','out_for_delivery','delivered','exception','cancelled'] as $status)<option value="{{ $status }}" @selected(request('status') === $status)>{{ ucwords(str_replace('_',' ', $status)) }}</option>@endforeach</select><button class="secondary-button" type="submit">Filter</button></form></div>
                 <div class="table-wrap"><table class="shipments-table"><thead><tr><th>Track ID</th><th>Recipient / address</th><th>Area</th><th>Status</th><th>Rider</th><th>Actions</th></tr></thead><tbody>
-                    @forelse($parcels as $parcel)<tr><td>@if($parcel->shipment)<a class="shipment-id" href="{{ route('shipments.show', $parcel->shipment) }}">{{ $parcel->shipment->lumora_tracking_id }}</a>@else<strong>{{ $parcel->parcel_number }}</strong>@endif<small>{{ $parcel->barcode ?: 'No barcode' }}</small></td><td>{{ $parcel->recipient_name }}<small>{{ $parcel->city }}, {{ $parcel->province }}</small></td><td>{{ $parcel->area?->name ?: 'Not determined' }}<small>{{ $parcel->sort_bin ?: 'No bin' }}</small></td><td><span class="status-chip {{ $parcel->status === 'assigned' || $parcel->status === 'rider_received' ? 'in-transit' : 'packed' }}"><b></b>{{ ucwords(str_replace('_',' ', $parcel->status)) }}</span></td><td>{{ $parcel->rider?->user?->name ?: 'Unassigned' }}</td><td><div class="table-actions">
+                    @forelse($parcels as $parcel)<tr><td>@if($parcel->shipment)<a class="shipment-id" href="{{ route('shipments.show', $parcel->shipment) }}">{{ $parcel->shipment->lumora_tracking_id }}</a>@else<strong>{{ $parcel->parcel_number }}</strong>@endif<small>{{ $parcel->barcode ?: 'No barcode' }}</small></td><td>{{ $parcel->recipient_name }}<small>{{ $parcel->city }}, {{ $parcel->province }}</small></td><td>{{ $parcel->area?->name ?: 'Not determined' }}<small>{{ $parcel->sort_bin ?: 'No bin' }}</small></td><td>@php $cClass = match($parcel->status) { 'delivered' => 'sage-wash', 'assigned', 'rider_received', 'in_transit', 'out_for_delivery' => 'in-transit', 'exception', 'failed', 'cancelled' => 'exception', default => 'packed' }; @endphp<span class="status-chip {{ $cClass }}"><b></b>{{ ucwords(str_replace('_',' ', $parcel->status)) }}</span></td><td>@if($parcel->rider){{ $parcel->rider->user->name }}@if($parcel->rider->user_id)<a href="{{ route('messages.index', ['rider_user_id' => $parcel->rider->user_id, 'parcel_id' => $parcel->id]) }}" title="Message rider" style="margin-left: 4px; text-decoration: none; font-size: 11px;">✉</a>@endif @else<span style="color: #8A7B7E;">Unassigned</span>@endif</td><td><div class="table-actions">
                         @if(in_array($parcel->status, ['received']))<form method="POST" action="{{ route('sorting-center.scan', $parcel) }}">@csrf<button class="text-button" type="submit">Scan</button></form>@endif
                         @if(in_array($parcel->status, ['scanned','received']))<form method="POST" action="{{ route('sorting-center.sort', $parcel) }}">@csrf<select name="destination_area_id" required><option value="">Area</option>@foreach($areas as $area)<option value="{{ $area->id }}">{{ $area->name }}</option>@endforeach</select><input name="sort_bin" placeholder="Bin"><button class="text-button" type="submit">Sort</button></form>@endif
-                        @if($parcel->destination_area_id && in_array($parcel->status, ['sorted']))<form method="POST" action="{{ route('sorting-center.assign', $parcel) }}">@csrf<select name="assigned_rider_id" required><option value="">Rider</option>@foreach($riders as $rider)@if($rider->areas->contains('id', $parcel->destination_area_id))<option value="{{ $rider->id }}">{{ $rider->user->name }}</option>@endif @endforeach</select><input name="commission_amount" type="number" min="0" step="0.01" placeholder="₱ commission"><button class="text-button" type="submit">Assign</button></form>@endif
+                        @if($parcel->destination_area_id && in_array($parcel->status, ['sorted']))<form method="POST" action="{{ route('sorting-center.assign', $parcel) }}">@csrf<select name="assigned_rider_id" required style="max-width: 180px;"><option value="">Select Rider...</option>@php $areaRiders = $riders->filter(fn($r) => $r->areas->contains('id', $parcel->destination_area_id)); $otherRiders = $riders->reject(fn($r) => $r->areas->contains('id', $parcel->destination_area_id)); @endphp @if($areaRiders->isNotEmpty())<optgroup label="Assigned to {{ $parcel->area?->name }}">@foreach($areaRiders as $rider)<option value="{{ $rider->id }}">{{ $rider->user->name }} ({{ ucfirst($rider->availability) }})</option>@endforeach</optgroup>@endif @if($otherRiders->isNotEmpty())<optgroup label="Other Approved Riders">@foreach($otherRiders as $rider)<option value="{{ $rider->id }}">{{ $rider->user->name }} ({{ ucfirst($rider->availability) }})</option>@endforeach</optgroup>@endif</select><input name="commission_amount" type="number" min="0" step="0.01" placeholder="₱ comm" style="width: 70px;"><button class="text-button" type="submit">Assign</button></form>@endif
                     </div></td></tr>@empty<tr><td colspan="6">No parcels found. Receive the first parcel above.</td></tr>@endforelse
                 </tbody></table></div><div class="table-footer">{{ $parcels->links() }}</div>
             </section>
         </div>
     </main>
 </div>
+<script>
+(function() {
+    let lastUpdate = null;
+    const pollInterval = 4500;
+
+    async function pollQueueUpdates() {
+        const active = document.activeElement;
+        const isInteracting = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
+        if (isInteracting) return;
+
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('format', 'json');
+            const res = await fetch(url.toString(), {
+                headers: { 'Accept': 'application/json' }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data && data.latest_update) {
+                if (lastUpdate && lastUpdate !== data.latest_update) {
+                    window.location.reload();
+                }
+                lastUpdate = data.latest_update;
+            }
+        } catch (err) {}
+    }
+
+    setInterval(pollQueueUpdates, pollInterval);
+    pollQueueUpdates();
+})();
+</script>
 </body></html>

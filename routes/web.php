@@ -28,8 +28,11 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
 });
 Route::middleware(['auth', 'rider'])->group(function () {
-    Route::post('/parcels/{parcel}/accept', [SortingCenterController::class, 'riderAccept'])->name('parcels.accept');
     Route::get('/rider/dashboard', [RiderController::class, 'dashboard'])->name('riders.dashboard');
+    Route::post('/parcels/{parcel}/accept', [SortingCenterController::class, 'riderAccept'])->name('parcels.accept');
+    Route::post('/rider/scan', [RiderController::class, 'scanBarcode'])->name('riders.scan');
+    Route::post('/rider/parcels/{parcel}/status', [RiderController::class, 'updateStatus'])->name('riders.status');
+    Route::post('/rider/availability', [RiderController::class, 'toggleAvailability'])->name('riders.availability');
     Route::get('/rider/messages', [MessagesController::class, 'riderIndex'])->name('riders.messages');
     Route::post('/rider/messages', [MessagesController::class, 'send'])->name('riders.messages.send');
 });
@@ -61,6 +64,7 @@ Route::middleware(['auth', 'logistics'])->group(function () {
     Route::get('/riders', [RiderController::class, 'index'])->name('riders.index');
     Route::post('/riders/{rider}/approval', [RiderController::class, 'approve'])->name('riders.approval');
     Route::post('/riders/{rider}/areas', [RiderController::class, 'assignArea'])->name('riders.areas');
+    Route::delete('/riders/{rider}/areas/{area}', [RiderController::class, 'removeArea'])->name('riders.areas.destroy');
     Route::get('/sorting-center', [SortingCenterController::class, 'index'])->name('sorting-center.index');
     Route::post('/sorting-center/receive', [SortingCenterController::class, 'receive'])->name('sorting-center.receive');
     Route::post('/sorting-center/{parcel}/scan', [SortingCenterController::class, 'scan'])->name('sorting-center.scan');

@@ -73,8 +73,10 @@ class ShipmentStatusService
                 return $record; // Retries and repeated submissions never add an event.
             }
             $record->trackingContext = [
+                'label' => $data['label'] ?? null,
                 'description' => $data['description'] ?? null,
-                'location' => $data['location'] ?? null, 'source' => $source,
+                'location' => $data['location'] ?? null,
+                'source' => $source,
             ];
             $record->update([
                 'status' => $data['status'],

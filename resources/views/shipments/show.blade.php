@@ -130,5 +130,34 @@
         </div>
     </main>
 </div>
+<script>
+(function() {
+    const currentStatus = @json($shipment->status);
+    const initialEventsCount = @json($shipment->trackingEvents->count());
+    const pollInterval = 4000;
+
+    if (currentStatus === 'delivered' || currentStatus === 'cancelled') {
+        return;
+    }
+
+    async function checkShipmentStatus() {
+        const dialog = document.getElementById('shipment-status-dialog');
+        if (dialog && dialog.open) return;
+
+        try {
+            const res = await fetch(window.location.pathname + '?format=json', {
+                headers: { 'Accept': 'application/json' }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.shipment_status && (data.shipment_status !== currentStatus || data.tracking_events_count !== initialEventsCount)) {
+                window.location.reload();
+            }
+        } catch (e) {}
+    }
+
+    setInterval(checkShipmentStatus, pollInterval);
+})();
+</script>
 </body>
 </html>

@@ -12,10 +12,20 @@ class ParcelShipmentSyncService
     public function sync(Parcel $parcel): void
     {
         DB::transaction(function () use ($parcel) {
-            $shipment = Shipment::whereKey($parcel->shipment_id)->lockForUpdate()->first();
+            $shipment = null;
+            if ($parcel->shipment_id) {
+                $shipment = Shipment::whereKey($parcel->shipment_id)->lockForUpdate()->first();
+            }
+            if (! $shipment && $parcel->parcel_number) {
+                $shipment = Shipment::where('tracking_number', $parcel->parcel_number)->lockForUpdate()->first();
+                if ($shipment) {
+                    $parcel->updateQuietly(['shipment_id' => $shipment->id]);
+                }
+            }
             if (! $shipment) {
                 return;
             }
+
             $status = match ($parcel->status) {
                 'received', 'scanned' => 'pending',
                 'sorted', 'assigned' => 'packed',
@@ -26,31 +36,54 @@ class ParcelShipmentSyncService
                 'cancelled' => 'cancelled',
                 default => null,
             };
+
             if (! $status) {
                 return;
             }
+
             if (! ShipmentStatusService::allowed($shipment, $shipment->status, $status)) {
-                throw ValidationException::withMessages(['status' => 'The shipment has already progressed beyond this sorting step.']);
-            }
-            if ($shipment->status !== $status) {
-                app(ShipmentStatusService::class)->transition($shipment, ['status' => $status], 'sorting_center');
                 return;
             }
-            // A real scan/assignment can occur without changing the shipment stage.
-            $shipment->trackingEvents()->create([
-                'status' => $status,
-                'label' => match ($parcel->status) {
-                    'received' => 'Parcel received',
-                    'scanned' => 'Scanned at sorting center',
-                    'sorted' => 'Sorted for delivery',
-                    'assigned' => 'Assigned to rider',
-                    'rider_received', 'in_transit' => 'In transit',
-                    default => ShipmentStatusService::label($status),
-                },
-                'description' => ShipmentStatusService::description($status),
-                'location' => implode(', ', array_filter([$parcel->city, $parcel->province])),
-                'occurred_at' => now(), 'source' => 'sorting_center',
-            ]);
+
+            $riderName = $parcel->rider?->user?->name;
+            $location = implode(', ', array_filter([$parcel->city, $parcel->province]));
+            $description = match ($status) {
+                'out_for_delivery' => $riderName ? "Parcel is out for delivery with courier {$riderName}." : 'Parcel is out for final delivery.',
+                'delivered' => $riderName ? "Parcel was successfully delivered by courier {$riderName}." : 'Parcel has been delivered.',
+                'in_transit' => $riderName ? "Package picked up by courier {$riderName} and is in transit." : 'Parcel is in transit.',
+                default => ShipmentStatusService::description($status),
+            };
+
+            if ($shipment->status !== $status) {
+                app(ShipmentStatusService::class)->transition($shipment, [
+                    'status' => $status,
+                    'label' => ShipmentStatusService::label($status),
+                    'description' => $description,
+                    'location' => $location,
+                ], 'rider_app');
+
+                if ($status === 'delivered' && ! $shipment->delivered_at) {
+                    $shipment->updateQuietly(['delivered_at' => now()]);
+                }
+                return;
+            }
+
+            // If already at status, record event if not logged yet
+            $hasRecentEvent = $shipment->trackingEvents()
+                ->where('status', $status)
+                ->where('occurred_at', '>=', now()->subMinutes(5))
+                ->exists();
+
+            if (! $hasRecentEvent) {
+                $shipment->trackingEvents()->create([
+                    'status' => $status,
+                    'label' => ShipmentStatusService::label($status),
+                    'description' => $description,
+                    'location' => $location,
+                    'occurred_at' => now(),
+                    'source' => 'rider_app',
+                ]);
+            }
         });
     }
 }
