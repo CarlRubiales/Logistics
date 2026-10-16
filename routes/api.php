@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\RiderApiController;
+use App\Http\Controllers\Api\ScannerApiController;
 use App\Http\Controllers\Api\ShipmentController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Middleware\AuthenticateIntegration;
@@ -15,6 +16,15 @@ Route::prefix('v1')->group(function () {
             'status' => 'ok',
             'timestamp' => now()->toIso8601String(),
         ]);
+    });
+
+    // Dedicated Warehouse Barcode Scanner App API
+    Route::prefix('scanner')->group(function () {
+        Route::get('/status', [ScannerApiController::class, 'status']);
+        Route::post('/login', [ScannerApiController::class, 'login']);
+        Route::post('/scan', [ScannerApiController::class, 'scan']);
+        Route::post('/batch-sync', [ScannerApiController::class, 'batchSync']);
+        Route::get('/recent', [ScannerApiController::class, 'recentScans']);
     });
 
     // Mobile Rider API (Public)

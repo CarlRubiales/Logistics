@@ -92,6 +92,18 @@ class RiderApiController extends Controller
         $user->tokens()->where('name', 'flutter-rider-app')->delete();
         $token = $user->createToken('flutter-rider-app')->plainTextToken;
 
+        $profile = $profile?->load('areas');
+        $areas = $profile ? $profile->areas->map(fn ($a) => [
+            'id' => $a->id,
+            'name' => $a->name,
+            'code' => $a->code,
+            'province' => $a->province,
+        ]) : collect();
+        $areasText = $areas->pluck('name')->join(' · ');
+        $routeCode = $areas->isNotEmpty()
+            ? ($areas->first()['code'] ?: $areas->first()['name'])
+            : 'Route Hub';
+
         return response()->json([
             'status' => 'success',
             'token' => $token,
@@ -104,6 +116,9 @@ class RiderApiController extends Controller
                 'license_number' => $profile->license_number ?? '',
                 'availability' => $profile->availability ?? 'offline',
                 'registration_status' => $profile->registration_status ?? 'approved',
+                'assigned_areas' => $areas,
+                'assigned_areas_text' => $areasText,
+                'assigned_route_code' => $routeCode,
             ],
         ]);
     }
@@ -208,7 +223,17 @@ class RiderApiController extends Controller
     public function me(Request $request): JsonResponse
     {
         $user = $request->user();
-        $profile = $user->riderProfile;
+        $profile = $user->riderProfile?->load('areas');
+        $areas = $profile ? $profile->areas->map(fn ($a) => [
+            'id' => $a->id,
+            'name' => $a->name,
+            'code' => $a->code,
+            'province' => $a->province,
+        ]) : collect();
+        $areasText = $areas->pluck('name')->join(' · ');
+        $routeCode = $areas->isNotEmpty()
+            ? ($areas->first()['code'] ?: $areas->first()['name'])
+            : 'Route Hub';
 
         return response()->json([
             'status' => 'success',
@@ -221,6 +246,9 @@ class RiderApiController extends Controller
                 'license_number' => $profile->license_number ?? '',
                 'availability' => $profile->availability ?? 'offline',
                 'registration_status' => $profile->registration_status ?? 'approved',
+                'assigned_areas' => $areas,
+                'assigned_areas_text' => $areasText,
+                'assigned_route_code' => $routeCode,
             ],
         ]);
     }
@@ -267,7 +295,8 @@ class RiderApiController extends Controller
             return response()->json(['status' => 'success', 'data' => []]);
         }
 
-        $parcels = Parcel::where('assigned_rider_id', $profile->id)
+        $parcels = Parcel::with(['area', 'shipment', 'order'])
+            ->where('assigned_rider_id', $profile->id)
             ->latest('assigned_at')
             ->get();
 
@@ -933,8 +962,8 @@ class RiderApiController extends Controller
             'tracking_code' => $p->parcel_number,
             'tracking_number' => $p->shipment?->tracking_number ?? $p->parcel_number,
             'barcode' => $barcode,
-            'store' => 'Lumora Express Hub',
-            'pickup' => $p->sort_bin ? "Sorting Bin {$p->sort_bin}" : 'Central Sorting Hub',
+            'store' => 'Lumora Sorting Hub',
+            'pickup' => $p->sort_bin ? "Sorting Bin {$p->sort_bin}" : 'Lumora Sorting Hub',
             'dropoff' => $dropoff,
             'address' => $dropoff,
             'fee' => '₱150.00',
