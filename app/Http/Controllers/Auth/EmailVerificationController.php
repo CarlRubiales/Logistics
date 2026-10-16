@@ -33,7 +33,15 @@ class EmailVerificationController extends Controller
             'updated_at' => now(),
         ]);
 
-        Mail::to($request->email)->send(new VerificationCodeMail($code));
+        try {
+            Mail::mailer('smtp')->to($request->email)->send(new VerificationCodeMail($code));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to send signup verification code: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Unable to send verification email right now. Please check your email address and try again.',
+            ], 500);
+        }
 
         return response()->json(['message' => 'Verification code sent.']);
     }
