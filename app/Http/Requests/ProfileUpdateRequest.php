@@ -17,10 +17,10 @@ class ProfileUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:255'],
-            'first_name' => ['sometimes', 'required', 'string', 'max:100'],
-            'last_name' => ['sometimes', 'required', 'string', 'max:100'],
-            'middle_initial' => ['sometimes', 'nullable', 'string', 'max:4'],
+            'name' => ['required', 'string', 'max:255', 'not_regex:/\d/'],
+            'first_name' => ['sometimes', 'required', 'string', 'max:100', 'not_regex:/\d/'],
+            'last_name' => ['sometimes', 'required', 'string', 'max:100', 'not_regex:/\d/'],
+            'middle_initial' => ['sometimes', 'nullable', 'string', 'max:4', 'not_regex:/\d/'],
             'sex' => ['sometimes', 'required', Rule::in(['male', 'female'])],
             'contact_number' => ['sometimes', 'required', 'string', 'max:20'],
             'date_of_birth' => ['sometimes', 'required', 'date', 'before:today'],
@@ -39,6 +39,21 @@ class ProfileUpdateRequest extends FormRequest
             'house_number' => ['sometimes', 'nullable', 'string', 'max:100'],
             'shop_name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'shop_description' => ['sometimes', 'nullable', 'string', 'max:2000'],
+        ];
+    }
+
+    /**
+     * Custom validation messages.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'name.not_regex' => "You can't input a number in your name.",
+            'first_name.not_regex' => "You can't input a number in your name.",
+            'last_name.not_regex' => "You can't input a number in your name.",
+            'middle_initial.not_regex' => "You can't input a number in your name.",
         ];
     }
 }

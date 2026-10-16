@@ -90,7 +90,7 @@
         .profile-input,.profile-select{width:100%;height:48px;border:1px solid var(--border);border-radius:14px;background:var(--card);padding:0 14px;color:var(--text);font-size:16px;outline:none;transition:border-color .15s ease,box-shadow .15s ease,background-color .15s ease}
         .profile-input:focus,.profile-select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(201,143,114,.16);background:var(--card)}
         .profile-input[readonly],.profile-select:disabled{background:var(--background);color:var(--muted);cursor:not-allowed}
-        .profile-field-error{display:block;margin-top:6px;color:var(--accent);font-size:13px;line-height:1.4}
+        .profile-field-error{display:block;margin-top:6px;color:#dc2626;font-size:13px;line-height:1.4}
         .profile-radio-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;border:1px solid var(--border);border-radius:14px;background:var(--card);padding:3px}
         .profile-radio{position:relative;display:block;margin:0}
         .profile-radio input{position:absolute;opacity:0;pointer-events:none}

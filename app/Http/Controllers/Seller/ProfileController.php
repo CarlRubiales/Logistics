@@ -25,9 +25,9 @@ class ProfileController extends Controller
         $user = Auth::user();
 
         $validated = $request->validate([
-            'first_name' => ['required', 'string', 'max:100'],
-            'last_name' => ['required', 'string', 'max:100'],
-            'middle_initial' => ['nullable', 'string', 'max:4'],
+            'first_name' => ['required', 'string', 'max:100', 'not_regex:/\d/'],
+            'last_name' => ['required', 'string', 'max:100', 'not_regex:/\d/'],
+            'middle_initial' => ['nullable', 'string', 'max:4', 'not_regex:/\d/'],
             'sex' => ['required', Rule::in(['male', 'female'])],
             'contact_number' => ['required', 'string', 'max:20'],
             'date_of_birth' => ['required', 'date', 'before:today'],
@@ -46,6 +46,10 @@ class ProfileController extends Controller
             'house_number' => ['nullable', 'string', 'max:100'],
             'shop_name' => ['nullable', 'string', 'max:255'],
             'shop_description' => ['nullable', 'string', 'max:2000'],
+        ], [
+            'first_name.not_regex' => "You can't input a number in your name.",
+            'last_name.not_regex' => "You can't input a number in your name.",
+            'middle_initial.not_regex' => "You can't input a number in your name.",
         ]);
 
         $emailChanged = strtolower($validated['email']) !== strtolower($user->email);

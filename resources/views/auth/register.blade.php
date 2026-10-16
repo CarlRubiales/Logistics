@@ -27,7 +27,7 @@
 
         .error-box { background:#fdece6; color:#b8451f; padding:10px 14px; border-radius:12px; margin-bottom:16px; font-size:.85rem; }
         .error-box ul { margin:4px 0 0 18px; padding:0; }
-        .field-error { display:block; margin-top:6px; color:#b8451f; font-size:.74rem; line-height:1.4; }
+        .field-error { display:block; margin-top:6px; color:#dc2626; font-size:.74rem; line-height:1.4; }
         .success-box { background:#eef3ec; color:#5C7355; padding:10px 14px; border-radius:12px; margin-bottom:16px; font-size:.85rem; }
 
         .row-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
@@ -101,9 +101,21 @@
             @csrf
 
             <div class="row-3">
-                <div class="form-group"><label>Last Name</label><input type="text" name="last_name" value="{{ old('last_name') }}" required></div>
-                <div class="form-group"><label>First Name</label><input type="text" name="first_name" value="{{ old('first_name') }}" required></div>
-                <div class="form-group"><label>M.I.</label><input type="text" name="middle_initial" value="{{ old('middle_initial') }}" maxlength="4"></div>
+                <div class="form-group">
+                    <label>Last Name</label>
+                    <input type="text" name="last_name" value="{{ old('last_name') }}" required data-no-number-name>
+                    <span class="field-error" data-name-error @if (! $errors->has('last_name')) style="display:none;" @endif>{{ $errors->first('last_name') ?: "You can't input a number in your name." }}</span>
+                </div>
+                <div class="form-group">
+                    <label>First Name</label>
+                    <input type="text" name="first_name" value="{{ old('first_name') }}" required data-no-number-name>
+                    <span class="field-error" data-name-error @if (! $errors->has('first_name')) style="display:none;" @endif>{{ $errors->first('first_name') ?: "You can't input a number in your name." }}</span>
+                </div>
+                <div class="form-group">
+                    <label>M.I.</label>
+                    <input type="text" name="middle_initial" value="{{ old('middle_initial') }}" maxlength="4" data-no-number-name>
+                    <span class="field-error" data-name-error @if (! $errors->has('middle_initial')) style="display:none;" @endif>{{ $errors->first('middle_initial') ?: "You can't input a number in your name." }}</span>
+                </div>
             </div>
 
             <div class="row-2">
@@ -294,7 +306,38 @@ function confirmCode() {
     });
 }
 
+const NAME_NUMBER_MSG = "You can't input a number in your name.";
+const nameInputs = document.querySelectorAll('[data-no-number-name]');
+
+function checkNameInput(input) {
+    const hasNumber = /\d/.test(input.value);
+    const err = input.parentElement.querySelector('[data-name-error]');
+    if (err) {
+        if (hasNumber) {
+            err.textContent = NAME_NUMBER_MSG;
+            err.style.display = 'block';
+            input.style.borderColor = '#dc2626';
+        } else {
+            err.style.display = 'none';
+            input.style.borderColor = '';
+        }
+    }
+    return !hasNumber;
+}
+
+nameInputs.forEach((input) => {
+    input.addEventListener('input', () => checkNameInput(input));
+});
+
 document.getElementById('registerForm').addEventListener('submit', function(e) {
+    let allNamesValid = true;
+    nameInputs.forEach((input) => {
+        if (!checkNameInput(input)) allNamesValid = false;
+    });
+    if (!allNamesValid) {
+        e.preventDefault();
+        return;
+    }
     if (document.getElementById('emailVerifiedFlag').value !== '1') {
         e.preventDefault();
         const note = document.getElementById('verifyNote');

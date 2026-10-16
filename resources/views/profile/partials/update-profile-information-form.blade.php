@@ -112,6 +112,49 @@ document.addEventListener('DOMContentLoaded', function () {
         age.value = Number.isFinite(years) && years >= 0 ? years : '';
     }
 
+    const middleInitial = document.getElementById('middle_initial');
+    const profileForm = document.getElementById('profile-information-form');
+    const nameInputs = [firstName, lastName, middleInitial].filter(Boolean);
+    const NAME_NUMBER_MSG = "You can't input a number in your name.";
+
+    function checkNameInput(input) {
+        const hasNumber = /\d/.test(input.value);
+        const fieldWrap = input.closest('.profile-field');
+        let err = fieldWrap?.querySelector('.profile-field-error');
+
+        if (hasNumber) {
+            if (!err && fieldWrap) {
+                err = document.createElement('small');
+                err.className = 'profile-field-error';
+                fieldWrap.appendChild(err);
+            }
+            if (err) {
+                err.textContent = NAME_NUMBER_MSG;
+                err.style.display = 'block';
+                err.style.color = '#dc2626';
+            }
+            input.style.borderColor = '#dc2626';
+        } else {
+            if (err && err.textContent === NAME_NUMBER_MSG) {
+                err.style.display = 'none';
+            }
+            input.style.borderColor = '';
+        }
+        return !hasNumber;
+    }
+
+    nameInputs.forEach((input) => {
+        input.addEventListener('input', () => checkNameInput(input));
+    });
+
+    profileForm?.addEventListener('submit', function (e) {
+        let valid = true;
+        nameInputs.forEach((input) => {
+            if (!checkNameInput(input)) valid = false;
+        });
+        if (!valid) e.preventDefault();
+    });
+
     firstName?.addEventListener('input', syncFullName);
     lastName?.addEventListener('input', syncFullName);
     birthDate?.addEventListener('change', syncAge);

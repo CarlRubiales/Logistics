@@ -30,9 +30,9 @@ class RegisteredUserController extends Controller
         $request->session()->forget('google_onboarding');
 
         $rules = [
-            'first_name' => ['required', 'string', 'max:100'],
-            'last_name' => ['required', 'string', 'max:100'],
-            'middle_initial' => ['nullable', 'string', 'max:4'],
+            'first_name' => ['required', 'string', 'max:100', 'not_regex:/\d/'],
+            'last_name' => ['required', 'string', 'max:100', 'not_regex:/\d/'],
+            'middle_initial' => ['nullable', 'string', 'max:4', 'not_regex:/\d/'],
             'sex' => ['required', 'in:male,female'],
             'contact_number' => ['required', 'string', 'max:20'],
             'date_of_birth' => ['required', 'date', 'before:today'],
@@ -47,7 +47,11 @@ class RegisteredUserController extends Controller
             ...SellerApplicationFields::registrationRules(),
         ];
 
-        $validated = $request->validate($rules);
+        $validated = $request->validate($rules, [
+            'first_name.not_regex' => "You can't input a number in your name.",
+            'last_name.not_regex' => "You can't input a number in your name.",
+            'middle_initial.not_regex' => "You can't input a number in your name.",
+        ]);
 
         // Never trust the frontend's "Verified" state; check the DB record directly.
         $emailVerified = DB::table('email_verification_codes')

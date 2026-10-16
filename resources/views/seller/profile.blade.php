@@ -283,6 +283,50 @@
         province.addEventListener('change', loadMunicipalities);
         municipality.addEventListener('change', loadBarangays);
         loadProvinces();
+
+        const nameInputs = ['first_name', 'last_name', 'middle_initial']
+            .map((id) => document.getElementById(id))
+            .filter(Boolean);
+        const NAME_NUMBER_MSG = "You can't input a number in your name.";
+
+        function checkNameInput(input) {
+            const hasNumber = /\d/.test(input.value);
+            const fieldWrap = input.closest('.form-field');
+            let err = fieldWrap?.querySelector('.field-error');
+
+            if (hasNumber) {
+                if (!err && fieldWrap) {
+                    err = document.createElement('small');
+                    err.className = 'field-error';
+                    fieldWrap.appendChild(err);
+                }
+                if (err) {
+                    err.textContent = NAME_NUMBER_MSG;
+                    err.style.display = 'block';
+                    err.style.color = '#dc2626';
+                }
+                input.style.borderColor = '#dc2626';
+            } else {
+                if (err && err.textContent === NAME_NUMBER_MSG) {
+                    err.style.display = 'none';
+                }
+                input.style.borderColor = '';
+            }
+            return !hasNumber;
+        }
+
+        nameInputs.forEach((input) => {
+            input.addEventListener('input', () => checkNameInput(input));
+        });
+
+        const profileForm = document.querySelector('.profile-form');
+        profileForm?.addEventListener('submit', function (e) {
+            let valid = true;
+            nameInputs.forEach((input) => {
+                if (!checkNameInput(input)) valid = false;
+            });
+            if (!valid) e.preventDefault();
+        });
     });
     </script>
 @endsection
