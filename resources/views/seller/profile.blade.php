@@ -288,31 +288,34 @@
             .map((id) => document.getElementById(id))
             .filter(Boolean);
         const NAME_NUMBER_MSG = "You can't input a number in your name.";
+        const NAME_SPECIAL_MSG = "You can't input special characters in your name (only ñ and Ñ are allowed).";
 
         function checkNameInput(input) {
-            const hasNumber = /\d/.test(input.value);
+            const val = input.value;
+            const hasNumber = /\d/.test(val);
+            const hasSpecial = /[^A-Za-zñÑ\s\d]/.test(val);
             const fieldWrap = input.closest('.form-field');
             let err = fieldWrap?.querySelector('.field-error');
 
-            if (hasNumber) {
+            if (hasNumber || hasSpecial) {
                 if (!err && fieldWrap) {
                     err = document.createElement('small');
                     err.className = 'field-error';
                     fieldWrap.appendChild(err);
                 }
                 if (err) {
-                    err.textContent = NAME_NUMBER_MSG;
+                    err.textContent = hasNumber ? NAME_NUMBER_MSG : NAME_SPECIAL_MSG;
                     err.style.display = 'block';
                     err.style.color = '#dc2626';
                 }
                 input.style.borderColor = '#dc2626';
             } else {
-                if (err && err.textContent === NAME_NUMBER_MSG) {
+                if (err && (err.textContent === NAME_NUMBER_MSG || err.textContent === NAME_SPECIAL_MSG)) {
                     err.style.display = 'none';
                 }
                 input.style.borderColor = '';
             }
-            return !hasNumber;
+            return !hasNumber && !hasSpecial;
         }
 
         nameInputs.forEach((input) => {

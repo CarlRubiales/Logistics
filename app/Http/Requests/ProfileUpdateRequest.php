@@ -17,10 +17,10 @@ class ProfileUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:255', 'not_regex:/\d/'],
-            'first_name' => ['sometimes', 'required', 'string', 'max:100', 'not_regex:/\d/'],
-            'last_name' => ['sometimes', 'required', 'string', 'max:100', 'not_regex:/\d/'],
-            'middle_initial' => ['sometimes', 'nullable', 'string', 'max:4', 'not_regex:/\d/'],
+            'name' => ['required', 'string', 'max:255', 'not_regex:/\d/', 'regex:/^[A-Za-zñÑ\s]+$/u'],
+            'first_name' => ['sometimes', 'required', 'string', 'max:100', 'not_regex:/\d/', 'regex:/^[A-Za-zñÑ\s]+$/u'],
+            'last_name' => ['sometimes', 'required', 'string', 'max:100', 'not_regex:/\d/', 'regex:/^[A-Za-zñÑ\s]+$/u'],
+            'middle_initial' => ['sometimes', 'nullable', 'string', 'max:4', 'not_regex:/\d/', 'regex:/^[A-Za-zñÑ\s]+$/u'],
             'sex' => ['sometimes', 'required', Rule::in(['male', 'female'])],
             'contact_number' => ['sometimes', 'required', 'string', 'max:20'],
             'date_of_birth' => ['sometimes', 'required', 'date', 'before:today'],
@@ -54,6 +54,10 @@ class ProfileUpdateRequest extends FormRequest
             'first_name.not_regex' => "You can't input a number in your name.",
             'last_name.not_regex' => "You can't input a number in your name.",
             'middle_initial.not_regex' => "You can't input a number in your name.",
+            'name.regex' => "You can't input special characters in your name (only ñ and Ñ are allowed).",
+            'first_name.regex' => "You can't input special characters in your name (only ñ and Ñ are allowed).",
+            'last_name.regex' => "You can't input special characters in your name (only ñ and Ñ are allowed).",
+            'middle_initial.regex' => "You can't input special characters in your name (only ñ and Ñ are allowed).",
         ];
     }
 }

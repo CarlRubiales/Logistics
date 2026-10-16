@@ -25,9 +25,9 @@ class ProfileController extends Controller
         $user = Auth::user();
 
         $validated = $request->validate([
-            'first_name' => ['required', 'string', 'max:100', 'not_regex:/\d/'],
-            'last_name' => ['required', 'string', 'max:100', 'not_regex:/\d/'],
-            'middle_initial' => ['nullable', 'string', 'max:4', 'not_regex:/\d/'],
+            'first_name' => ['required', 'string', 'max:100', 'not_regex:/\d/', 'regex:/^[A-Za-zñÑ\s]+$/u'],
+            'last_name' => ['required', 'string', 'max:100', 'not_regex:/\d/', 'regex:/^[A-Za-zñÑ\s]+$/u'],
+            'middle_initial' => ['nullable', 'string', 'max:4', 'not_regex:/\d/', 'regex:/^[A-Za-zñÑ\s]+$/u'],
             'sex' => ['required', Rule::in(['male', 'female'])],
             'contact_number' => ['required', 'string', 'max:20'],
             'date_of_birth' => ['required', 'date', 'before:today'],
@@ -50,6 +50,9 @@ class ProfileController extends Controller
             'first_name.not_regex' => "You can't input a number in your name.",
             'last_name.not_regex' => "You can't input a number in your name.",
             'middle_initial.not_regex' => "You can't input a number in your name.",
+            'first_name.regex' => "You can't input special characters in your name (only ñ and Ñ are allowed).",
+            'last_name.regex' => "You can't input special characters in your name (only ñ and Ñ are allowed).",
+            'middle_initial.regex' => "You can't input special characters in your name (only ñ and Ñ are allowed).",
         ]);
 
         $emailChanged = strtolower($validated['email']) !== strtolower($user->email);

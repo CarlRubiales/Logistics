@@ -307,14 +307,21 @@ function confirmCode() {
 }
 
 const NAME_NUMBER_MSG = "You can't input a number in your name.";
+const NAME_SPECIAL_MSG = "You can't input special characters in your name (only ñ and Ñ are allowed).";
 const nameInputs = document.querySelectorAll('[data-no-number-name]');
 
 function checkNameInput(input) {
-    const hasNumber = /\d/.test(input.value);
+    const val = input.value;
+    const hasNumber = /\d/.test(val);
+    const hasSpecial = /[^A-Za-zñÑ\s\d]/.test(val);
     const err = input.parentElement.querySelector('[data-name-error]');
     if (err) {
         if (hasNumber) {
             err.textContent = NAME_NUMBER_MSG;
+            err.style.display = 'block';
+            input.style.borderColor = '#dc2626';
+        } else if (hasSpecial) {
+            err.textContent = NAME_SPECIAL_MSG;
             err.style.display = 'block';
             input.style.borderColor = '#dc2626';
         } else {
@@ -322,7 +329,7 @@ function checkNameInput(input) {
             input.style.borderColor = '';
         }
     }
-    return !hasNumber;
+    return !hasNumber && !hasSpecial;
 }
 
 nameInputs.forEach((input) => {
