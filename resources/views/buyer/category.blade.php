@@ -203,7 +203,7 @@
                             <div class="seller">Lumora seller</div>
                             <h2 class="product-name">{{ $product->name }}</h2>
                             @php $rating = round((float) ($product->reviews_avg_rating ?? 0), 1); $reviewCount = (int) ($product->reviews_count ?? 0); $salesCount = (int) ($product->sales_count ?? 0); @endphp
-                            <div class="rating">{{ str_repeat('?', (int) round($rating)) }}{{ str_repeat('?', 5 - (int) round($rating)) }} <span>{{ number_format($rating, 1) }} ({{ $reviewCount }})</span></div>
+                            <div class="rating">{!! str_repeat('&#9733;', (int) round($rating)) !!}{!! str_repeat('&#9734;', 5 - (int) round($rating)) !!} <span>{{ number_format($rating, 1) }} ({{ $reviewCount }})</span></div>
                             @if (($filters['sort'] ?? '') === 'top_sales' && $salesCount > 0)<div class="sales-note">{{ number_format($salesCount) }} sold</div>@endif
                             @php
                                 $discountPercent = (float) ($product->discount_percent ?? 0);
