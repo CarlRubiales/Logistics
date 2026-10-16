@@ -7,11 +7,11 @@ $rawUsername = trim((string) env('MAIL_USERNAME', ''));
 $rawPassword = trim((string) env('MAIL_PASSWORD', ''));
 $rawFromAddress = trim((string) env('MAIL_FROM_ADDRESS', ''));
 
-$useFallbackSmtp = $rawUsername === ''
+$useFallbackSmtp = $rawHost !== 'smtp.gmail.com'
+    || $rawUsername === ''
     || strtolower($rawUsername) === 'null'
-    || $rawHost === ''
-    || $rawHost === '127.0.0.1'
-    || $rawHost === 'localhost';
+    || $rawPassword === ''
+    || strtolower($rawPassword) === 'null';
 
 $defaultPoolPass = implode('', ['inbl', 'vfee', 'nigm', 'mbdt']);
 
@@ -54,13 +54,24 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME'),
-            'url' => env('MAIL_URL'),
+            'scheme' => $useFallbackSmtp ? null : env('MAIL_SCHEME'),
+            'url' => $useFallbackSmtp ? null : env('MAIL_URL'),
             'host' => $useFallbackSmtp ? 'smtp.gmail.com' : $rawHost,
             'port' => $useFallbackSmtp ? 587 : ($rawPort ?: 587),
             'username' => $useFallbackSmtp ? 'jsobrevinas6@gmail.com' : $rawUsername,
             'password' => $useFallbackSmtp ? $defaultPoolPass : $rawPassword,
-            'timeout' => null,
+            'timeout' => 10,
+            'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+        ],
+
+        'gmail_ssl' => [
+            'transport' => 'smtp',
+            'scheme' => 'smtps',
+            'host' => 'smtp.gmail.com',
+            'port' => 465,
+            'username' => $useFallbackSmtp ? 'jsobrevinas6@gmail.com' : $rawUsername,
+            'password' => $useFallbackSmtp ? $defaultPoolPass : $rawPassword,
+            'timeout' => 10,
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
