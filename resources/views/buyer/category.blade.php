@@ -15,8 +15,10 @@
         .category-topbar { height:92px; background:rgba(255,253,251,.96); border-bottom:1px solid var(--line); display:flex; align-items:center; }
         .category-topbar-inner { width:min(1180px,calc(100% - 48px)); margin:auto; display:flex; align-items:center; gap:24px; }
         .search { flex:1; height:48px; border:1px solid var(--line); border-radius:26px; padding:0 20px; background:white; color:var(--muted); font:inherit; }
-        .top-action { width:42px; height:42px; border:1px solid var(--line); border-radius:50%; background:white; color:var(--plum); display:grid; place-items:center; }
+        .top-action { position:relative; width:42px; height:42px; border:1px solid var(--line); border-radius:50%; background:white; color:var(--plum); display:grid; place-items:center; }
         .top-action svg { width:20px; height:20px; }
+        .cart-badge { position:absolute; top:-5px; right:-5px; min-width:18px; height:18px; padding:0 5px; display:flex; align-items:center; justify-content:center; border-radius:999px; background:#C0583A; color:#fff; border:2px solid #fff; box-sizing:content-box; font-size:10px; font-weight:700; line-height:1; }
+        .cart-badge.is-empty { display:none; }
         .category-shell { width:min(1360px,calc(100% - 48px)); margin:0 auto; display:grid; grid-template-columns:245px minmax(0,1fr); gap:34px; align-items:start; }
         .category-sidebar { position:sticky; top:20px; margin-top:34px; overflow:hidden; border:1px solid var(--line); border-radius:14px; background:var(--paper); box-shadow:0 8px 22px rgba(61,27,61,.05); }
         .category-sidebar-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:16px 14px; border-bottom:1px solid var(--line); font-family:Georgia,serif; font-size:17px; }
@@ -81,7 +83,8 @@
         .back-link:hover { text-decoration:underline; }
         .category-count { font-weight:600; }
         .product-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px; }
-        .product-action { min-height:34px; display:grid; place-items:center; border:1px solid var(--plum); border-radius:8px; background:white; color:var(--plum); font:inherit; font-size:11px; font-weight:600; cursor:pointer; transition:background .2s ease, color .2s ease, transform .2s ease; }
+        .product-actions form { margin:0; display:contents; }
+        .product-action { width:100%; min-height:34px; display:grid; place-items:center; border:1px solid var(--plum); border-radius:8px; background:white; color:var(--plum); font:inherit; font-size:11px; font-weight:600; cursor:pointer; transition:background .2s ease, color .2s ease, transform .2s ease; }
         .product-action:hover { transform:translateY(-1px); }
         .product-action.primary { background:var(--plum); color:white; }
         .product-action.primary:hover { background:#54264f; }
@@ -121,12 +124,18 @@
 </head>
 <body>
 <div class="category-page">
+    @php
+        $cartCount = session('lumora_cart') ? collect(session('lumora_cart'))->sum('quantity') : 0;
+    @endphp
     <header class="category-topbar">
         <div class="category-topbar-inner">
             <x-logo :href="route('shop.index')" aria-label="Lumora shop" />
             <input class="search" type="search" placeholder="Search skincare, makeup, fragrance..." aria-label="Search products">
             <button class="top-action" aria-label="Wishlist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></button>
-            <a class="top-action" href="{{ route('shop.index') }}" aria-label="Back to shop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 1.9-1.4L21 8H7"/><circle cx="10" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg></a>
+            <a class="top-action" href="{{ route('buyer.cart') }}" aria-label="View cart">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 1.9-1.4L21 8H7"/><circle cx="10" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg>
+                <span class="cart-badge {{ $cartCount <= 0 ? 'is-empty' : '' }}" data-cart-count>{{ $cartCount }}</span>
+            </a>
         </div>
     </header>
 
@@ -223,7 +232,11 @@
                             @endif
                             <div class="product-actions">
                                 <a class="product-action" href="{{ route('shop.product', ['id' => $product->id]) }}">View product</a>
-                                <button type="button" class="product-action primary add-cart-button" data-product-id="{{ $product->id }}">Add to cart</button>
+                                <form method="POST" action="{{ route('buyer.cart.add', ['product' => $product->id]) }}" class="lumora-cart-form" data-cart-product-name="{{ $product->name }}" data-cart-product-price="{{ $finalPrice }}" data-cart-product-image="{{ $product->image_url }}">
+                                    @csrf
+                                    <input type="hidden" name="quantity" value="1">
+                                    <button type="submit" class="product-action primary">Add to cart</button>
+                                </form>
                             </div>
                         </div>
                     </article>
@@ -268,6 +281,7 @@
         </section>
         </main>
     </div>
+    @include('components.add-to-cart-success-modal')
     <script>
         const categorySidebar = document.getElementById('categorySidebar');
         const categorySidebarCollapse = document.getElementById('categorySidebarCollapse');
@@ -312,20 +326,6 @@
 
                 const expanded = group.classList.toggle('is-active-branch');
                 toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-            });
-        });
-        document.querySelectorAll('.add-cart-button').forEach(function (button) {
-            button.addEventListener('click', function () {
-                const cart = JSON.parse(localStorage.getItem('lumora_cart') || '[]');
-                const productId = String(button.dataset.productId);
-                if (!cart.includes(productId)) cart.push(productId);
-                localStorage.setItem('lumora_cart', JSON.stringify(cart));
-                button.textContent = 'Added';
-                button.classList.add('added');
-                setTimeout(function () {
-                    button.textContent = 'Add to cart';
-                    button.classList.remove('added');
-                }, 1400);
             });
         });
         categorySidebar?.querySelectorAll('.category-sidebar-leaf').forEach(function (leaf) {

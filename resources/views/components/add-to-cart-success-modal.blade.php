@@ -85,7 +85,12 @@
                 });
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok) throw new Error(payload.message || 'Unable to add this product to your cart.');
-                document.querySelectorAll('[data-cart-count]').forEach(el => { if (payload.cart_count !== undefined) el.textContent = payload.cart_count; });
+                document.querySelectorAll('[data-cart-count]').forEach(el => {
+                    if (payload.cart_count !== undefined) {
+                        el.textContent = payload.cart_count;
+                        el.classList.toggle('is-empty', Number(payload.cart_count) <= 0);
+                    }
+                });
                 openModal(form, payload);
             } catch (error) {
                 window.alert(error.message);
