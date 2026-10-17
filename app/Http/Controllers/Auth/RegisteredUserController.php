@@ -62,6 +62,10 @@ class RegisteredUserController extends Controller
             'date_of_birth.before_or_equal' => 'You must be at least 18 years old to sign up.',
             'postal_code.max' => 'Postal code must be a maximum of 4 digits.',
             'postal_code.regex' => 'Postal code must contain numbers only (maximum 4 digits).',
+            'id_document.mimes' => 'Valid ID must be a JPG, PNG, or PDF file only.',
+            'id_document.max' => 'Valid ID file size must not exceed 5MB.',
+            'business_permit.mimes' => 'Business Permit must be a JPG, PNG, or PDF file only.',
+            'business_permit.max' => 'Business Permit file size must not exceed 5MB.',
         ]);
 
         $age = \Carbon\Carbon::parse($validated['date_of_birth'])->age;

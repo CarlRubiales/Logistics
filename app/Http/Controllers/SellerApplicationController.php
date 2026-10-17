@@ -30,7 +30,12 @@ class SellerApplicationController extends Controller
             return $eligibilityRedirect;
         }
 
-        $validated = $request->validate(SellerApplicationFields::applicationRules());
+        $validated = $request->validate(SellerApplicationFields::applicationRules(), [
+            'id_document.mimes' => 'Valid ID must be a JPG, PNG, or PDF file only.',
+            'id_document.max' => 'Valid ID file size must not exceed 5MB.',
+            'business_permit.mimes' => 'Business Permit must be a JPG, PNG, or PDF file only.',
+            'business_permit.max' => 'Business Permit file size must not exceed 5MB.',
+        ]);
 
         $request->user()->update([
             'contact_number' => $validated['contact_number'],
