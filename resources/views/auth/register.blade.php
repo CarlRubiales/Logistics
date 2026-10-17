@@ -32,6 +32,7 @@
 
         .row-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
         .row-3 { display:grid; grid-template-columns:1fr 1fr 70px; gap:12px; }
+        .row-3-equal { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
         .form-group { margin-bottom:14px; }
         label { display:block; margin-bottom:6px; font-size:.8rem; font-weight:500; color:var(--text-dark); }
         input[type=text], input[type=email], input[type=password], input[type=date], input[type=tel], select {
@@ -103,12 +104,12 @@
             <div class="row-3">
                 <div class="form-group">
                     <label>Last Name</label>
-                    <input type="text" name="last_name" value="{{ old('last_name') }}" required data-no-number-name>
+                    <input type="text" name="last_name" value="{{ old('last_name') }}" minlength="2" maxlength="50" required data-no-number-name>
                     <span class="field-error" data-name-error @if (! $errors->has('last_name')) style="display:none;" @endif>{{ $errors->first('last_name') ?: "You can't input a number in your name." }}</span>
                 </div>
                 <div class="form-group">
                     <label>First Name</label>
-                    <input type="text" name="first_name" value="{{ old('first_name') }}" required data-no-number-name>
+                    <input type="text" name="first_name" value="{{ old('first_name') }}" minlength="2" maxlength="50" required data-no-number-name>
                     <span class="field-error" data-name-error @if (! $errors->has('first_name')) style="display:none;" @endif>{{ $errors->first('first_name') ?: "You can't input a number in your name." }}</span>
                 </div>
                 <div class="form-group">
@@ -144,7 +145,8 @@
             <div class="row-2">
                 <div class="form-group">
                     <label>Date of Birth</label>
-                    <input type="date" name="date_of_birth" id="date_of_birth" value="{{ old('date_of_birth') }}" required onchange="computeAge()">
+                    <input type="date" name="date_of_birth" id="date_of_birth" value="{{ old('date_of_birth') }}" required onchange="computeAge()" oninput="computeAge()">
+                    <span class="field-error" id="ageError" @if (! $errors->has('date_of_birth')) style="display:none;" @endif>{{ $errors->first('date_of_birth') ?: 'You must be at least 18 years old to sign up.' }}</span>
                 </div>
                 <div class="form-group">
                     <label>Age</label>
@@ -170,8 +172,8 @@
             <div class="section-label">Address</div>
             @include('partials.address-fields', [
                 'fieldPrefix' => 'registerAddress',
-                'selectGridClass' => 'row-3',
-                'streetGridClass' => 'row-2',
+                'selectGridClass' => 'row-3-equal',
+                'streetGridClass' => 'row-3-equal',
             ])
 
             <div class="section-label">Account</div>
@@ -216,10 +218,16 @@
 <script>
 const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
 
-// ---------- Age auto-compute ----------
+// ---------- Age auto-compute & 18+ check ----------
 function computeAge() {
-    const dob = document.getElementById('date_of_birth').value;
-    if (!dob) return;
+    const dobInput = document.getElementById('date_of_birth');
+    const dob = dobInput.value;
+    const ageErr = document.getElementById('ageError');
+    if (!dob) {
+        document.getElementById('ageDisplay').value = '—';
+        document.getElementById('ageHidden').value = '';
+        return false;
+    }
     const birth = new Date(dob);
     const today = new Date();
     let age = today.getFullYear() - birth.getFullYear();
@@ -227,7 +235,28 @@ function computeAge() {
     if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
     document.getElementById('ageDisplay').value = age;
     document.getElementById('ageHidden').value = age;
+
+    if (age < 18) {
+        if (ageErr) {
+            ageErr.textContent = 'You must be at least 18 years old to sign up.';
+            ageErr.style.display = 'block';
+        }
+        dobInput.style.borderColor = '#dc2626';
+        return false;
+    } else {
+        if (ageErr) {
+            ageErr.style.display = 'none';
+        }
+        dobInput.style.borderColor = '';
+        return true;
+    }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('date_of_birth')?.value) {
+        computeAge();
+    }
+});
 
 // ---------- Email verification (unchanged) ----------
 function sendCode() {
@@ -308,12 +337,16 @@ function confirmCode() {
 
 const NAME_NUMBER_MSG = "You can't input a number in your name.";
 const NAME_SPECIAL_MSG = "You can't input special characters in your name (only ñ and Ñ are allowed).";
+const NAME_LENGTH_MSG = "Name and surname must be between 2 and 50 characters.";
 const nameInputs = document.querySelectorAll('[data-no-number-name]');
 
-function checkNameInput(input) {
+function checkNameInput(input, checkMinLength = false) {
     const val = input.value;
+    const trimmed = val.trim();
+    const isFullNameField = input.name === 'first_name' || input.name === 'last_name';
     const hasNumber = /\d/.test(val);
     const hasSpecial = /[^A-Za-zñÑ\s\d]/.test(val);
+    const tooShortOrLong = isFullNameField && ((checkMinLength && trimmed.length < 2) || (trimmed.length > 0 && trimmed.length < 2) || trimmed.length > 50);
     const err = input.parentElement.querySelector('[data-name-error]');
     if (err) {
         if (hasNumber) {
@@ -324,24 +357,61 @@ function checkNameInput(input) {
             err.textContent = NAME_SPECIAL_MSG;
             err.style.display = 'block';
             input.style.borderColor = '#dc2626';
+        } else if (tooShortOrLong) {
+            err.textContent = NAME_LENGTH_MSG;
+            err.style.display = 'block';
+            input.style.borderColor = '#dc2626';
         } else {
             err.style.display = 'none';
             input.style.borderColor = '';
         }
     }
-    return !hasNumber && !hasSpecial;
+    return !hasNumber && !hasSpecial && !tooShortOrLong;
 }
 
 nameInputs.forEach((input) => {
-    input.addEventListener('input', () => checkNameInput(input));
+    input.addEventListener('input', () => checkNameInput(input, false));
 });
 
-document.getElementById('registerForm').addEventListener('submit', function(e) {
+function validateSignupFields() {
     let allNamesValid = true;
     nameInputs.forEach((input) => {
-        if (!checkNameInput(input)) allNamesValid = false;
+        if (!checkNameInput(input, true)) allNamesValid = false;
     });
     if (!allNamesValid) {
+        return false;
+    }
+    if (!computeAge()) {
+        const dobInput = document.getElementById('date_of_birth');
+        const ageErr = document.getElementById('ageError');
+        if (ageErr) {
+            ageErr.textContent = dobInput.value
+                ? 'You must be at least 18 years old to sign up.'
+                : 'Please enter your date of birth.';
+            ageErr.style.display = 'block';
+        }
+        dobInput.style.borderColor = '#dc2626';
+        dobInput.focus();
+        return false;
+    }
+    const postalInput = document.querySelector('[data-postal-code]');
+    if (postalInput && postalInput.value.trim() !== '') {
+        if (!/^\d{1,4}$/.test(postalInput.value.trim())) {
+            const postalErr = postalInput.parentElement?.querySelector('[data-postal-error]');
+            if (postalErr) {
+                postalErr.textContent = 'Postal code must be a maximum of 4 digits.';
+                postalErr.style.display = 'block';
+            }
+            postalInput.style.borderColor = '#dc2626';
+            postalInput.focus();
+            return false;
+        }
+    }
+    return true;
+}
+
+document.getElementById('registerForm').addEventListener('submit', function(e) {
+    if (!validateSignupFields()) {
         e.preventDefault();
         return;
     }
@@ -354,6 +424,9 @@ document.getElementById('registerForm').addEventListener('submit', function(e) {
 });
 
 function openSellerModal() {
+    if (!validateSignupFields()) {
+        return;
+    }
     document.getElementById('sellerModalOverlay').style.display = 'flex';
     document.getElementById('business_name').required = true;
     document.getElementById('category').required = true;

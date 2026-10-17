@@ -34,6 +34,7 @@ class User extends Authenticatable
         'barangay',
         'street',
         'house_number',
+        'postal_code',
         'email',
         'google_id',
         'avatar',

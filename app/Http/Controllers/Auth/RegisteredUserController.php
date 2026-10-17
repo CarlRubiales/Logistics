@@ -30,17 +30,18 @@ class RegisteredUserController extends Controller
         $request->session()->forget('google_onboarding');
 
         $rules = [
-            'first_name' => ['required', 'string', 'max:100', 'not_regex:/\d/', 'regex:/^[A-Za-zñÑ\s]+$/u'],
-            'last_name' => ['required', 'string', 'max:100', 'not_regex:/\d/', 'regex:/^[A-Za-zñÑ\s]+$/u'],
+            'first_name' => ['required', 'string', 'min:2', 'max:50', 'not_regex:/\d/', 'regex:/^[A-Za-zñÑ\s]+$/u'],
+            'last_name' => ['required', 'string', 'min:2', 'max:50', 'not_regex:/\d/', 'regex:/^[A-Za-zñÑ\s]+$/u'],
             'middle_initial' => ['nullable', 'string', 'max:4', 'not_regex:/\d/', 'regex:/^[A-Za-zñÑ\s]+$/u'],
             'sex' => ['required', 'in:male,female'],
             'contact_number' => ['required', 'string', 'max:20'],
-            'date_of_birth' => ['required', 'date', 'before:today'],
+            'date_of_birth' => ['required', 'date', 'before_or_equal:' . now()->subYears(18)->toDateString()],
             'province' => ['required', 'string', 'max:255'],
             'municipality' => ['required', 'string', 'max:255'],
             'barangay' => ['required', 'string', 'max:255'],
             'street' => ['nullable', 'string', 'max:255'],
             'house_number' => ['nullable', 'string', 'max:100'],
+            'postal_code' => ['nullable', 'string', 'max:4', 'regex:/^\d{1,4}$/'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
             'signup_type' => ['in:buyer,seller'],
@@ -48,13 +49,26 @@ class RegisteredUserController extends Controller
         ];
 
         $validated = $request->validate($rules, [
+            'first_name.min' => 'First name must be between 2 and 50 characters.',
+            'first_name.max' => 'First name must be between 2 and 50 characters.',
+            'last_name.min' => 'Last name must be between 2 and 50 characters.',
+            'last_name.max' => 'Last name must be between 2 and 50 characters.',
             'first_name.not_regex' => "You can't input a number in your name.",
             'last_name.not_regex' => "You can't input a number in your name.",
             'middle_initial.not_regex' => "You can't input a number in your name.",
             'first_name.regex' => "You can't input special characters in your name (only ñ and Ñ are allowed).",
             'last_name.regex' => "You can't input special characters in your name (only ñ and Ñ are allowed).",
             'middle_initial.regex' => "You can't input special characters in your name (only ñ and Ñ are allowed).",
+            'date_of_birth.before_or_equal' => 'You must be at least 18 years old to sign up.',
+            'postal_code.max' => 'Postal code must be a maximum of 4 digits.',
+            'postal_code.regex' => 'Postal code must contain numbers only (maximum 4 digits).',
         ]);
+
+        $age = \Carbon\Carbon::parse($validated['date_of_birth'])->age;
+
+        if ($age < 18) {
+            return back()->withErrors(['date_of_birth' => 'You must be at least 18 years old to sign up.'])->withInput();
+        }
 
         // Never trust the frontend's "Verified" state; check the DB record directly.
         $emailVerified = DB::table('email_verification_codes')
@@ -66,11 +80,10 @@ class RegisteredUserController extends Controller
             return back()->withErrors(['email' => 'Please verify your email before signing up.'])->withInput();
         }
 
-        $age = \Carbon\Carbon::parse($validated['date_of_birth'])->age;
         $signupType = $request->signup_type ?? 'buyer';
         $email = $validated['email'];
 
-        $user = User::create([
+        $userAttributes = [
             'name' => trim($validated['first_name'] . ' ' . $validated['last_name']),
             'first_name' => $validated['first_name'],
             'last_name' => $validated['last_name'],
@@ -89,7 +102,13 @@ class RegisteredUserController extends Controller
             'password' => Hash::make($validated['password']),
             'role' => 'buyer',
             'status' => 'active',
-        ]);
+        ];
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('users', 'postal_code')) {
+            $userAttributes['postal_code'] = $validated['postal_code'] ?? null;
+        }
+
+        $user = User::create($userAttributes);
 
         if ($signupType === 'seller') {
             SellerApplicationFields::createFromRequest($request, $user->id);

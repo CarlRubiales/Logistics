@@ -13,6 +13,7 @@
     $barangayId = $fieldPrefix.'Barangay';
     $streetId = $fieldPrefix.'Street';
     $houseNumberId = $fieldPrefix.'HouseNumber';
+    $postalCodeId = $fieldPrefix.'PostalCode';
 
     $selectedProvince = old('province', $user?->province);
     $selectedMunicipality = old('municipality', $user?->municipality);
@@ -57,6 +58,12 @@
         <input id="{{ $houseNumberId }}" name="house_number" type="text" class="{{ $inputClass }}" value="{{ old('house_number', $user?->house_number) }}" autocomplete="address-line2">
         @error('house_number')<span class="field-error">{{ $message }}</span>@enderror
     </div>
+
+    <div class="form-group">
+        <label for="{{ $postalCodeId }}">Postal Code</label>
+        <input id="{{ $postalCodeId }}" name="postal_code" type="text" class="{{ $inputClass }}" value="{{ old('postal_code', $user?->postal_code) }}" maxlength="4" inputmode="numeric" pattern="\d{1,4}" placeholder="4 digits" autocomplete="postal-code" data-postal-code>
+        <span class="field-error" data-postal-error @if (! $errors->has('postal_code')) style="display:none;" @endif>{{ $errors->first('postal_code') ?: 'Postal code must be a maximum of 4 digits.' }}</span>
+    </div>
 </div>
 
 <script>
@@ -64,9 +71,32 @@ document.addEventListener('DOMContentLoaded', function () {
     const province = document.getElementById(@json($provinceId));
     const municipality = document.getElementById(@json($municipalityId));
     const barangay = document.getElementById(@json($barangayId));
+    const postalCode = document.getElementById(@json($postalCodeId));
     const selectedProvince = @json($selectedProvince);
     const selectedMunicipality = @json($selectedMunicipality);
     const selectedBarangay = @json($selectedBarangay);
+
+    if (postalCode) {
+        postalCode.addEventListener('input', function () {
+            const raw = postalCode.value;
+            const hasNonDigit = /\D/.test(raw);
+            const digitsOnly = raw.replace(/\D/g, '').slice(0, 4);
+            if (raw !== digitsOnly) {
+                postalCode.value = digitsOnly;
+            }
+            const err = postalCode.parentElement?.querySelector('[data-postal-error]');
+            if (err) {
+                if (hasNonDigit) {
+                    err.textContent = 'Postal code must contain numbers only (maximum 4 digits).';
+                    err.style.display = 'block';
+                    postalCode.style.borderColor = '#dc2626';
+                } else {
+                    err.style.display = 'none';
+                    postalCode.style.borderColor = '';
+                }
+            }
+        });
+    }
 
     if (!province || !municipality || !barangay) return;
 
