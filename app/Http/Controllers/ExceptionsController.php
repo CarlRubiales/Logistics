@@ -15,8 +15,15 @@ class ExceptionsController extends Controller
     {
         $store = Store::where('is_active', true)->first();
         $search = trim($request->string('search')->toString());
+        $branch = $request->user()?->getBranchName();
         $base = Shipment::query()->where(fn ($q) => $q->whereIn('status', ['exception', 'failed'])->orWhereNotNull('exception_type'))
             ->when($store, fn ($q) => $q->whereHas('order', fn ($q) => $q->where('store_id', $store->id)));
+        if ($branch) {
+            $base->where(function ($q) use ($branch) {
+                $q->where('destination_city', 'like', "%{$branch}%")
+                  ->orWhereHas('parcels', fn ($pq) => $pq->forBranch($branch));
+            });
+        }
         $exceptions = (clone $base)->with('order')
             ->when($search, fn ($q) => $q->where(fn ($q) => $q->where('tracking_number', 'like', "%{$search}%")->orWhere('exception_type', 'like', "%{$search}%")->orWhere('destination_city', 'like', "%{$search}%")->orWhereHas('order', fn ($q) => $q->where('order_number', 'like', "%{$search}%")->orWhere('customer_name', 'like', "%{$search}%"))))
             ->latest()->paginate(12)->withQueryString();

@@ -10,11 +10,20 @@ use Illuminate\Validation\Rule;
 
 class AreasController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        if ($request->user()?->isMasterAdmin()) {
+            return redirect()->route('admin.branches');
+        }
+
+        $branch = $request->user()?->getBranchName();
         $storeId = DB::table('stores')->where('is_active', true)->value('id') ?? DB::table('stores')->value('id');
-        $areas = DestinationArea::withCount(['parcels', 'riders'])->where('store_id', $storeId)->orderBy('name')->get();
-        return view('areas.index', compact('areas'));
+        $areas = DestinationArea::withCount(['parcels', 'riders'])
+            ->where('store_id', $storeId)
+            ->forBranch($branch)
+            ->orderBy('name')
+            ->get();
+        return view('areas.index', compact('areas', 'branch'));
     }
 
     public function store(Request $request)
@@ -32,10 +41,12 @@ class AreasController extends Controller
 
         $province = trim($data['province']);
         $autoCode = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $province), 0, 4)) . '-' . strtoupper(substr(uniqid(), -4));
+        $branch = $request->user()?->getBranchName();
 
         DestinationArea::create([
             'store_id' => $storeId,
             'name' => $data['name'],
+            'branch' => $branch,
             'province' => $province,
             'code' => $autoCode,
             'cities' => collect(explode(',', $data['cities'] ?? ''))->map(fn ($v) => trim($v))->filter()->values(),

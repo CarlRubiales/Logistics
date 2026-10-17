@@ -8,7 +8,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class EnsureLogisticsRole
 {
-    private const ALLOWED_ROLES = ['admin', 'operations_manager', 'warehouse_staff', 'support'];
+    private const ALLOWED_ROLES = ['super_admin', 'admin', 'operations_manager', 'warehouse_staff', 'support'];
 
     public function handle(Request $request, Closure $next): Response
     {

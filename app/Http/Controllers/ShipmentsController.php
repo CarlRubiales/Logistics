@@ -13,10 +13,21 @@ class ShipmentsController extends Controller
 {
     public function index(Request $request)
     {
+        if ($request->user()?->isMasterAdmin()) {
+            return redirect()->route('admin.dashboard');
+        }
+
         $store = Store::where('is_active', true)->first();
         $status = $request->string('status')->toString();
         $search = trim($request->string('search')->toString());
+        $branch = $request->user()?->getBranchName();
         $base = Shipment::query()->when($store, fn ($query) => $query->whereHas('order', fn ($q) => $q->where('store_id', $store->id)));
+        if ($branch) {
+            $base->where(function ($q) use ($branch) {
+                $q->where('destination_city', 'like', "%{$branch}%")
+                  ->orWhereHas('parcels', fn ($pq) => $pq->forBranch($branch));
+            });
+        }
         $shipments = (clone $base)->with(['order', 'trackingEvents', 'fulfillmentLocation'])
             ->when($status, fn ($q) => $q->whereIn('status', match ($status) {
                 'pending' => ['pending', 'packed'], 'in_transit' => ['in_transit', 'out_for_delivery'], default => [$status],

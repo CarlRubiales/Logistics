@@ -6,7 +6,8 @@
 <body class="logistics-page">
 <div class="app-shell">
     @include('partials.sidebar')
-    <main class="main-content"><header class="topbar"><div class="topbar-mobile-brand"><div class="brand-mark"><span></span><span></span><span></span></div><strong>LUMORA</strong></div><button class="mobile-menu" id="mobile-menu">☰</button><div class="breadcrumb"><a href="{{ route('shipments.index') }}">Shipments</a><span class="crumb-divider">/</span><strong>{{ $shipment->lumora_tracking_id }}</strong></div><div class="topbar-actions"><button class="icon-button" title="Notifications" aria-label="Notifications"><span class="notification-ring"></span><span class="notification-dot"></span></button><button class="help-button">?</button><button class="user-button"><span class="avatar small">{{ strtoupper(substr(auth()->user()->name, 0, 2)) }}</span><span class="user-name">{{ \Illuminate\Support\Str::before(auth()->user()->name, ' ') }}</span><span class="chevron">⌄</span></button></div></header>
+    <main class="main-content">
+        @include('partials.topbar', ['category' => 'Shipments', 'title' => $shipment->lumora_tracking_id])
         @php
             $parcel = $shipment->parcels->first();
             $address = $shipment->order?->shipping_address ?? [];

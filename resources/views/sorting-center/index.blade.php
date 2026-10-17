@@ -10,11 +10,14 @@
 <div class="app-shell">
     @include('partials.sidebar')
     <main class="main-content">
-        <header class="topbar"><div class="breadcrumb"><span>Workspace</span><span class="crumb-divider">/</span><strong>Sorting Center</strong></div><div class="topbar-actions"><form method="GET" action="{{ route('sorting-center.index') }}" class="topbar-search"><span>⌕</span><input name="search" value="{{ request('search') }}" placeholder="Search parcels..."></form><span class="user-name">{{ auth()->user()->name ?? 'Admin' }}</span></div></header>
+        @include('partials.topbar', [
+            'category' => (auth()->user()->getBranchName() ? auth()->user()->getBranchName() . ' Branch Hub' : 'Operations Desk'),
+            'title' => 'Sorting Center'
+        ])
         <div class="content-wrap">
             @if(session('success'))<div class="server-alert" role="status"><span>✓</span>{{ session('success') }}</div>@endif
             @if($errors->any())<div class="server-alert error" role="alert"><span>!</span>{{ $errors->first() }}</div>@endif
-            <section class="welcome-row"><div><div class="eyebrow">SORTING CENTER OPERATIONS</div><h1>Parcel control desk</h1><p class="intro">Receive, scan, determine the delivery area, sort, and assign every parcel to the correct rider.</p></div></section>
+            <section class="welcome-row"><div><div class="eyebrow">{{ strtoupper(auth()->user()->getBranchName() ? (auth()->user()->getBranchName() . ' SORTING CENTER HUB') : 'SORTING CENTER OPERATIONS') }}</div><h1>{{ auth()->user()->getBranchName() ? (auth()->user()->getBranchName() . ' parcel control desk') : 'Parcel control desk' }}</h1><p class="intro">Receive, scan, determine the delivery area, sort, and assign every parcel to the correct rider for {{ auth()->user()->getBranchName() ?? 'your hub' }}.</p></div></section>
             <section class="metric-grid">
                 @foreach([['received','Received'],['scanned','Scanned'],['sorted','Sorted'],['assigned','Assigned']] as [$key,$label])
                     <article class="metric-card {{ ['received'=>'coral-wash','scanned'=>'plum-wash','sorted'=>'sage-wash','assigned'=>'gold-wash'][$key] }}"><div class="metric-top"><span class="metric-label">{{ $label }}</span><span class="metric-icon plum">{{ $counts[$key] ?? 0 }}</span></div><div class="metric-value">{{ $counts[$key] ?? 0 }}</div><div class="metric-trend positive">Live queue <small>today</small></div></article>
@@ -28,7 +31,7 @@
                         <label>Recipient name<input name="recipient_name" value="{{ old('recipient_name') }}" required></label>
                         <label>Phone<input name="recipient_phone" type="tel" value="{{ old('recipient_phone') }}" placeholder="09171234567" required></label>
                         <label class="full-span">Delivery address<textarea name="address_line" required>{{ old('address_line') }}</textarea></label>
-                        <label>City / municipality<input name="city" value="{{ old('city') }}" placeholder="Santa Cruz" required></label>
+                        <label>City / municipality<input name="city" value="{{ old('city', auth()->user()->getBranchName()) }}" placeholder="{{ auth()->user()->getBranchName() ?? 'Santa Cruz' }}" required></label>
                         <label>Province<input name="province" value="{{ old('province', 'Laguna') }}" required></label>
                         <label>Postal code<input name="postal_code" value="{{ old('postal_code') }}"></label>
                         <label>Area override<select name="destination_area_id"><option value="">Determine after scan</option>@foreach($areas as $area)<option value="{{ $area->id }}" @selected(old('destination_area_id') == $area->id)>{{ $area->name }} ({{ $area->province ?: 'Laguna' }})</option>@endforeach</select></label>

@@ -12,6 +12,7 @@ use App\Http\Controllers\SortingCenterController;
 use App\Http\Controllers\RiderController;
 use App\Http\Controllers\AreasController;
 use App\Http\Controllers\MessagesController;
+use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\TrackingController;
 use Illuminate\Support\Facades\Route;
@@ -37,7 +38,22 @@ Route::middleware(['auth', 'rider'])->group(function () {
     Route::post('/rider/messages', [MessagesController::class, 'send'])->name('riders.messages.send');
 });
 Route::middleware(['auth', 'logistics'])->group(function () {
-    Route::get('/', [SortingCenterController::class, 'index'])->name('dashboard');
+    Route::get('/admin/dashboard', [AdminDashboardController::class, 'index'])->name('admin.dashboard');
+    Route::get('/admin/branches', [AdminDashboardController::class, 'branches'])->name('admin.branches');
+    Route::get('/admin/riders', [AdminDashboardController::class, 'riders'])->name('admin.riders');
+    Route::get('/admin/accounts', [AdminDashboardController::class, 'accounts'])->name('admin.accounts');
+    Route::post('/admin/users', [AdminDashboardController::class, 'storeUser'])->name('admin.users.store');
+    Route::delete('/admin/users/{user}', [AdminDashboardController::class, 'destroyUser'])->name('admin.users.destroy');
+    Route::post('/admin/users/{user}/password', [AdminDashboardController::class, 'resetPassword'])->name('admin.users.password');
+
+    Route::get('/', function (\Illuminate\Http\Request $request) {
+        if ($request->user()->isMasterAdmin()) {
+            return redirect()->route('admin.dashboard');
+        }
+        return redirect()->route('sorting-center.index');
+    })->name('dashboard');
+
+    Route::get('/sorting-center', [SortingCenterController::class, 'index'])->name('sorting-center.index');
     Route::get('/shipments', [ShipmentsController::class, 'index'])->name('shipments.index');
     Route::post('/shipments/{shipment}/status', [ShipmentsController::class, 'updateStatus'])->name('shipments.status');
     Route::get('/shipments/{shipment}', [ShipmentsController::class, 'show'])->name('shipments.show');

@@ -87,7 +87,22 @@ class RiderController extends Controller
 
     public function index(Request $request)
     {
+        if ($request->user()?->isMasterAdmin()) {
+            return redirect()->route('admin.riders');
+        }
+
+        $branch = $request->user()?->getBranchName();
+        $areas = DestinationArea::where('is_active', true)->forBranch($branch)->orderBy('name')->get();
+        $areaIds = $areas->pluck('id');
+
         $query = RiderProfile::with(['user', 'areas'])->latest();
+
+        if ($branch && $areaIds->isNotEmpty()) {
+            $query->where(function ($rq) use ($areaIds) {
+                $rq->whereHas('areas', fn ($aq) => $aq->whereIn('destination_areas.id', $areaIds))
+                   ->orDoesntHave('areas');
+            });
+        }
 
         if ($request->filled('search')) {
             $term = $request->string('search');
@@ -112,16 +127,23 @@ class RiderController extends Controller
         }
 
         $riders = $query->paginate(20)->withQueryString();
-        $areas = DestinationArea::where('is_active', true)->orderBy('name')->get();
+
+        $baseCount = RiderProfile::query();
+        if ($branch && $areaIds->isNotEmpty()) {
+            $baseCount->where(function ($rq) use ($areaIds) {
+                $rq->whereHas('areas', fn ($aq) => $aq->whereIn('destination_areas.id', $areaIds))
+                   ->orDoesntHave('areas');
+            });
+        }
 
         $counts = [
-            'total' => RiderProfile::count(),
-            'approved' => RiderProfile::where('registration_status', 'approved')->count(),
-            'online' => RiderProfile::where('registration_status', 'approved')->whereIn('availability', ['online', 'available'])->count(),
-            'pending' => RiderProfile::where('registration_status', 'pending')->count(),
+            'total' => (clone $baseCount)->count(),
+            'approved' => (clone $baseCount)->where('registration_status', 'approved')->count(),
+            'online' => (clone $baseCount)->where('registration_status', 'approved')->whereIn('availability', ['online', 'available'])->count(),
+            'pending' => (clone $baseCount)->where('registration_status', 'pending')->count(),
         ];
 
-        return view('riders.index', compact('riders', 'areas', 'counts'));
+        return view('riders.index', compact('riders', 'areas', 'counts', 'branch'));
     }
 
     public function approve(Request $request, RiderProfile $rider)

@@ -11,7 +11,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'role'])]
+#[Fillable(['name', 'email', 'password', 'role', 'branch'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -23,12 +23,33 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'branch',
     ];
 
-    protected $hidden = [
-        'password',
-        'remember_token',
-    ];
+    public function getBranchName(): ?string
+    {
+        if (! empty($this->branch)) {
+            return $this->branch;
+        }
+        if (strcasecmp($this->name, 'pila') === 0) {
+            return 'Pila';
+        }
+        if (stripos($this->name, 'santa cruz') !== false) {
+            return 'Santa Cruz';
+        }
+        return null;
+    }
+
+    public function isMasterAdmin(): bool
+    {
+        return $this->role === 'super_admin' || ($this->role === 'admin' && empty($this->branch) && strcasecmp($this->name, 'pila') !== 0 && stripos($this->name, 'santa cruz') === false);
+    }
+
+    public static function getMasterAdmin(): ?self
+    {
+        return static::where('role', 'super_admin')->first()
+            ?? static::where('email', 'admin@gmail.com')->first();
+    }
 
     /**
      * Get the attributes that should be cast.

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#3D1B3D">
-    <title>Messages & Courier Dispatch — Lumora Logistics</title>
+    <title>Messages & Hub Communications — Lumora Logistics</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>
         .messenger-layout {
@@ -21,7 +21,7 @@
             box-shadow: 0 10px 30px rgba(61, 27, 61, 0.04);
         }
 
-        /* Left: Courier Roster */
+        /* Left: Roster Pane */
         .roster-pane {
             display: flex;
             flex-direction: column;
@@ -105,24 +105,23 @@
             color: #FFFDFB;
             display: grid;
             place-items: center;
-            font-weight: 700;
             font-size: 13px;
+            font-weight: 700;
         }
-        .roster-avatar.active-rider {
+        .roster-avatar.active-contact {
             background: #E2703A;
         }
         .status-dot {
-            width: 11px;
-            height: 11px;
-            border-radius: 50%;
             position: absolute;
             bottom: -1px;
             right: -1px;
-            border: 2px solid #FAF6F0;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 2px solid #FFFDFB;
         }
         .status-dot.online { background: #1E6B37; }
         .status-dot.offline { background: #8A7B7E; }
-
         .roster-info {
             flex: 1;
             min-width: 0;
@@ -131,7 +130,7 @@
             display: flex;
             justify-content: space-between;
             align-items: baseline;
-            margin-bottom: 3px;
+            margin-bottom: 2px;
         }
         .roster-name {
             font-size: 13px;
@@ -145,27 +144,26 @@
             font-size: 10px;
             color: #8A7B7E;
             flex-shrink: 0;
+            margin-left: 6px;
         }
         .roster-snippet {
-            font-size: 11px;
+            font-size: 11.5px;
             color: #8A7B7E;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            line-height: 1.3;
         }
         .roster-badge {
             background: #E2703A;
             color: #FFFDFB;
             font-size: 10px;
-            font-weight: 700;
+            font-weight: 800;
             padding: 2px 7px;
             border-radius: 999px;
-            margin-left: 6px;
             flex-shrink: 0;
         }
 
-        /* Center: Chat Thread */
+        /* Center: Chat Pane */
         .chat-pane {
             display: flex;
             flex-direction: column;
@@ -173,14 +171,14 @@
             overflow: hidden;
         }
         .chat-header {
-            padding: 14px 20px;
-            border-bottom: 1px solid #EBDDD8;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid #EBDDD8;
             background: #FFFDFB;
         }
-        .chat-courier-title {
+        .chat-contact-title {
             display: flex;
             align-items: center;
             gap: 12px;
@@ -197,7 +195,7 @@
         .chat-bubble-row {
             display: flex;
             flex-direction: column;
-            max-width: 76%;
+            max-width: 72%;
         }
         .chat-bubble-row.mine {
             align-self: flex-end;
@@ -208,12 +206,12 @@
             align-items: flex-start;
         }
         .chat-bubble {
-            padding: 12px 18px;
-            border-radius: 18px;
-            font-size: 13.5px;
-            line-height: 1.5;
+            padding: 11px 16px;
+            border-radius: 16px;
+            font-size: 13px;
+            line-height: 1.45;
+            position: relative;
             word-break: break-word;
-            box-shadow: 0 1px 3px rgba(61, 27, 61, 0.05);
         }
         .chat-bubble.mine {
             background: #3D1B3D;
@@ -223,44 +221,40 @@
         .chat-bubble.theirs {
             background: #FFFDFB;
             color: #3A2E30;
-            border-bottom-left-radius: 4px;
             border: 1px solid #EBDDD8;
-        }
-        .chat-meta {
-            font-size: 10px;
-            color: #8A7B7E;
-            margin-top: 4px;
-            padding: 0 4px;
-            display: flex;
-            align-items: center;
-            gap: 4px;
+            border-bottom-left-radius: 4px;
         }
         .chat-parcel-card {
-            background: #FBEFEA;
+            background: #FAF6F0;
             border: 1px solid #EBDDD8;
             border-radius: 10px;
             padding: 8px 12px;
             margin-bottom: 6px;
-            font-size: 11px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 10px;
-            color: #3A2E30;
+            gap: 12px;
+            font-size: 11.5px;
             text-decoration: none;
+            color: inherit;
         }
         .chat-parcel-card:hover {
             border-color: #E2703A;
         }
         .chat-parcel-number {
-            font-family: monospace;
-            font-weight: 700;
-            color: #E2703A;
+            font-weight: 800;
+            color: #3D1B3D;
         }
-
-        /* Composer */
+        .chat-meta {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 4px;
+            font-size: 10px;
+            color: #8A7B7E;
+        }
         .chat-composer-wrap {
-            padding: 14px 20px;
+            padding: 14px 20px 16px;
             border-top: 1px solid #EBDDD8;
             background: #FFFDFB;
         }
@@ -274,28 +268,29 @@
         .preset-chip {
             background: #FAF6F0;
             border: 1px solid #EBDDD8;
-            padding: 4px 10px;
             border-radius: 999px;
+            padding: 4px 10px;
             font-size: 11px;
+            font-weight: 600;
             color: #3D1B3D;
-            cursor: pointer;
             white-space: nowrap;
+            cursor: pointer;
             transition: all 0.15s;
         }
         .preset-chip:hover {
-            background: #FBEFEA;
-            border-color: #E2703A;
-            color: #E2703A;
+            background: #3D1B3D;
+            color: #FFFDFB;
+            border-color: #3D1B3D;
         }
         .composer-bar {
             display: flex;
-            gap: 10px;
             align-items: flex-end;
+            gap: 10px;
         }
         .composer-input {
             flex: 1;
             min-height: 44px;
-            max-height: 100px;
+            max-height: 120px;
             border: 1px solid #EBDDD8;
             border-radius: 12px;
             padding: 10px 14px;
@@ -320,7 +315,7 @@
             color: #8A7B7E;
         }
 
-        /* Right: Courier Intel Card */
+        /* Right: Contact Intel Pane */
         .intel-pane {
             display: flex;
             flex-direction: column;
@@ -385,16 +380,10 @@
 <div class="app-shell">
     @include('partials.sidebar')
     <main class="main-content">
-        <header class="topbar">
-            <div class="breadcrumb">
-                <span>Operations</span>
-                <span class="crumb-divider">/</span>
-                <strong>Courier Dispatch Messenger</strong>
-            </div>
-            <div class="topbar-actions">
-                <span class="user-name">{{ auth()->user()->name ?? 'Admin Dispatch' }}</span>
-            </div>
-        </header>
+        @include('partials.topbar', [
+            'category' => ($isMasterAdmin ? 'Master Administration' : 'Hub Comms'),
+            'title' => ($isMasterAdmin ? 'Branch & Dispatch Messages' : 'Direct Messages with Master Admin')
+        ])
 
         <div class="content-wrap" style="padding-bottom: 24px;">
             @if(session('success'))
@@ -406,67 +395,78 @@
 
             <section class="welcome-row" style="margin-bottom: 16px;">
                 <div>
-                    <div class="eyebrow" style="color: #E2703A;">OPERATIONS DISPATCH DESK</div>
-                    <h1 style="font-size: 26px;">Live Courier Communications</h1>
+                    <div class="eyebrow" style="color: #E2703A;">
+                        {{ $isMasterAdmin ? 'HEADQUARTERS DISPATCH & BRANCH COMMS' : 'BRANCH TO HEADQUARTERS MESSAGES' }}
+                    </div>
+                    <h1 style="font-size: 26px;">
+                        {{ $isMasterAdmin ? 'Direct Branch & Courier Messages' : 'Direct Messages with Headquarters Admin' }}
+                    </h1>
                     <p class="intro">
-                        Real-time coordination, address verification, and delivery dispatch with field couriers.
+                        {{ $isMasterAdmin
+                            ? 'Instant two-way messaging between Central Logistics Command and operating branches (Pila, Santa Cruz, etc.).'
+                            : 'Direct communication channel between your branch hub and the Master Logistics Headquarters.' }}
                     </p>
                 </div>
             </section>
 
-            <!-- Multi-Pane Dispatch Messenger -->
+            <!-- Multi-Pane Messenger -->
             <div class="messenger-layout">
-                <!-- 1. LEFT: Courier Roster List -->
+                <!-- 1. LEFT: Roster Pane -->
                 <aside class="roster-pane">
                     <div class="roster-header">
                         <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                            <strong style="color: #3D1B3D; font-size: 14px;">Courier Roster</strong>
-                            <small style="color: #8A7B7E;">{{ $riderSummaries->count() }} drivers</small>
+                            <strong style="color: #3D1B3D; font-size: 14px;">
+                                {{ $isMasterAdmin ? 'Branch Hubs & Couriers' : 'Comms Channels' }}
+                            </strong>
+                            <small style="color: #8A7B7E;">
+                                {{ $branchSummaries->count() }} branches
+                            </small>
                         </div>
                         <input
                             type="search"
                             id="rosterSearchInput"
                             class="roster-search"
-                            placeholder="⌕ Filter by name, vehicle, or zone..."
+                            placeholder="⌕ Filter by name, hub, or email..."
                             oninput="filterRosters(this.value)"
                         >
                     </div>
 
                     <div class="roster-tabs">
-                        <button type="button" class="roster-tab active" onclick="setRosterTab('all', this)">All</button>
-                        <button type="button" class="roster-tab" onclick="setRosterTab('online', this)">Online</button>
-                        <button type="button" class="roster-tab" onclick="setRosterTab('unread', this)">Unread</button>
+                        <button type="button" class="roster-tab active" onclick="switchCategory('branch', this)">
+                            {{ $isMasterAdmin ? 'Branches (' . $branchSummaries->count() . ')' : 'Headquarters' }}
+                        </button>
+                        <button type="button" class="roster-tab" onclick="switchCategory('rider', this)">
+                            Couriers ({{ $riderSummaries->count() }})
+                        </button>
                     </div>
 
                     <ul class="roster-list" id="rosterList">
-                        @forelse($riderSummaries as $item)
+                        <!-- BRANCH CONTACTS -->
+                        @forelse($branchSummaries as $item)
                             @php
-                                $rider = $item['rider'];
-                                $isSelected = ($selectedRider && $selectedRider->id === $rider->id);
-                                $isOnline = ($rider->availability === 'online' || $rider->availability === 'available');
-                                $initials = strtoupper(substr($rider->user->name, 0, 2));
-                                $zone = $rider->areas->pluck('name')->join(', ') ?: ($rider->areas->first()?->province ?? 'General Zone');
+                                $bUser = $item['user'];
+                                $isSelected = ($selectedContact && $selectedContact->id === $bUser->id);
+                                $initials = strtoupper(substr($item['branch'], 0, 2));
                             @endphp
-                            <li>
+                            <li class="contact-entry" data-category="branch">
                                 <a
-                                    href="{{ route('messages.index', ['rider_user_id' => $rider->user_id]) }}"
+                                    href="{{ route('messages.index', ['contact_user_id' => $bUser->id]) }}"
                                     class="roster-item {{ $isSelected ? 'active' : '' }}"
-                                    data-name="{{ strtolower($rider->user->name) }}"
-                                    data-zone="{{ strtolower($zone) }}"
-                                    data-vehicle="{{ strtolower($rider->vehicle_type ?? '') }}"
-                                    data-online="{{ $isOnline ? '1' : '0' }}"
+                                    data-name="{{ strtolower($item['name']) }}"
+                                    data-sub="{{ strtolower($item['sub_label']) }}"
+                                    data-branch="{{ strtolower($item['branch']) }}"
                                     data-unread="{{ $item['unread_count'] }}"
                                 >
                                     <div class="roster-avatar-wrap">
-                                        <div class="roster-avatar {{ $isSelected ? 'active-rider' : '' }}">
+                                        <div class="roster-avatar {{ $isSelected ? 'active-contact' : '' }}" style="{{ $bUser->isMasterAdmin() ? 'background: linear-gradient(135deg, #3D1B3D, #793779);' : '' }}">
                                             {{ $initials }}
                                         </div>
-                                        <span class="status-dot {{ $isOnline ? 'online' : 'offline' }}" title="{{ ucfirst($rider->availability) }}"></span>
+                                        <span class="status-dot online" title="Active Hub"></span>
                                     </div>
 
                                     <div class="roster-info">
                                         <div class="roster-top">
-                                            <span class="roster-name">{{ $rider->user->name }}</span>
+                                            <span class="roster-name">{{ $item['name'] }}</span>
                                             @if($item['latest_message'])
                                                 <span class="roster-time">{{ $item['latest_message']->created_at->diffForHumans(null, true, true) }}</span>
                                             @endif
@@ -475,7 +475,7 @@
                                             @if($item['latest_message'])
                                                 {{ $item['latest_message']->message }}
                                             @else
-                                                <span style="font-style: italic;">{{ $rider->vehicle_type ?: 'Motorcycle' }} · {{ $zone }}</span>
+                                                <span style="font-style: italic;">{{ $item['sub_label'] }}</span>
                                             @endif
                                         </div>
                                     </div>
@@ -486,8 +486,60 @@
                                 </a>
                             </li>
                         @empty
-                            <li style="padding: 32px 16px; text-align: center; color: #8A7B7E; font-size: 12px;">
-                                No approved riders registered yet.
+                            <li class="contact-entry" data-category="branch" style="padding: 24px 16px; text-align: center; color: #8A7B7E; font-size: 12px;">
+                                No branch accounts registered yet.
+                            </li>
+                        @endforelse
+
+                        <!-- COURIER CONTACTS -->
+                        @forelse($riderSummaries as $item)
+                            @php
+                                $rUser = $item['user'];
+                                $rider = $item['rider'];
+                                $isSelected = ($selectedContact && $selectedContact->id === $rUser->id);
+                                $isOnline = in_array($rider->availability, ['online', 'available']);
+                                $initials = strtoupper(substr($rUser->name, 0, 2));
+                            @endphp
+                            <li class="contact-entry" data-category="rider" style="display: none;">
+                                <a
+                                    href="{{ route('messages.index', ['contact_user_id' => $rUser->id]) }}"
+                                    class="roster-item {{ $isSelected ? 'active' : '' }}"
+                                    data-name="{{ strtolower($item['name']) }}"
+                                    data-sub="{{ strtolower($item['sub_label']) }}"
+                                    data-branch="{{ strtolower($item['branch']) }}"
+                                    data-unread="{{ $item['unread_count'] }}"
+                                >
+                                    <div class="roster-avatar-wrap">
+                                        <div class="roster-avatar {{ $isSelected ? 'active-contact' : '' }}">
+                                            {{ $initials }}
+                                        </div>
+                                        <span class="status-dot {{ $isOnline ? 'online' : 'offline' }}" title="{{ ucfirst($rider->availability) }}"></span>
+                                    </div>
+
+                                    <div class="roster-info">
+                                        <div class="roster-top">
+                                            <span class="roster-name">{{ $item['name'] }}</span>
+                                            @if($item['latest_message'])
+                                                <span class="roster-time">{{ $item['latest_message']->created_at->diffForHumans(null, true, true) }}</span>
+                                            @endif
+                                        </div>
+                                        <div class="roster-snippet">
+                                            @if($item['latest_message'])
+                                                {{ $item['latest_message']->message }}
+                                            @else
+                                                <span style="font-style: italic;">{{ $item['sub_label'] }}</span>
+                                            @endif
+                                        </div>
+                                    </div>
+
+                                    @if($item['unread_count'] > 0)
+                                        <span class="roster-badge">{{ $item['unread_count'] }}</span>
+                                    @endif
+                                </a>
+                            </li>
+                        @empty
+                            <li class="contact-entry" data-category="rider" style="display: none; padding: 24px 16px; text-align: center; color: #8A7B7E; font-size: 12px;">
+                                No couriers available in this workspace.
                             </li>
                         @endforelse
                     </ul>
@@ -495,43 +547,44 @@
 
                 <!-- 2. CENTER: Active Conversation Thread -->
                 <section class="chat-pane">
-                    @if($selectedRider)
+                    @if($selectedContact)
                         @php
-                            $selectedIsOnline = ($selectedRider->availability === 'online' || $selectedRider->availability === 'available');
-                            $selectedInitials = strtoupper(substr($selectedRider->user->name, 0, 2));
-                            $selectedZone = $selectedRider->areas->pluck('name')->join(', ') ?: ($selectedRider->areas->first()?->province ?? 'General Zone');
+                            $contactInitials = strtoupper(substr($selectedContact->branch ?: $selectedContact->name, 0, 2));
+                            $displayName = $selectedContact->isMasterAdmin()
+                                ? 'Central Logistics HQ (Master Admin)'
+                                : ($selectedContact->branch ? ($selectedContact->branch . ' Hub (' . $selectedContact->name . ')') : $selectedContact->name);
                         @endphp
 
                         <!-- Header -->
                         <div class="chat-header">
-                            <div class="chat-courier-title">
+                            <div class="chat-contact-title">
                                 <div class="roster-avatar-wrap">
                                     <div class="roster-avatar" style="background: #3D1B3D;">
-                                        {{ $selectedInitials }}
+                                        {{ $contactInitials }}
                                     </div>
-                                    <span class="status-dot {{ $selectedIsOnline ? 'online' : 'offline' }}"></span>
+                                    <span class="status-dot online"></span>
                                 </div>
                                 <div>
                                     <div style="display: flex; align-items: center; gap: 8px;">
-                                        <h2 style="margin: 0; font-size: 16px; color: #3D1B3D;">{{ $selectedRider->user->name }}</h2>
-                                        <span style="font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: {{ $selectedIsOnline ? 'rgba(30,107,55,0.1)' : '#EBDDD8' }}; color: {{ $selectedIsOnline ? '#1E6B37' : '#8A7B7E' }};">
-                                            ● {{ strtoupper($selectedRider->availability) }}
+                                        <h2 style="margin: 0; font-size: 16px; color: #3D1B3D;">
+                                            {{ $displayName }}
+                                        </h2>
+                                        <span style="font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: rgba(30,107,55,0.1); color: #1E6B37;">
+                                            ● CONNECTED
                                         </span>
                                     </div>
                                     <small style="color: #8A7B7E; font-size: 11px;">
-                                        {{ $selectedRider->vehicle_type ?: 'Motorcycle' }} · 📍 {{ $selectedZone }}
+                                        ✉ {{ $selectedContact->email }}
+                                        @if($selectedContact->branch) · 🏢 {{ $selectedContact->branch }} Hub @endif
                                     </small>
                                 </div>
                             </div>
 
                             <div style="display: flex; align-items: center; gap: 10px;">
-                                <span style="font-size: 11px; color: #1E6B37; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; background: rgba(30,107,55,0.08); padding: 4px 10px; border-radius: 8px;">
-                                    ⛟ {{ $selectedRiderParcels->count() }} active delivery queue
-                                </span>
-                                @if(request('parcel_id'))
-                                    <a href="{{ route('messages.index', ['rider_user_id' => $selectedRider->user_id]) }}" class="text-button" style="font-size: 11px; color: #E2703A;">
-                                        Clear parcel filter (Show all)
-                                    </a>
+                                @if($selectedContactParcels->isNotEmpty())
+                                    <span style="font-size: 11px; color: #E2703A; font-weight: 700; background: rgba(226,112,58,0.08); padding: 4px 10px; border-radius: 8px;">
+                                        📦 {{ $selectedContactParcels->count() }} active parcels
+                                    </span>
                                 @endif
                             </div>
                         </div>
@@ -544,7 +597,7 @@
                                 @endphp
                                 <div class="chat-bubble-row {{ $isMine ? 'mine' : 'theirs' }}" id="msg-{{ $msg->id }}">
                                     @if($msg->parcel)
-                                        <a href="{{ route('shipments.show', $msg->parcel->shipment ?? $msg->parcel_id) }}" target="_blank" class="chat-parcel-card" title="Open shipment details">
+                                        <div class="chat-parcel-card">
                                             <div>
                                                 <span class="chat-parcel-number">📦 {{ $msg->parcel->parcel_number }}</span>
                                                 <div style="font-size: 10.5px; color: #8A7B7E; margin-top: 2px;">
@@ -554,7 +607,7 @@
                                             <span style="font-size: 9.5px; font-weight: 700; background: #FFFDFB; border: 1px solid #EBDDD8; padding: 2px 6px; border-radius: 4px;">
                                                 {{ ucwords(str_replace('_', ' ', $msg->parcel->status)) }}
                                             </span>
-                                        </a>
+                                        </div>
                                     @endif
 
                                     <div class="chat-bubble {{ $isMine ? 'mine' : 'theirs' }}">
@@ -562,11 +615,11 @@
                                     </div>
 
                                     <div class="chat-meta">
-                                        <span>{{ $isMine ? 'Dispatch' : $selectedRider->user->name }}</span>
+                                        <span>{{ $isMine ? 'You' : ($msg->sender?->name ?? 'Partner') }}</span>
                                         <span>·</span>
                                         <time>{{ $msg->created_at->format('g:i A') }}</time>
                                         @if($isMine)
-                                            <span style="color: {{ $msg->read_at ? '#1E6B37' : '#8A7B7E' }};" title="{{ $msg->read_at ? 'Read by courier' : 'Delivered to device' }}">
+                                            <span style="color: {{ $msg->read_at ? '#1E6B37' : '#8A7B7E' }};" title="{{ $msg->read_at ? 'Read by recipient' : 'Delivered' }}">
                                                 {{ $msg->read_at ? '✓✓' : '✓' }}
                                             </span>
                                         @endif
@@ -575,8 +628,12 @@
                             @empty
                                 <div style="text-align: center; margin: auto; padding: 40px; color: #8A7B7E;">
                                     <div style="font-size: 32px; margin-bottom: 8px;">💬</div>
-                                    <strong style="color: #3D1B3D; display: block; font-size: 14px;">No messages with {{ $selectedRider->user->name }} yet</strong>
-                                    <p style="font-size: 12px; margin: 4px 0 0;">Send operational instructions, delivery questions, or address notes below.</p>
+                                    <strong style="color: #3D1B3D; display: block; font-size: 14px;">
+                                        No messages with {{ $selectedContact->name }} yet
+                                    </strong>
+                                    <p style="font-size: 12px; margin: 4px 0 0;">
+                                        {{ $isMasterAdmin ? 'Send operational updates, sorting alerts, or instructions to this branch below.' : 'Send inquiries, delivery reports, or assistance requests to Master Admin below.' }}
+                                    </p>
                                 </div>
                             @endforelse
                         </div>
@@ -585,39 +642,53 @@
                         <div class="chat-composer-wrap">
                             <!-- Quick Presets -->
                             <div class="quick-presets">
-                                <button type="button" class="preset-chip" onclick="insertPreset('📍 Please report your current delivery location and ETA.')">
-                                    📍 Location update
-                                </button>
-                                <button type="button" class="preset-chip" onclick="insertPreset('⚡ Customer requested priority delivery for this parcel.')">
-                                    ⚡ Rush delivery
-                                </button>
-                                <button type="button" class="preset-chip" onclick="insertPreset('📞 Recipient is currently unreachable. Please retry delivery or leave note.')">
-                                    📞 Unreachable
-                                </button>
-                                <button type="button" class="preset-chip" onclick="insertPreset('🏢 Sorting center handover is ready. Please proceed to intake hub.')">
-                                    🏢 Hub return
-                                </button>
-                                <button type="button" class="preset-chip" onclick="insertPreset('✓ Delivery confirmed. Thank you!')">
-                                    ✓ Completed
-                                </button>
+                                @if($isMasterAdmin)
+                                    <button type="button" class="preset-chip" onclick="insertPreset('📦 Please prioritize intake and sorting for the incoming manifest.')">
+                                        📦 Prioritize intake
+                                    </button>
+                                    <button type="button" class="preset-chip" onclick="insertPreset('📍 Dispatch report requested for your active branch delivery areas.')">
+                                        📍 Dispatch report
+                                    </button>
+                                    <button type="button" class="preset-chip" onclick="insertPreset('⚡ Courier credentials verified and approved for your branch.')">
+                                        ⚡ Courier approved
+                                    </button>
+                                    <button type="button" class="preset-chip" onclick="insertPreset('✓ Received branch end-of-day reconciliation. Thank you.')">
+                                        ✓ EOD confirmed
+                                    </button>
+                                @else
+                                    <button type="button" class="preset-chip" onclick="insertPreset('📦 Inbound manifest arrived and sorting is now underway at the hub.')">
+                                        📦 Inbound arrived
+                                    </button>
+                                    <button type="button" class="preset-chip" onclick="insertPreset('📍 Requesting additional courier assignment for high volume zones.')">
+                                        📍 Request couriers
+                                    </button>
+                                    <button type="button" class="preset-chip" onclick="insertPreset('⚡ Delivery exception flagged for parcel review.')">
+                                        ⚡ Exception flagged
+                                    </button>
+                                    <button type="button" class="preset-chip" onclick="insertPreset('✓ All sorted parcels assigned to couriers for delivery.')">
+                                        ✓ Dispatched
+                                    </button>
+                                @endif
                             </div>
 
                             <form method="POST" action="{{ route('messages.send') }}" id="chatForm" onsubmit="handleSend(event)">
                                 @csrf
-                                <input type="hidden" name="recipient_id" value="{{ $selectedRider->user_id }}">
+                                <input type="hidden" name="recipient_id" value="{{ $selectedContact->id }}">
 
                                 <!-- Parcel Reference Selector -->
-                                <div class="composer-attach-bar">
-                                    <span>Attach Parcel:</span>
-                                    <select name="parcel_id" id="parcelSelect" style="padding: 2px 8px; border-radius: 6px; border: 1px solid #EBDDD8; font-size: 11px; background: #FAF6F0; max-width: 320px;">
-                                        <option value="">None (General Message)</option>
-                                        @foreach($selectedRiderParcels as $p)
-                                            <option value="{{ $p->id }}" @selected(request('parcel_id') == $p->id)>
-                                                {{ $p->parcel_number }} — {{ $p->recipient_name }} ({{ $p->city }}) [{{ ucwords(str_replace('_', ' ', $p->status)) }}]
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                </div>
+                                @if($selectedContactParcels->isNotEmpty())
+                                    <div class="composer-attach-bar">
+                                        <span>Reference Parcel:</span>
+                                        <select name="parcel_id" id="parcelSelect" style="padding: 2px 8px; border-radius: 6px; border: 1px solid #EBDDD8; font-size: 11px; background: #FAF6F0; max-width: 320px;">
+                                            <option value="">None (General Message)</option>
+                                            @foreach($selectedContactParcels as $p)
+                                                <option value="{{ $p->id }}" @selected(request('parcel_id') == $p->id)>
+                                                    {{ $p->parcel_number }} — {{ $p->recipient_name }} ({{ $p->city }}) [{{ ucwords(str_replace('_', ' ', $p->status)) }}]
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                @endif
 
                                 <div class="composer-bar">
                                     <textarea
@@ -625,7 +696,7 @@
                                         id="messageInput"
                                         class="composer-input"
                                         rows="2"
-                                        placeholder="Type dispatch instructions for {{ $selectedRider->user->name }}... (Press Enter to send, Shift+Enter for new line)"
+                                        placeholder="Type message for {{ $selectedContact->name }}... (Press Enter to send, Shift+Enter for new line)"
                                         required
                                         onkeydown="handleKeyDown(event)"
                                     ></textarea>
@@ -644,109 +715,73 @@
                         </div>
 
                     @else
-                        <!-- No Rider Selected State -->
+                        <!-- No Contact Selected State -->
                         <div style="margin: auto; text-align: center; padding: 60px 20px; color: #8A7B7E;">
                             <div style="font-size: 42px; margin-bottom: 12px;">📨</div>
-                            <h2 style="font-family: 'Playfair Display', Georgia, serif; color: #3D1B3D; font-size: 22px; margin-bottom: 6px;">Select a Courier</h2>
-                            <p style="font-size: 13px; max-width: 380px; margin: 0 auto; line-height: 1.6;">
-                                Select an approved courier from the roster on the left to review message history or send live delivery dispatches.
+                            <h2 style="font-family: 'Playfair Display', Georgia, serif; color: #3D1B3D; font-size: 22px; margin-bottom: 6px;">
+                                Select a Conversation
+                            </h2>
+                            <p style="font-size: 13px; max-width: 380px; margin: 0 auto;">
+                                Choose a branch hub or courier from the roster to start exchanging messages.
                             </p>
                         </div>
                     @endif
                 </section>
 
-                <!-- 3. RIGHT: Courier Intel & Active Deliveries Inspector -->
-                @if($selectedRider)
+                <!-- 3. RIGHT: Intel Pane -->
+                @if($selectedContact)
                     <aside class="intel-pane">
-                        <div class="intel-card" style="text-align: center;">
+                        <div class="intel-card">
                             <div class="intel-avatar-lg">
-                                {{ $selectedInitials }}
+                                {{ strtoupper(substr($selectedContact->branch ?: $selectedContact->name, 0, 2)) }}
                             </div>
-                            <strong style="color: #3D1B3D; font-size: 15px; display: block;">{{ $selectedRider->user->name }}</strong>
-                            <small style="color: #8A7B7E; font-size: 11px;">{{ $selectedRider->vehicle_type ?: 'Motorcycle Courier' }}</small>
-
-                            <div style="margin-top: 10px;">
-                                <span style="font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: {{ $selectedIsOnline ? 'rgba(30,107,55,0.1)' : '#EBDDD8' }}; color: {{ $selectedIsOnline ? '#1E6B37' : '#8A7B7E' }};">
-                                    ● {{ strtoupper($selectedRider->availability) }}
-                                </span>
-                            </div>
-
-                            <div class="detail-divider" style="margin: 14px 0;"></div>
-
-                            <div class="intel-detail-row">
-                                <span class="intel-detail-label">Phone</span>
-                                <span class="intel-detail-val">
-                                    @if($selectedRider->phone)
-                                        <a href="tel:{{ $selectedRider->phone }}" style="color: #E2703A; text-decoration: none;">{{ $selectedRider->phone }}</a>
-                                    @else
-                                        —
-                                    @endif
+                            <h3 style="text-align: center; margin: 0 0 4px; font-size: 15px; color: #3D1B3D;">
+                                {{ $selectedContact->name }}
+                            </h3>
+                            <div style="text-align: center; margin-bottom: 14px;">
+                                <span style="font-size: 11px; font-weight: 700; color: #E2703A; background: #FAF6F0; border: 1px solid #EBDDD8; padding: 2px 8px; border-radius: 999px;">
+                                    {{ $selectedContact->isMasterAdmin() ? 'Central Command' : ($selectedContact->branch ? $selectedContact->branch . ' Hub' : 'Courier') }}
                                 </span>
                             </div>
 
                             <div class="intel-detail-row">
                                 <span class="intel-detail-label">Email</span>
-                                <span class="intel-detail-val" style="font-size: 11px; max-width: 140px; overflow: hidden; text-overflow: ellipsis;">
-                                    {{ $selectedRider->user->email }}
+                                <span class="intel-detail-val" style="font-size: 11px;">{{ $selectedContact->email }}</span>
+                            </div>
+                            <div class="intel-detail-row">
+                                <span class="intel-detail-label">Role</span>
+                                <span class="intel-detail-val">{{ str_replace('_', ' ', ucfirst($selectedContact->role)) }}</span>
+                            </div>
+                            @if($selectedContact->branch)
+                                <div class="intel-detail-row">
+                                    <span class="intel-detail-label">Branch Hub</span>
+                                    <span class="intel-detail-val">{{ $selectedContact->branch }}</span>
+                                </div>
+                            @endif
+                            <div class="intel-detail-row">
+                                <span class="intel-detail-label">Active Queue</span>
+                                <span class="intel-detail-val" style="color: #E2703A;">
+                                    {{ $selectedContactParcels->count() }} parcels
                                 </span>
                             </div>
-
-                            <div class="intel-detail-row">
-                                <span class="intel-detail-label">License</span>
-                                <span class="intel-detail-val">{{ $selectedRider->license_number ?: 'On File' }}</span>
-                            </div>
-
-                            <div class="intel-detail-row">
-                                <span class="intel-detail-label">Assigned Area</span>
-                                <span class="intel-detail-val" style="color: #3D1B3D;">📍 {{ $selectedZone }}</span>
-                            </div>
                         </div>
 
-                        <!-- Active Deliveries Widget -->
-                        <div class="intel-card" style="flex: 1; display: flex; flex-direction: column;">
-                            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px;">
-                                <strong style="color: #3D1B3D; font-size: 13px;">Active Parcels</strong>
-                                <small style="color: #8A7B7E; font-weight: 700;">{{ $selectedRiderParcels->count() }}</small>
-                            </div>
-
-                            <div style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
-                                @forelse($selectedRiderParcels as $parcel)
-                                    @php
-                                        $chipClass = match($parcel->status) {
-                                            'delivered' => 'sage-wash',
-                                            'in_transit', 'out_for_delivery', 'rider_received' => 'in-transit',
-                                            'exception', 'failed' => 'exception',
-                                            default => 'packed',
-                                        };
-                                    @endphp
-                                    <div style="background: #FAF6F0; border: 1px solid #EBDDD8; border-radius: 8px; padding: 8px 10px; font-size: 11px;">
-                                        <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                                            <a href="{{ route('shipments.show', $parcel->shipment ?? $parcel->id) }}" target="_blank" style="font-family: monospace; font-weight: 700; color: #3D1B3D; text-decoration: none;">
-                                                {{ $parcel->parcel_number }}
-                                            </a>
-                                            <span class="status-chip {{ $chipClass }}" style="font-size: 9px; padding: 2px 6px;">
-                                                {{ ucwords(str_replace('_', ' ', $parcel->status)) }}
-                                            </span>
+                        <!-- Active Parcels for this Contact -->
+                        @if($selectedContactParcels->isNotEmpty())
+                            <div class="intel-card" style="padding: 12px;">
+                                <strong style="display: block; font-size: 12px; color: #3D1B3D; margin-bottom: 8px;">
+                                    Live Parcel Queue
+                                </strong>
+                                <div style="display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto;">
+                                    @foreach($selectedContactParcels as $p)
+                                        <div style="font-size: 11px; padding: 6px; background: #FAF6F0; border: 1px solid #EBDDD8; border-radius: 6px;">
+                                            <div style="font-weight: 700; color: #3D1B3D;">{{ $p->parcel_number }}</div>
+                                            <div style="color: #8A7B7E; font-size: 10px;">{{ $p->recipient_name }} · {{ $p->city }}</div>
                                         </div>
-                                        <div style="color: #8A7B7E; font-size: 10.5px; margin-top: 2px;">
-                                            {{ $parcel->recipient_name }} · {{ $parcel->city }}
-                                        </div>
-                                        <button
-                                            type="button"
-                                            class="text-button"
-                                            style="margin-top: 4px; font-size: 10px; color: #E2703A; padding: 0;"
-                                            onclick="selectParcelForChat({{ $parcel->id }}, '{{ $parcel->parcel_number }}')"
-                                        >
-                                            ＋ Mention in chat
-                                        </button>
-                                    </div>
-                                @empty
-                                    <div style="padding: 20px 0; text-align: center; color: #8A7B7E; font-size: 11px;">
-                                        No active deliveries currently in transit with this driver.
-                                    </div>
-                                @endforelse
+                                    @endforeach
+                                </div>
                             </div>
-                        </div>
+                        @endif
                     </aside>
                 @endif
             </div>
@@ -773,19 +808,6 @@
         }
     }
 
-    // Attach parcel from inspector to composer
-    function selectParcelForChat(parcelId, parcelNumber) {
-        const select = document.getElementById('parcelSelect');
-        if (select) {
-            select.value = parcelId;
-        }
-        const input = document.getElementById('messageInput');
-        if (input) {
-            input.value = `Regarding parcel ${parcelNumber}: `;
-            input.focus();
-        }
-    }
-
     // Keyboard shortcut: Enter to submit, Shift+Enter for new line
     function handleKeyDown(event) {
         if (event.key === 'Enter' && !event.shiftKey) {
@@ -794,15 +816,29 @@
         }
     }
 
-    // Filter Couriers in Left Roster
+    // Switch Category Tabs: Branch vs Rider
+    function switchCategory(category, btn) {
+        document.querySelectorAll('.roster-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        document.querySelectorAll('.contact-entry').forEach(el => {
+            if (el.getAttribute('data-category') === category) {
+                el.style.display = '';
+            } else {
+                el.style.display = 'none';
+            }
+        });
+    }
+
+    // Filter Contacts in Left Roster
     function filterRosters(query) {
         const q = query.toLowerCase().trim();
         const items = document.querySelectorAll('#rosterList .roster-item');
         items.forEach(el => {
             const name = el.getAttribute('data-name') || '';
-            const zone = el.getAttribute('data-zone') || '';
-            const vehicle = el.getAttribute('data-vehicle') || '';
-            if (name.includes(q) || zone.includes(q) || vehicle.includes(q)) {
+            const sub = el.getAttribute('data-sub') || '';
+            const branch = el.getAttribute('data-branch') || '';
+            if (name.includes(q) || sub.includes(q) || branch.includes(q)) {
                 el.parentElement.style.display = '';
             } else {
                 el.parentElement.style.display = 'none';
@@ -810,27 +846,7 @@
         });
     }
 
-    // Filter Tabs: All / Online / Unread
-    function setRosterTab(type, btn) {
-        document.querySelectorAll('.roster-tab').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-
-        const items = document.querySelectorAll('#rosterList .roster-item');
-        items.forEach(el => {
-            const isOnline = el.getAttribute('data-online') === '1';
-            const unread = parseInt(el.getAttribute('data-unread') || '0', 10);
-
-            if (type === 'all') {
-                el.parentElement.style.display = '';
-            } else if (type === 'online') {
-                el.parentElement.style.display = isOnline ? '' : 'none';
-            } else if (type === 'unread') {
-                el.parentElement.style.display = unread > 0 ? '' : 'none';
-            }
-        });
-    }
-
-    // AJAX Send for seamless instantaneous chat delivery
+    // AJAX Send for instantaneous chat delivery
     async function handleSend(e) {
         e.preventDefault();
         const form = document.getElementById('chatForm');
@@ -840,8 +856,6 @@
         if (!msgText) return;
 
         const formData = new FormData(form);
-
-        // Optimistically show sending or disable button briefly
         sendBtn.disabled = true;
 
         try {
@@ -876,7 +890,7 @@
                     ${parcelHtml}
                     <div class="chat-bubble mine">${escapeHtml(data.data.message)}</div>
                     <div class="chat-meta">
-                        <span>Dispatch</span>
+                        <span>You</span>
                         <span>·</span>
                         <time>${data.data.created_at_time}</time>
                         <span style="color: #8A7B7E;">✓</span>
@@ -885,7 +899,6 @@
                 chatStream.appendChild(bubble);
                 scrollToBottom();
             } else {
-                // Fallback to normal submission on error
                 form.submit();
             }
         } catch (err) {
@@ -902,16 +915,16 @@
         return div.innerHTML;
     }
 
-    // Live Auto-Polling for incoming rider replies
-    @if($selectedRider)
+    // Live Auto-Polling for incoming replies
+    @if($selectedContact)
     (function() {
-        const riderUserId = {{ $selectedRider->user_id }};
+        const contactId = {{ $selectedContact->id }};
         const pollInterval = 3500;
         let lastKnownMsgId = {{ $threadMessages->last()?->id ?? 0 }};
 
         async function pollNewMessages() {
             try {
-                const res = await fetch(`/messages?rider_user_id=${riderUserId}&format=json`, {
+                const res = await fetch(`/messages?contact_user_id=${contactId}&format=json`, {
                     headers: { 'Accept': 'application/json' }
                 });
                 if (!res.ok) return;

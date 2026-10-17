@@ -11,16 +11,7 @@
 <div class="app-shell">
     @include('partials.sidebar')
     <main class="main-content">
-        <header class="topbar">
-            <div class="breadcrumb">
-                <span>Manage</span>
-                <span class="crumb-divider">/</span>
-                <strong>Delivery areas</strong>
-            </div>
-            <div class="topbar-actions">
-                <span class="user-name">{{ auth()->user()->name ?? 'Admin' }}</span>
-            </div>
-        </header>
+        @include('partials.topbar', ['category' => 'Fleet & Logistics', 'title' => 'Delivery Areas'])
 
         <div class="content-wrap">
             @if(session('success'))

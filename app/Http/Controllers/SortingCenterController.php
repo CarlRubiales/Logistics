@@ -18,7 +18,12 @@ class SortingCenterController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Parcel::with(['area', 'rider.user', 'shipment'])->latest();
+        if ($request->user()?->isMasterAdmin()) {
+            return redirect()->route('admin.dashboard');
+        }
+
+        $branch = $request->user()?->getBranchName();
+        $query = Parcel::with(['area', 'rider.user', 'shipment'])->forBranch($branch)->latest();
         if ($request->filled('status')) $query->where('status', $request->string('status'));
         if ($request->filled('search')) {
             $term = $request->string('search');
@@ -26,20 +31,31 @@ class SortingCenterController extends Controller
         }
 
         $parcels = $query->paginate(15)->withQueryString();
-        $areas = DestinationArea::where('is_active', true)->orderBy('name')->get();
-        $riders = RiderProfile::with(['user', 'areas'])->where('registration_status', 'approved')->get();
-        $counts = Parcel::select('status', DB::raw('count(*) as total'))->groupBy('status')->pluck('total', 'status');
+        $areas = DestinationArea::where('is_active', true)->forBranch($branch)->orderBy('name')->get();
+        $areaIds = $areas->pluck('id');
+
+        $ridersQuery = RiderProfile::with(['user', 'areas'])->where('registration_status', 'approved');
+        if ($branch && $areaIds->isNotEmpty()) {
+            $ridersQuery->where(function ($rq) use ($areaIds) {
+                $rq->whereHas('areas', fn ($aq) => $aq->whereIn('destination_areas.id', $areaIds))
+                   ->orDoesntHave('areas');
+            });
+        }
+        $riders = $ridersQuery->get();
+
+        $counts = Parcel::query()->forBranch($branch)->select('status', DB::raw('count(*) as total'))->groupBy('status')->pluck('total', 'status');
 
         if ($request->wantsJson() || $request->query('format') === 'json') {
             return response()->json([
                 'status' => 'success',
+                'branch' => $branch,
                 'counts' => $counts,
                 'total' => $parcels->total(),
-                'latest_update' => Parcel::max('updated_at'),
+                'latest_update' => Parcel::query()->forBranch($branch)->max('updated_at'),
             ]);
         }
 
-        return view('sorting-center.index', compact('parcels', 'areas', 'riders', 'counts'));
+        return view('sorting-center.index', compact('parcels', 'areas', 'riders', 'counts', 'branch'));
     }
 
     public function receive(Request $request, ParcelIntakeService $intake)
@@ -58,6 +74,11 @@ class SortingCenterController extends Controller
             'barcode.unique' => 'This barcode is already registered to a shipment.',
             'recipient_phone.regex' => 'Enter a Philippine mobile number such as 09171234567 or +639171234567.',
         ]);
+
+        $branch = $request->user()?->getBranchName();
+        if ($branch) {
+            $data['branch'] = $branch;
+        }
 
         try {
             $parcel = $intake->receive($data, $request->user()->id);

@@ -11,17 +11,7 @@
 <div class="app-shell">
     @include('partials.sidebar')
     <main class="main-content">
-        <header class="topbar">
-            <div class="topbar-mobile-brand"><div class="brand-mark"><span></span><span></span><span></span></div><strong>LUMORA</strong></div>
-            <button class="mobile-menu" id="mobile-menu">☰</button>
-            <div class="breadcrumb"><a href="{{ route('dashboard') }}">Workspace</a><span class="crumb-divider">/</span><strong>Shipments</strong></div>
-            <div class="topbar-actions">
-                <form class="orders-search topbar-search" method="GET" action="{{ route('shipments.index') }}"><span>⌕</span><input name="search" value="{{ $search }}" type="search" placeholder="Search shipments..." aria-label="Search shipments"><input type="hidden" name="status" value="{{ $status }}"></form>
-                <button class="icon-button" title="Notifications" aria-label="Notifications"><span class="notification-ring"></span><span class="notification-dot"></span></button>
-                <button class="help-button">?</button>
-                <button class="user-button"><span class="avatar small">{{ strtoupper(substr(auth()->user()->name, 0, 2)) }}</span><span class="user-name">{{ \Illuminate\Support\Str::before(auth()->user()->name, ' ') }}</span><span class="chevron">⌄</span></button>
-            </div>
-        </header>
+        @include('partials.topbar', ['category' => 'Fulfillment', 'title' => 'Shipments'])
         <div class="content-wrap shipments-page">
             <section class="welcome-row shipments-page-heading"><div><div class="eyebrow">FULFILLMENT OPERATIONS</div><h1>Shipments</h1><p class="intro">Track every parcel from packed to delivered in one calm workspace.</p></div></section>
             <section class="order-stat-grid shipment-stat-grid"><div class="order-stat"><span>All Shipments</span><strong>{{ $stats['all'] }}</strong></div><div class="order-stat processing"><span>Pending</span><strong>{{ $stats['pending'] }}</strong></div><div class="order-stat paid"><span>In Transit</span><strong>{{ $stats['in_transit'] }}</strong></div><div class="order-stat sage-stat"><span>Delivered</span><strong>{{ $stats['delivered'] }}</strong></div></section>

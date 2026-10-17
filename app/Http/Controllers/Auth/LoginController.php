@@ -41,7 +41,14 @@ class LoginController extends Controller
         RateLimiter::clear($key);
         $request->session()->regenerate();
 
-        $destination = $request->user()->role === 'rider' ? route('riders.dashboard') : route('sorting-center.index');
+        $user = $request->user();
+        if ($user->role === 'rider') {
+            $destination = route('riders.dashboard');
+        } elseif ($user->isMasterAdmin()) {
+            $destination = route('admin.dashboard');
+        } else {
+            $destination = route('sorting-center.index');
+        }
         return redirect()->intended($destination);
     }
 
