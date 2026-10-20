@@ -36,7 +36,10 @@
                 $hasDiscount = $product->discount_percent && $product->discount_percent > 0;
                 $discountedPrice = $hasDiscount ? $product->price * (1 - $product->discount_percent / 100) : $product->price;
                 $productVariants = $variants->get($product->id, collect());
-                $rawImages = is_array($product->images) ? array_values(array_filter($product->images)) : [];
+                $decodedImages = is_array($product->images)
+                    ? $product->images
+                    : (is_string($product->images) ? json_decode($product->images, true) : []);
+                $rawImages = is_array($decodedImages) ? array_values(array_filter($decodedImages)) : [];
                 if (empty($rawImages) && filled($product->image)) {
                     $rawImages = [$product->image];
                 }
@@ -74,16 +77,30 @@
                     </div>
 
                     @if ($view === 'active')
-                        <button type="button" class="edit-stock-btn" style="width:100%;margin-top:8px;"
-                            onclick="openEditModal({{ $product->id }}, {{ json_encode($product->name) }}, {{ json_encode($product->category) }}, {{ json_encode($product->description) }}, {{ $product->price }}, {{ $product->discount_percent ?? 'null' }}, {{ $product->stock }}, {{ json_encode($product->variant_type) }}, {{ json_encode($productVariants->map(fn($v) => ['name' => $v->name, 'stock' => $v->stock])->values()) }}, {{ json_encode($existingPhotoUrls) }})">
-                            Edit Product
-                        </button>
+                        <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+                            <button type="button" class="edit-stock-btn" style="width:100%;"
+                                onclick="openEditModal({{ $product->id }}, {{ json_encode($product->name) }}, {{ json_encode($product->category) }}, {{ json_encode($product->description) }}, {{ $product->price }}, {{ $product->discount_percent ?? 'null' }}, {{ $product->stock }}, {{ json_encode($product->variant_type) }}, {{ json_encode($productVariants->map(fn($v) => ['name' => $v->name, 'stock' => $v->stock])->values()) }}, {{ json_encode($existingPhotoUrls) }})">
+                                Edit Product
+                            </button>
+                            <form action="{{ route('seller.products.destroy', $product->id) }}" method="POST" onsubmit="return confirm('Are you sure you want to remove this product permanently?');" style="margin:0;">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="remove-product-btn" style="width:100%;">Remove Product</button>
+                            </form>
+                        </div>
                     @else
-                        <form action="{{ route('seller.products.restore', $product->id) }}" method="POST" style="margin-top:8px;">
-                            @csrf
-                            @method('PATCH')
-                            <button type="submit" class="edit-stock-btn" style="width:100%;">Restore Product</button>
-                        </form>
+                        <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+                            <form action="{{ route('seller.products.restore', $product->id) }}" method="POST" style="margin:0;">
+                                @csrf
+                                @method('PATCH')
+                                <button type="submit" class="edit-stock-btn" style="width:100%;">Restore Product</button>
+                            </form>
+                            <form action="{{ route('seller.products.destroy', $product->id) }}" method="POST" onsubmit="return confirm('Are you sure you want to remove this product permanently?');" style="margin:0;">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="remove-product-btn" style="width:100%;">Remove Product</button>
+                            </form>
+                        </div>
                     @endif
                 </div>
             </div>
@@ -194,7 +211,7 @@
                         <span style="font-size:13px;font-weight:700;color:var(--maroon-dark);">Product Photos (4 Slots)</span>
                         <span style="font-size:11px;color:#8B7A80;">Max 5MB each</span>
                     </div>
-                    <div style="font-size:11.5px;color:#8B7A80;margin-bottom:10px;">Click any slot to upload or replace a photo.</div>
+                    <div style="font-size:11.5px;color:#8B7A80;margin-bottom:10px;">Click any slot to upload or replace a photo, or click &times; to remove a slot.</div>
                     <div class="photo-slots-grid" data-photo-slots="edit">
                         @for ($slot = 0; $slot < 4; $slot++)
                             <div class="photo-slot" data-slot-index="{{ $slot }}" onclick="triggerPhotoSlot(this, event)">
@@ -217,12 +234,22 @@
                     <button type="submit" class="edit-stock-btn" style="flex:1; padding:10px;">Save Changes</button>
                 </div>
             </form>
-            <button type="button" id="archiveBtnTrigger" style="width:100%;margin-top:10px;padding:10px;border-radius:8px;border:1px solid #B85C3B;background:transparent;color:#B85C3B;font-family:inherit;cursor:pointer;">
-                Archive Product
-            </button>
+
+            <div style="display:flex; gap:10px; margin-top:10px;">
+                <button type="button" id="archiveBtnTrigger" style="flex:1;padding:10px;border-radius:8px;border:1px solid #B85C3B;background:transparent;color:#B85C3B;font-family:inherit;font-weight:600;cursor:pointer;">
+                    Archive Product
+                </button>
+                <button type="button" id="removeBtnTrigger" style="flex:1;padding:10px;border-radius:8px;border:1px solid #dc2626;background:#fef2f2;color:#dc2626;font-family:inherit;font-weight:600;cursor:pointer;">
+                    Remove Product
+                </button>
+            </div>
             <form id="archiveProductForm" method="POST" style="display:none;">
                 @csrf
                 @method('PATCH')
+            </form>
+            <form id="removeProductForm" method="POST" style="display:none;">
+                @csrf
+                @method('DELETE')
             </form>
         </div>
     </div>
@@ -242,6 +269,22 @@
             background: var(--maroon, #5B1A35);
             color: #fff;
             border-color: var(--maroon, #5B1A35);
+        }
+        .remove-product-btn {
+            padding: 7px 12px;
+            border-radius: 999px;
+            border: 1px solid #f3c4c4;
+            background: #fff5f5;
+            color: #c53030;
+            font-family: inherit;
+            font-size: .76rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background .18s ease, border-color .18s ease;
+        }
+        .remove-product-btn:hover {
+            background: #fee2e2;
+            border-color: #dc2626;
         }
         .photo-slots-grid {
             display: grid;
@@ -436,6 +479,7 @@
             document.getElementById('edit_stock').value = stock;
             document.getElementById('edit_variant_type').value = variantType || '';
             document.getElementById('archiveProductForm').action = `/seller/products/${id}/archive`;
+            document.getElementById('removeProductForm').action = `/seller/products/${id}`;
 
             clearVariantRows('edit');
             (variantsJson || []).forEach(v => addVariantRow('edit', v.name, v.stock));
@@ -451,6 +495,12 @@
         document.getElementById('archiveBtnTrigger').addEventListener('click', function () {
             if (confirm('Archive this product? It will be hidden from your active listings but can be restored later.')) {
                 document.getElementById('archiveProductForm').submit();
+            }
+        });
+
+        document.getElementById('removeBtnTrigger').addEventListener('click', function () {
+            if (confirm('Are you sure you want to remove this product permanently?')) {
+                document.getElementById('removeProductForm').submit();
             }
         });
     </script>

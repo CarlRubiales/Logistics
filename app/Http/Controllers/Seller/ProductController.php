@@ -308,13 +308,42 @@ class ProductController extends Controller
     public function destroy($id)
     {
         $product = DB::table('products')->where('id', $id)->where('seller_id', Auth::id())->first();
-        $imagePath = Product::normalizeImagePath($product?->image);
+        abort_unless($product, 403);
 
-        if ($imagePath) {
-            $this->deleteProductImageIfUnused($imagePath, (int) $id);
+        $allImages = [];
+        if (property_exists($product, 'images') && !empty($product->images)) {
+            $decoded = is_array($product->images) ? $product->images : json_decode((string) $product->images, true);
+            if (is_array($decoded)) {
+                $allImages = array_values(array_filter($decoded));
+            }
+        }
+        if (!empty($product->image)) {
+            $allImages[] = $product->image;
+        }
+
+        foreach (array_unique($allImages) as $rawPath) {
+            $normalized = Product::normalizeImagePath((string) $rawPath);
+            if ($normalized) {
+                $this->deleteProductImageIfUnused($normalized, (int) $id);
+            }
+        }
+
+        DB::table('product_variants')->where('product_id', $id)->delete();
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('product_reviews')) {
+            DB::table('product_reviews')->where('product_id', $id)->delete();
+        }
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('conversations') && \Illuminate\Support\Facades\Schema::hasColumn('conversations', 'product_id')) {
+            DB::table('conversations')->where('product_id', $id)->update(['product_id' => null]);
+        }
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('order_items')) {
+            DB::table('order_items')->where('product_id', $id)->delete();
         }
 
         DB::table('products')->where('id', $id)->where('seller_id', Auth::id())->delete();
-        return back()->with('success', 'Product permanently deleted.');
+
+        return back()->with('success', 'Product removed successfully.');
     }
 }
