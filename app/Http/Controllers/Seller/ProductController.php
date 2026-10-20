@@ -241,11 +241,41 @@ class ProductController extends Controller
         }
 
         $extension = strtolower($file->getClientOriginalExtension());
+        $mimeType = $file->getMimeType() ?: 'image/jpeg';
+        $rawBytes = @file_get_contents($file->getRealPath());
+
         $filename = Str::uuid()->toString().'.'.$extension;
+        $relativePath = Product::PUBLIC_PRODUCT_IMAGE_DIRECTORY.'/'.$filename;
 
         $file->move($directory, $filename);
 
-        return Product::PUBLIC_PRODUCT_IMAGE_DIRECTORY.'/'.$filename;
+        if ($rawBytes !== false && $rawBytes !== '') {
+            try {
+                if (! \Illuminate\Support\Facades\Schema::hasTable('uploaded_files')) {
+                    \Illuminate\Support\Facades\Schema::create('uploaded_files', function (\Illuminate\Database\Schema\Blueprint $table) {
+                        $table->id();
+                        $table->string('path')->unique();
+                        $table->string('mime_type', 100)->default('image/jpeg');
+                        $table->longText('contents');
+                        $table->timestamps();
+                    });
+                }
+
+                DB::table('uploaded_files')->updateOrInsert(
+                    ['path' => $relativePath],
+                    [
+                        'mime_type' => $mimeType,
+                        'contents' => base64_encode($rawBytes),
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
+            } catch (\Throwable $e) {
+                // Continue even if DB backup fails
+            }
+        }
+
+        return $relativePath;
     }
 
     private function storeProductImage(Request $request): ?string
@@ -281,6 +311,14 @@ class ProductController extends Controller
 
         if ($productsDirectory && $resolvedFile && Str::startsWith($resolvedFile, $productsDirectory)) {
             File::delete($resolvedFile);
+        }
+
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('uploaded_files')) {
+                DB::table('uploaded_files')->where('path', $publicPath)->delete();
+            }
+        } catch (\Throwable $e) {
+            // Ignore DB cleanup errors
         }
     }
 

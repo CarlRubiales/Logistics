@@ -111,6 +111,10 @@ class Product extends Model
 
         $value = trim((string) $rawImage);
 
+        if (Str::startsWith($value, 'data:image/')) {
+            return $value;
+        }
+
         if (Str::startsWith($value, ['http://', 'https://']) && ! self::isAppUrl($value)) {
             return $value;
         }
@@ -136,6 +140,36 @@ class Product extends Model
             return Str::startsWith($url, ['http://', 'https://'])
                 ? $url
                 : asset($url);
+        }
+
+        // Restore from database backup if container disk was reset on deployment
+        $canonicalPath = self::publicProductImagePath($value) ?: $path;
+        if ($canonicalPath) {
+            try {
+                if (\Illuminate\Support\Facades\Schema::hasTable('uploaded_files')) {
+                    $record = \Illuminate\Support\Facades\DB::table('uploaded_files')
+                        ->whereIn('path', array_filter([$canonicalPath, $path]))
+                        ->first();
+
+                    if ($record && ! empty($record->contents)) {
+                        $binary = base64_decode($record->contents, true);
+                        if ($binary !== false) {
+                            $targetFullPath = public_path($record->path);
+                            $targetDir = dirname($targetFullPath);
+                            if (! is_dir($targetDir)) {
+                                @mkdir($targetDir, 0755, true);
+                            }
+                            if (@file_put_contents($targetFullPath, $binary) !== false) {
+                                return asset($record->path);
+                            }
+                        }
+
+                        return 'data:'.($record->mime_type ?: 'image/jpeg').';base64,'.$record->contents;
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Ignore DB lookup errors and fall back to placeholder
+            }
         }
 
         return self::placeholderImageUrl();
