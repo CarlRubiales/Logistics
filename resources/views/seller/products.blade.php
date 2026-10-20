@@ -43,7 +43,12 @@
                 if (empty($rawImages) && filled($product->image)) {
                     $rawImages = [$product->image];
                 }
-                $existingPhotoUrls = array_values(array_map(fn ($img) => \App\Models\Product::resolveImageUrl((string) $img), array_slice($rawImages, 0, 4)));
+                $placeholderUrl = \App\Models\Product::placeholderImageUrl();
+                $existingPhotoUrls = [];
+                foreach (array_slice($rawImages, 0, 4) as $slotIdx => $img) {
+                    $resolved = \App\Models\Product::resolveImageUrl((string) $img);
+                    $existingPhotoUrls[$slotIdx] = ($resolved && $resolved !== $placeholderUrl) ? $resolved : '';
+                }
             @endphp
             <div class="product-tile">
                 <div class="product-image" style="position:relative;">
@@ -151,14 +156,15 @@
                     <div style="font-size:11.5px;color:#8B7A80;margin-bottom:10px;">Click a slot to add a photo. Slot 1 is used as the main cover photo.</div>
                     <div class="photo-slots-grid" data-photo-slots="add">
                         @for ($slot = 0; $slot < 4; $slot++)
-                            <div class="photo-slot" data-slot-index="{{ $slot }}" onclick="triggerPhotoSlot(this, event)">
+                            <div class="photo-slot" data-slot-index="{{ $slot }}">
                                 <input type="file" name="images[{{ $slot }}]" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="photo-slot-input" onchange="handlePhotoSlotChange(this)">
+                                <input type="hidden" name="image_data[{{ $slot }}]" value="" class="photo-slot-data">
                                 <div class="photo-slot-placeholder">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="photo-slot-icon"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="m21 15-5-5L5 19"/></svg>
                                     <span class="photo-slot-label">{{ $slot === 0 ? 'Cover Photo' : 'Slot ' . ($slot + 1) }}</span>
-                                    <span class="photo-slot-plus">+ Add</span>
+                                    <span class="photo-slot-plus">+ Add Photo</span>
                                 </div>
-                                <img src="" alt="Preview {{ $slot + 1 }}" class="photo-slot-preview" style="display:none;">
+                                <img src="" alt="Preview {{ $slot + 1 }}" class="photo-slot-preview" style="display:none;" onerror="handleSlotPreviewError(this)">
                                 <button type="button" class="photo-slot-remove" style="display:none;" onclick="clearPhotoSlot(this, event)" aria-label="Remove photo">&times;</button>
                             </div>
                         @endfor
@@ -214,15 +220,16 @@
                     <div style="font-size:11.5px;color:#8B7A80;margin-bottom:10px;">Click any slot to upload or replace a photo, or click &times; to remove a slot.</div>
                     <div class="photo-slots-grid" data-photo-slots="edit">
                         @for ($slot = 0; $slot < 4; $slot++)
-                            <div class="photo-slot" data-slot-index="{{ $slot }}" onclick="triggerPhotoSlot(this, event)">
+                            <div class="photo-slot" data-slot-index="{{ $slot }}">
                                 <input type="file" name="images[{{ $slot }}]" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="photo-slot-input" onchange="handlePhotoSlotChange(this)">
+                                <input type="hidden" name="image_data[{{ $slot }}]" value="" class="photo-slot-data">
                                 <input type="hidden" name="remove_images[{{ $slot }}]" value="0" class="photo-slot-remove-flag">
                                 <div class="photo-slot-placeholder">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="photo-slot-icon"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="m21 15-5-5L5 19"/></svg>
                                     <span class="photo-slot-label">{{ $slot === 0 ? 'Cover Photo' : 'Slot ' . ($slot + 1) }}</span>
-                                    <span class="photo-slot-plus">+ Add</span>
+                                    <span class="photo-slot-plus">+ Add Photo</span>
                                 </div>
-                                <img src="" alt="Preview {{ $slot + 1 }}" class="photo-slot-preview" style="display:none;">
+                                <img src="" alt="Preview {{ $slot + 1 }}" class="photo-slot-preview" style="display:none;" onerror="handleSlotPreviewError(this)">
                                 <button type="button" class="photo-slot-remove" style="display:none;" onclick="clearPhotoSlot(this, event)" aria-label="Remove photo">&times;</button>
                             </div>
                         @endfor
@@ -294,6 +301,7 @@
         .photo-slot {
             position: relative;
             aspect-ratio: 1 / 1;
+            min-height: 92px;
             border: 1.5px dashed #D6C3BC;
             border-radius: 12px;
             background: #FBF6F3;
@@ -315,22 +323,28 @@
             background: #fff;
         }
         .photo-slot-input {
-            display: none;
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+            z-index: 2;
         }
         .photo-slot-placeholder {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 3px;
+            gap: 4px;
             padding: 6px;
             text-align: center;
             color: #8B7A80;
             pointer-events: none;
         }
         .photo-slot-icon {
-            width: 20px;
-            height: 20px;
+            width: 22px;
+            height: 22px;
             color: #B96562;
         }
         .photo-slot-label {
@@ -340,14 +354,20 @@
             line-height: 1.1;
         }
         .photo-slot-plus {
-            font-size: 10px;
-            color: #8B7A80;
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: 999px;
+            background: #F2E2DA;
+            font-size: 9.5px;
+            font-weight: 700;
+            color: #5B1A35;
         }
         .photo-slot-preview {
             width: 100%;
             height: 100%;
             object-fit: cover;
             display: block;
+            pointer-events: none;
         }
         .photo-slot-remove {
             position: absolute;
@@ -357,14 +377,14 @@
             height: 22px;
             border-radius: 50%;
             border: 0;
-            background: rgba(43, 24, 38, .78);
+            background: rgba(43, 24, 38, .82);
             color: #fff;
             font-size: 14px;
             line-height: 1;
             display: grid;
             place-items: center;
             cursor: pointer;
-            z-index: 2;
+            z-index: 4;
         }
         .photo-slot-remove:hover {
             background: #dc2626;
@@ -392,10 +412,41 @@
             variantIndex[prefix] = 0;
         }
 
-        function triggerPhotoSlot(slotEl, event) {
-            if (event.target.closest('.photo-slot-remove')) return;
-            const input = slotEl.querySelector('.photo-slot-input');
-            if (input) input.click();
+        function compressImageToDataUrl(file, callback) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const rawDataUrl = e.target.result;
+                const img = new Image();
+                img.onload = function () {
+                    try {
+                        const maxDim = 1200;
+                        let w = img.width;
+                        let h = img.height;
+                        if (w > maxDim || h > maxDim) {
+                            if (w > h) {
+                                h = Math.round((h * maxDim) / w);
+                                w = maxDim;
+                            } else {
+                                w = Math.round((w * maxDim) / h);
+                                h = maxDim;
+                            }
+                        }
+                        const canvas = document.createElement('canvas');
+                        canvas.width = w;
+                        canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, w, h);
+                        callback(canvas.toDataURL('image/jpeg', 0.86));
+                    } catch (err) {
+                        callback(rawDataUrl);
+                    }
+                };
+                img.onerror = function () {
+                    callback(rawDataUrl);
+                };
+                img.src = rawDataUrl;
+            };
+            reader.readAsDataURL(file);
         }
 
         function handlePhotoSlotChange(input) {
@@ -410,13 +461,20 @@
                 return;
             }
 
-            const reader = new FileReader();
-            reader.onload = function (e) {
-                setPhotoSlotPreview(slotEl, e.target.result);
+            compressImageToDataUrl(file, function (dataUrl) {
+                setPhotoSlotPreview(slotEl, dataUrl);
+                const dataInput = slotEl.querySelector('.photo-slot-data');
+                if (dataInput) dataInput.value = dataUrl;
                 const removeFlag = slotEl.querySelector('.photo-slot-remove-flag');
                 if (removeFlag) removeFlag.value = '0';
-            };
-            reader.readAsDataURL(file);
+            });
+        }
+
+        function handleSlotPreviewError(imgEl) {
+            const slotEl = imgEl.closest('.photo-slot');
+            if (slotEl) {
+                setPhotoSlotPreview(slotEl, '');
+            }
         }
 
         function setPhotoSlotPreview(slotEl, src) {
@@ -424,14 +482,14 @@
             const preview = slotEl.querySelector('.photo-slot-preview');
             const removeBtn = slotEl.querySelector('.photo-slot-remove');
 
-            if (src) {
+            if (src && !src.includes('product-placeholder.png')) {
                 preview.src = src;
                 preview.style.display = 'block';
                 placeholder.style.display = 'none';
                 removeBtn.style.display = 'grid';
                 slotEl.classList.add('has-image');
             } else {
-                preview.src = '';
+                preview.removeAttribute('src');
                 preview.style.display = 'none';
                 placeholder.style.display = 'flex';
                 removeBtn.style.display = 'none';
@@ -440,11 +498,14 @@
         }
 
         function clearPhotoSlot(btn, event) {
+            event.preventDefault();
             event.stopPropagation();
             const slotEl = btn.closest('.photo-slot');
             if (!slotEl) return;
             const input = slotEl.querySelector('.photo-slot-input');
             if (input) input.value = '';
+            const dataInput = slotEl.querySelector('.photo-slot-data');
+            if (dataInput) dataInput.value = '';
             const removeFlag = slotEl.querySelector('.photo-slot-remove-flag');
             if (removeFlag) removeFlag.value = '1';
             setPhotoSlotPreview(slotEl, '');
@@ -456,6 +517,8 @@
             container.querySelectorAll('.photo-slot').forEach((slotEl, index) => {
                 const input = slotEl.querySelector('.photo-slot-input');
                 if (input) input.value = '';
+                const dataInput = slotEl.querySelector('.photo-slot-data');
+                if (dataInput) dataInput.value = '';
                 const removeFlag = slotEl.querySelector('.photo-slot-remove-flag');
                 if (removeFlag) removeFlag.value = '0';
                 const url = existingUrls[index] || '';

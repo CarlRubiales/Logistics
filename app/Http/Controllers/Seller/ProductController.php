@@ -61,11 +61,14 @@ class ProductController extends Controller
         $uploadedSlots = [];
 
         for ($slot = 0; $slot < 4; $slot++) {
+            $stored = null;
             if ($request->hasFile("images.$slot")) {
-                $stored = $this->storeUploadedImage($request->file("images.$slot"));
-                if ($stored) {
-                    $uploadedSlots[] = $stored;
-                }
+                $stored = $this->storeUploadedImage($request->file("images.$slot"), $request->input("image_data.$slot"));
+            } elseif ($request->filled("image_data.$slot")) {
+                $stored = $this->storeDataUrlImage((string) $request->input("image_data.$slot"));
+            }
+            if ($stored) {
+                $uploadedSlots[] = $stored;
             }
         }
 
@@ -148,12 +151,14 @@ class ProductController extends Controller
             $existingImages = [$product->image];
         }
 
-        $slots = [
-            0 => $existingImages[0] ?? null,
-            1 => $existingImages[1] ?? null,
-            2 => $existingImages[2] ?? null,
-            3 => $existingImages[3] ?? null,
-        ];
+        $placeholderUrl = Product::placeholderImageUrl();
+        $slots = [0 => null, 1 => null, 2 => null, 3 => null];
+        foreach (array_slice($existingImages, 0, 4) as $idx => $rawImg) {
+            $resolved = Product::resolveImageUrl((string) $rawImg);
+            if ($resolved && $resolved !== $placeholderUrl) {
+                $slots[$idx] = $rawImg;
+            }
+        }
 
         $slotsModified = false;
 
@@ -163,7 +168,13 @@ class ProductController extends Controller
                 $slotsModified = true;
             }
             if ($request->hasFile("images.$slot")) {
-                $stored = $this->storeUploadedImage($request->file("images.$slot"));
+                $stored = $this->storeUploadedImage($request->file("images.$slot"), $request->input("image_data.$slot"));
+                if ($stored) {
+                    $slots[$slot] = $stored;
+                    $slotsModified = true;
+                }
+            } elseif ($request->filled("image_data.$slot")) {
+                $stored = $this->storeDataUrlImage((string) $request->input("image_data.$slot"));
                 if ($stored) {
                     $slots[$slot] = $stored;
                     $slotsModified = true;
@@ -207,6 +218,7 @@ class ProductController extends Controller
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'images' => ['nullable', 'array', 'max:4'],
             'images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'image_data' => ['nullable', 'array', 'max:4'],
             'remove_images' => ['nullable', 'array'],
             'variant_type' => ['nullable', 'string', 'max:100'],
             'variants' => ['nullable', 'array'],
@@ -228,10 +240,75 @@ class ProductController extends Controller
         }
     }
 
-    private function storeUploadedImage($file): ?string
+    private function persistToUploadedFiles(string $relativePath, string $mimeType, string $rawBytes): void
     {
-        if (! $file) {
+        if ($rawBytes === '') {
+            return;
+        }
+
+        try {
+            if (! \Illuminate\Support\Facades\Schema::hasTable('uploaded_files')) {
+                \Illuminate\Support\Facades\Schema::create('uploaded_files', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->id();
+                    $table->string('path')->unique();
+                    $table->string('mime_type', 100)->default('image/jpeg');
+                    $table->longText('contents');
+                    $table->timestamps();
+                });
+            }
+
+            DB::table('uploaded_files')->updateOrInsert(
+                ['path' => $relativePath],
+                [
+                    'mime_type' => $mimeType,
+                    'contents' => base64_encode($rawBytes),
+                    'updated_at' => now(),
+                    'created_at' => now(),
+                ]
+            );
+        } catch (\Throwable $e) {
+            // Continue even if DB backup fails
+        }
+    }
+
+    private function storeDataUrlImage(?string $dataUrl): ?string
+    {
+        if (! $dataUrl || ! preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s', trim($dataUrl), $matches)) {
             return null;
+        }
+
+        $mimeType = strtolower($matches[1]);
+        $rawBytes = base64_decode($matches[2], true);
+        if ($rawBytes === false || $rawBytes === '') {
+            return null;
+        }
+
+        $extMap = [
+            'image/jpeg' => 'jpg',
+            'image/jpg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+        ];
+        $extension = $extMap[$mimeType] ?? 'jpg';
+
+        $directory = public_path(Product::PUBLIC_PRODUCT_IMAGE_DIRECTORY);
+        if (! File::exists($directory)) {
+            File::makeDirectory($directory, 0755, true);
+        }
+
+        $filename = Str::uuid()->toString().'.'.$extension;
+        $relativePath = Product::PUBLIC_PRODUCT_IMAGE_DIRECTORY.'/'.$filename;
+
+        @file_put_contents($directory.DIRECTORY_SEPARATOR.$filename, $rawBytes);
+        $this->persistToUploadedFiles($relativePath, $mimeType, $rawBytes);
+
+        return $relativePath;
+    }
+
+    private function storeUploadedImage($file, ?string $fallbackDataUrl = null): ?string
+    {
+        if (! $file || ! $file->isValid()) {
+            return $this->storeDataUrlImage($fallbackDataUrl);
         }
 
         $directory = public_path(Product::PUBLIC_PRODUCT_IMAGE_DIRECTORY);
@@ -240,7 +317,7 @@ class ProductController extends Controller
             File::makeDirectory($directory, 0755, true);
         }
 
-        $extension = strtolower($file->getClientOriginalExtension());
+        $extension = strtolower($file->getClientOriginalExtension()) ?: 'jpg';
         $mimeType = $file->getMimeType() ?: 'image/jpeg';
         $rawBytes = @file_get_contents($file->getRealPath());
 
@@ -250,28 +327,11 @@ class ProductController extends Controller
         $file->move($directory, $filename);
 
         if ($rawBytes !== false && $rawBytes !== '') {
-            try {
-                if (! \Illuminate\Support\Facades\Schema::hasTable('uploaded_files')) {
-                    \Illuminate\Support\Facades\Schema::create('uploaded_files', function (\Illuminate\Database\Schema\Blueprint $table) {
-                        $table->id();
-                        $table->string('path')->unique();
-                        $table->string('mime_type', 100)->default('image/jpeg');
-                        $table->longText('contents');
-                        $table->timestamps();
-                    });
-                }
-
-                DB::table('uploaded_files')->updateOrInsert(
-                    ['path' => $relativePath],
-                    [
-                        'mime_type' => $mimeType,
-                        'contents' => base64_encode($rawBytes),
-                        'updated_at' => now(),
-                        'created_at' => now(),
-                    ]
-                );
-            } catch (\Throwable $e) {
-                // Continue even if DB backup fails
+            $this->persistToUploadedFiles($relativePath, $mimeType, $rawBytes);
+        } elseif ($fallbackDataUrl && preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s', trim($fallbackDataUrl), $m)) {
+            $decoded = base64_decode($m[2], true);
+            if ($decoded !== false && $decoded !== '') {
+                $this->persistToUploadedFiles($relativePath, $m[1], $decoded);
             }
         }
 
