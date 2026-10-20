@@ -31,16 +31,53 @@
         .breadcrumb strong { color:var(--plum); }
         .product-detail { display:grid; grid-template-columns:minmax(0,1.18fr) minmax(330px,.92fr) minmax(220px,.55fr); gap:42px; align-items:start; }
         .gallery { display:grid; grid-template-columns:86px minmax(0,1fr); gap:14px; }
-        .thumbs { display:flex; flex-direction:column; gap:12px; }
-        .thumb { width:86px; height:86px; display:grid; place-items:center; overflow:hidden; border:1px solid var(--line); border-radius:10px; background:#f6eee9; }
-        .thumb.active { border:2px solid var(--plum); box-shadow:0 0 0 3px #f2dcd4; }
-        .thumb img { width:100%; height:100%; object-fit:cover; }
+        .thumbs { display:flex; flex-direction:column; gap:12px; perspective:700px; }
+        .thumb { position:relative; width:86px; height:86px; padding:0; display:grid; place-items:center; overflow:hidden; border:1px solid var(--line); border-radius:10px; background:#f6eee9; cursor:pointer; transform-style:preserve-3d; transition:transform .55s cubic-bezier(0.22,1,0.36,1), border-color .25s ease, box-shadow .25s ease; }
+        .thumb:hover { transform:perspective(500px) rotateY(-12deg) rotateX(6deg) scale(1.05); border-color:var(--rose); box-shadow:0 8px 18px rgba(59,30,52,.12); }
+        .thumb.active { border:2px solid var(--plum); box-shadow:0 8px 20px rgba(59,30,52,.18), 0 0 0 3px #f2dcd4; transform:perspective(500px) translateZ(10px) rotateY(-8deg) scale(1.04); animation:thumbSpin3D .65s cubic-bezier(0.22,1,0.36,1); }
+        @keyframes thumbSpin3D {
+            0% { transform:perspective(500px) rotateY(180deg) scale(0.86); }
+            60% { transform:perspective(500px) rotateY(-14deg) scale(1.06); }
+            100% { transform:perspective(500px) translateZ(10px) rotateY(-8deg) scale(1.04); }
+        }
+        .thumb img { width:100%; height:100%; object-fit:cover; pointer-events:none; }
+        .thumb-slot-badge { position:absolute; top:5px; left:5px; width:18px; height:18px; display:grid; place-items:center; border-radius:50%; background:rgba(59,30,52,.72); color:#fff; font-size:10px; font-weight:700; backdrop-filter:blur(4px); pointer-events:none; }
+        .thumb.active .thumb-slot-badge { background:var(--rose); }
         .thumb-placeholder { color:#cbbcb8; font-size:23px; }
-        .main-photo { position:relative; min-height:560px; display:grid; place-items:center; overflow:hidden; border-radius:16px; background:linear-gradient(135deg,#f1ddd5,#e5c4ba); }
-        .main-photo img { width:100%; height:100%; min-height:560px; object-fit:cover; }
+        .main-photo { position:relative; min-height:560px; display:grid; place-items:center; overflow:hidden; border-radius:16px; background:linear-gradient(135deg,#f1ddd5,#e5c4ba); perspective:1400px; user-select:none; cursor:grab; box-shadow:0 16px 38px rgba(59,30,52,.08); }
+        .main-photo.is-dragging { cursor:grabbing; }
+        .cube-3d-scene { position:relative; width:100%; height:100%; min-height:560px; perspective:1400px; overflow:hidden; border-radius:16px; }
+        .cube-3d-rotor { position:absolute; inset:0; width:100%; height:100%; transform-style:preserve-3d; --cube-z:270px; --rot-y:0deg; --tilt-x:0deg; transform:translateZ(calc(var(--cube-z) * -1)) rotateX(var(--tilt-x)) rotateY(var(--rot-y)); transition:transform .85s cubic-bezier(0.22,1,0.36,1); will-change:transform; }
+        .cube-3d-rotor.no-transition { transition:none !important; }
+        .cube-3d-face { position:absolute; inset:0; width:100%; height:100%; backface-visibility:hidden; -webkit-backface-visibility:hidden; overflow:hidden; border-radius:16px; background:linear-gradient(135deg,#f1ddd5,#e5c4ba); }
+        .cube-3d-face[data-face="0"] { transform:rotateY(0deg) translateZ(var(--cube-z)); }
+        .cube-3d-face[data-face="1"] { transform:rotateY(90deg) translateZ(var(--cube-z)); }
+        .cube-3d-face[data-face="2"] { transform:rotateY(180deg) translateZ(var(--cube-z)); }
+        .cube-3d-face[data-face="3"] { transform:rotateY(270deg) translateZ(var(--cube-z)); }
+        .cube-3d-face img { width:100%; height:100%; min-height:560px; object-fit:cover; pointer-events:none; -webkit-user-drag:none; }
+        .cube-3d-face::after { content:''; position:absolute; inset:0; pointer-events:none; background:linear-gradient(120deg,rgba(255,255,255,.12) 0%,transparent 45%,rgba(59,30,52,.08) 100%); }
+        .nav-3d-btn { position:absolute; top:50%; transform:translateY(-50%); z-index:5; width:38px; height:38px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.65); border-radius:50%; background:rgba(255,253,251,.82); color:var(--plum); backdrop-filter:blur(6px); cursor:pointer; transition:transform .2s ease, background .2s ease, box-shadow .2s ease; box-shadow:0 4px 14px rgba(59,30,52,.12); }
+        .nav-3d-btn:hover { background:#fff; transform:translateY(-50%) scale(1.08); box-shadow:0 6px 18px rgba(59,30,52,.18); }
+        .nav-3d-btn.prev { left:14px; }
+        .nav-3d-btn.next { right:14px; }
+        .nav-3d-btn svg { width:18px; height:18px; }
+        .spin-3d-toggle { position:absolute; left:16px; bottom:16px; z-index:5; height:36px; padding:0 13px; display:inline-flex; align-items:center; gap:7px; border:1px solid rgba(255,255,255,.65); border-radius:999px; background:rgba(255,253,251,.86); color:var(--plum); font:inherit; font-size:11px; font-weight:700; letter-spacing:.03em; backdrop-filter:blur(6px); cursor:pointer; box-shadow:0 4px 14px rgba(59,30,52,.12); transition:background .2s ease, color .2s ease, transform .2s ease; }
+        .spin-3d-toggle:hover { background:#fff; transform:translateY(-1px); }
+        .spin-3d-toggle.is-spinning { background:var(--plum); border-color:var(--plum); color:#fff; }
+        .spin-3d-toggle svg { width:15px; height:15px; }
+        .spin-3d-toggle.is-spinning svg { animation:spinIcon360 4s linear infinite; }
+        @keyframes spinIcon360 { to { transform:rotate(360deg); } }
+        .slot-3d-dots { position:absolute; left:50%; bottom:20px; transform:translateX(-50%); z-index:5; display:flex; align-items:center; gap:7px; padding:5px 10px; border-radius:999px; background:rgba(59,30,52,.42); backdrop-filter:blur(6px); }
+        .slot-3d-dot { width:7px; height:7px; padding:0; border:0; border-radius:999px; background:rgba(255,255,255,.5); cursor:pointer; transition:width .25s ease, background .25s ease; }
+        .slot-3d-dot.active { width:20px; background:#fff; }
         .photo-placeholder { color:rgba(61,27,61,.42); font-family:Georgia,serif; font-size:52px; }
-        .zoom { position:absolute; right:16px; bottom:16px; width:38px; height:38px; display:grid; place-items:center; border:0; border-radius:50%; background:rgba(255,253,251,.85); color:var(--plum); }
+        .zoom { position:absolute; right:16px; bottom:16px; z-index:5; width:38px; height:38px; display:grid; place-items:center; border:0; border-radius:50%; background:rgba(255,253,251,.85); color:var(--plum); cursor:pointer; box-shadow:0 4px 14px rgba(59,30,52,.12); transition:transform .2s ease, background .2s ease; }
+        .zoom:hover { background:#fff; transform:scale(1.08); }
         .zoom svg { width:19px; height:19px; }
+        .zoom-lightbox { position:fixed; inset:0; z-index:9999; display:none; place-items:center; padding:24px; background:rgba(30,16,26,.82); backdrop-filter:blur(6px); }
+        .zoom-lightbox.open { display:grid; }
+        .zoom-lightbox img { max-width:min(92vw,920px); max-height:86vh; border-radius:16px; object-fit:contain; box-shadow:0 24px 60px rgba(0,0,0,.45); background:#fff; }
+        .zoom-lightbox-close { position:absolute; top:22px; right:26px; width:42px; height:42px; display:grid; place-items:center; border:0; border-radius:50%; background:rgba(255,255,255,.9); color:var(--plum); font-size:22px; cursor:pointer; }
         .eyebrow { color:var(--rose); font-size:11px; font-weight:700; letter-spacing:.15em; text-transform:uppercase; }
         h1 { margin:9px 0 12px; font-family:Georgia,serif; font-size:43px; font-weight:500; line-height:1.05; }
         .rating { margin:0 0 22px; color:var(--plum); font-size:13px; }
@@ -180,7 +217,7 @@
         .related-name { margin-top:8px; font-family:Georgia,serif; font-size:13px; }
         .related-price { margin-top:4px; color:var(--rose); font-size:12px; font-weight:700; }
         @media (max-width:1199px) { .product-detail { grid-template-columns:minmax(0,1fr) minmax(300px,.9fr); } .service-stack { grid-column:1 / -1; display:grid; grid-template-columns:repeat(3,1fr); } .shop-profile-top { grid-template-columns:1fr; align-items:start; } .shop-stats { max-width:620px; } .shop-about { padding-right:0; } .shop-botanical { display:none; } .shop-product-grid { grid-template-columns:repeat(2,250px); } }
-        @media (max-width:767px) { .topbar-inner,.product-shell { width:min(100% - 28px,1380px); } .product-detail { display:block; } .gallery { margin-bottom:30px; } .main-photo,.main-photo img { min-height:420px; } .service-stack { display:grid; grid-template-columns:1fr; margin-top:30px; } h1 { font-size:37px; } .tabs { gap:18px; overflow-x:auto; } .tabs .tab { white-space:nowrap; } .related-grid { grid-template-columns:repeat(2,1fr); } .shop-profile { margin:22px 22px 24px; padding:24px 18px; border-radius:22px; } .shop-identity-row { align-items:flex-start; flex-direction:column; gap:14px; } .shop-avatar { width:92px; height:92px; flex-basis:92px; } .shop-name { font-size:27px; } .shop-meta { align-items:flex-start; flex-direction:column; gap:8px; } .shop-meta-divider { display:none; } .shop-actions { display:grid; grid-template-columns:1fr; } .shop-action { width:100%; } .shop-stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; max-width:none; } .shop-stat { align-items:flex-start; flex-direction:column; gap:9px; padding:14px; } .shop-trust { display:grid; grid-template-columns:1fr; gap:14px; } .shop-products-head { align-items:flex-start; flex-direction:column; } .shop-product-grid { display:flex; gap:12px; overflow-x:auto; padding-bottom:4px; scroll-snap-type:x mandatory; } .shop-product-card { width:auto; min-width:230px; scroll-snap-align:start; } }
+        @media (max-width:767px) { .topbar-inner,.product-shell { width:min(100% - 28px,1380px); } .product-detail { display:block; } .gallery { margin-bottom:30px; } .main-photo,.cube-3d-scene,.cube-3d-face img { min-height:420px; } .service-stack { display:grid; grid-template-columns:1fr; margin-top:30px; } h1 { font-size:37px; } .tabs { gap:18px; overflow-x:auto; } .tabs .tab { white-space:nowrap; } .related-grid { grid-template-columns:repeat(2,1fr); } .shop-profile { margin:22px 22px 24px; padding:24px 18px; border-radius:22px; } .shop-identity-row { align-items:flex-start; flex-direction:column; gap:14px; } .shop-avatar { width:92px; height:92px; flex-basis:92px; } .shop-name { font-size:27px; } .shop-meta { align-items:flex-start; flex-direction:column; gap:8px; } .shop-meta-divider { display:none; } .shop-actions { display:grid; grid-template-columns:1fr; } .shop-action { width:100%; } .shop-stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; max-width:none; } .shop-stat { align-items:flex-start; flex-direction:column; gap:9px; padding:14px; } .shop-trust { display:grid; grid-template-columns:1fr; gap:14px; } .shop-products-head { align-items:flex-start; flex-direction:column; } .shop-product-grid { display:flex; gap:12px; overflow-x:auto; padding-bottom:4px; scroll-snap-type:x mandatory; } .shop-product-card { width:auto; min-width:230px; scroll-snap-align:start; } }
     </style>
 </head>
 <body>
@@ -203,17 +240,52 @@
         @endif
         <div class="breadcrumb"><a href="{{ route('shop.index') }}">Home</a> <span>&rsaquo;</span> <a href="{{ route('shop.index', ['category' => $product->category]) }}">{{ $categoryTitle }}</a> <span>&rsaquo;</span> <strong>{{ $product->name }}</strong></div>
         <section class="product-detail">
+            @php
+                $rawGalleryUrls = array_values($product->image_urls ?: [$product->image_url]);
+                $gallerySlots = [];
+                for ($slotIdx = 0; $slotIdx < 4; $slotIdx++) {
+                    $gallerySlots[$slotIdx] = $rawGalleryUrls[$slotIdx % count($rawGalleryUrls)];
+                }
+            @endphp
             <div class="gallery">
                 <div class="thumbs">
-                    @foreach ($product->image_urls as $idx => $photoUrl)
-                        <button class="thumb {{ $idx === 0 ? 'active' : '' }}" type="button" data-gallery-thumb="{{ $photoUrl }}" aria-label="Product image {{ $idx + 1 }}">
+                    @foreach ($gallerySlots as $idx => $photoUrl)
+                        <button class="thumb {{ $idx === 0 ? 'active' : '' }}" type="button" data-slot-index="{{ $idx }}" data-gallery-thumb="{{ $photoUrl }}" aria-label="Rotate to product photo slot {{ $idx + 1 }}">
                             <img src="{{ $photoUrl }}" alt="{{ $product->name }} photo {{ $idx + 1 }}" loading="lazy" onerror="this.onerror=null;this.src='{{ asset('images/product-placeholder.png') }}';">
+                            <span class="thumb-slot-badge">{{ $idx + 1 }}</span>
                         </button>
                     @endforeach
                 </div>
-                <div class="main-photo">
-                    <img id="mainProductPhoto" src="{{ $product->image_url }}" alt="{{ $product->name }}" loading="lazy" onerror="this.onerror=null;this.src='{{ asset('images/product-placeholder.png') }}';">
-                    <button class="zoom" type="button" aria-label="Zoom image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5M10.8 7.8v6M7.8 10.8h6"/></svg></button>
+                <div class="main-photo" id="mainPhotoStage" title="Drag left or right to rotate in 3D">
+                    <div class="cube-3d-scene" id="cube3dScene">
+                        <div class="cube-3d-rotor" id="cube3dRotor">
+                            @foreach ($gallerySlots as $idx => $photoUrl)
+                                <div class="cube-3d-face" data-face="{{ $idx }}">
+                                    <img @if($idx === 0) id="mainProductPhoto" @endif src="{{ $photoUrl }}" alt="{{ $product->name }} 3D view {{ $idx + 1 }}" loading="lazy" onerror="this.onerror=null;this.src='{{ asset('images/product-placeholder.png') }}';">
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                    <button class="nav-3d-btn prev" id="cubePrevBtn" type="button" aria-label="Rotate 3D left">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                    </button>
+                    <button class="nav-3d-btn next" id="cubeNextBtn" type="button" aria-label="Rotate 3D right">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    </button>
+                    <button class="spin-3d-toggle is-spinning" id="cubeSpinToggle" type="button" aria-label="Toggle 3D rotation">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                            <line x1="12" y1="22.08" x2="12" y2="12"/>
+                        </svg>
+                        <span id="cubeSpinLabel">3D Rotating</span>
+                    </button>
+                    <div class="slot-3d-dots" aria-label="3D Photo Slots">
+                        @foreach ($gallerySlots as $idx => $photoUrl)
+                            <button class="slot-3d-dot {{ $idx === 0 ? 'active' : '' }}" type="button" data-dot-index="{{ $idx }}" aria-label="Photo slot {{ $idx + 1 }}"></button>
+                        @endforeach
+                    </div>
+                    <button class="zoom" id="zoomPhotoBtn" type="button" aria-label="Zoom image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5M10.8 7.8v6M7.8 10.8h6"/></svg></button>
                 </div>
             </div>
 
@@ -623,17 +695,199 @@
         document.querySelector('[data-tab="reviews"]')?.click();
         document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
-    const mainProductPhoto = document.getElementById('mainProductPhoto');
-    document.querySelectorAll('[data-gallery-thumb]').forEach(thumb => {
-        thumb.addEventListener('click', () => {
-            const url = thumb.dataset.galleryThumb;
-            if (mainProductPhoto && url) {
-                mainProductPhoto.src = url;
+    (function () {
+        const stage = document.getElementById('mainPhotoStage');
+        const scene = document.getElementById('cube3dScene');
+        const rotor = document.getElementById('cube3dRotor');
+        const thumbs = Array.from(document.querySelectorAll('[data-slot-index]'));
+        const dots = Array.from(document.querySelectorAll('[data-dot-index]'));
+        const prevBtn = document.getElementById('cubePrevBtn');
+        const nextBtn = document.getElementById('cubeNextBtn');
+        const spinToggle = document.getElementById('cubeSpinToggle');
+        const spinLabel = document.getElementById('cubeSpinLabel');
+        const zoomBtn = document.getElementById('zoomPhotoBtn');
+
+        if (!stage || !rotor || !thumbs.length) return;
+
+        let activeSlot = 0;
+        let currentAngle = 0; // degrees (each step of -90deg advances +1 slot)
+        let isAutoSpinning = true;
+        let isHoverPaused = false;
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartAngle = 0;
+        let autoTimer = null;
+
+        function updateCubeDepth() {
+            const width = (scene && scene.clientWidth) ? scene.clientWidth : 540;
+            rotor.style.setProperty('--cube-z', Math.round(width / 2) + 'px');
+        }
+        updateCubeDepth();
+        window.addEventListener('resize', updateCubeDepth);
+
+        function normalizeSlot(angle) {
+            const steps = Math.round(-angle / 90);
+            return ((steps % 4) + 4) % 4;
+        }
+
+        function syncActiveUI(slotIndex) {
+            activeSlot = ((slotIndex % 4) + 4) % 4;
+            thumbs.forEach((btn, idx) => {
+                if (idx === activeSlot) {
+                    btn.classList.remove('active');
+                    void btn.offsetWidth; // trigger 3D flip animation on slot change
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+            dots.forEach((dot, idx) => {
+                dot.classList.toggle('active', idx === activeSlot);
+            });
+        }
+
+        function applyRotation(angle, withTransition = true) {
+            if (withTransition) {
+                rotor.classList.remove('no-transition');
+            } else {
+                rotor.classList.add('no-transition');
             }
-            document.querySelectorAll('[data-gallery-thumb]').forEach(el => el.classList.remove('active'));
-            thumb.classList.add('active');
+            currentAngle = angle;
+            rotor.style.setProperty('--rot-y', currentAngle + 'deg');
+        }
+
+        function rotateToSlot(targetSlot) {
+            const currentSlot = normalizeSlot(currentAngle);
+            let deltaSlots = (targetSlot - currentSlot) % 4;
+            if (deltaSlots > 2) deltaSlots -= 4;
+            if (deltaSlots < -2) deltaSlots += 4;
+            const snappedBase = Math.round(currentAngle / 90) * 90;
+            applyRotation(snappedBase - (deltaSlots * 90), true);
+            syncActiveUI(targetSlot);
+        }
+
+        function stepRotation(direction) {
+            const snappedBase = Math.round(currentAngle / 90) * 90;
+            const nextAngle = snappedBase - (direction * 90);
+            applyRotation(nextAngle, true);
+            syncActiveUI(normalizeSlot(nextAngle));
+        }
+
+        function startAutoSpin() {
+            stopAutoSpin();
+            autoTimer = setInterval(() => {
+                if (isAutoSpinning && !isHoverPaused && !isDragging) {
+                    stepRotation(1);
+                }
+            }, 3200);
+        }
+
+        function stopAutoSpin() {
+            if (autoTimer) {
+                clearInterval(autoTimer);
+                autoTimer = null;
+            }
+        }
+
+        thumbs.forEach(thumb => {
+            thumb.addEventListener('click', () => {
+                const slot = parseInt(thumb.dataset.slotIndex, 10) || 0;
+                rotateToSlot(slot);
+            });
         });
-    });
+
+        dots.forEach(dot => {
+            dot.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const slot = parseInt(dot.dataset.dotIndex, 10) || 0;
+                rotateToSlot(slot);
+            });
+        });
+
+        prevBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            stepRotation(-1);
+        });
+
+        nextBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            stepRotation(1);
+        });
+
+        spinToggle?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            isAutoSpinning = !isAutoSpinning;
+            spinToggle.classList.toggle('is-spinning', isAutoSpinning);
+            if (spinLabel) {
+                spinLabel.textContent = isAutoSpinning ? '3D Rotating' : 'Spin 3D';
+            }
+        });
+
+        stage.addEventListener('mouseenter', () => { isHoverPaused = true; });
+        stage.addEventListener('mouseleave', () => {
+            isHoverPaused = false;
+            rotor.style.setProperty('--tilt-x', '0deg');
+        });
+
+        // Pointer drag to spin in 3D
+        stage.addEventListener('pointerdown', (e) => {
+            if (e.target.closest('button')) return;
+            isDragging = true;
+            dragStartX = e.clientX;
+            dragStartAngle = currentAngle;
+            stage.classList.add('is-dragging');
+            stage.setPointerCapture?.(e.pointerId);
+        });
+
+        stage.addEventListener('pointermove', (e) => {
+            if (!isDragging) {
+                const rect = stage.getBoundingClientRect();
+                const relY = ((e.clientY - rect.top) / rect.height) - 0.5;
+                rotor.style.setProperty('--tilt-x', (relY * -5).toFixed(2) + 'deg');
+                return;
+            }
+            const deltaX = e.clientX - dragStartX;
+            const dragDegrees = (deltaX / Math.max(240, stage.clientWidth)) * 180;
+            applyRotation(dragStartAngle + dragDegrees, false);
+        });
+
+        function finishDrag() {
+            if (!isDragging) return;
+            isDragging = false;
+            stage.classList.remove('is-dragging');
+            rotor.style.setProperty('--tilt-x', '0deg');
+            const snappedAngle = Math.round(currentAngle / 90) * 90;
+            applyRotation(snappedAngle, true);
+            syncActiveUI(normalizeSlot(snappedAngle));
+        }
+
+        stage.addEventListener('pointerup', finishDrag);
+        stage.addEventListener('pointercancel', finishDrag);
+
+        // Zoom Lightbox
+        const lightbox = document.createElement('div');
+        lightbox.className = 'zoom-lightbox';
+        lightbox.innerHTML = '<button type="button" class="zoom-lightbox-close" aria-label="Close zoom">&times;</button><img src="" alt="Zoomed product photo">';
+        document.body.appendChild(lightbox);
+        const lightboxImg = lightbox.querySelector('img');
+        const lightboxClose = lightbox.querySelector('.zoom-lightbox-close');
+
+        zoomBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const currentThumb = thumbs[activeSlot];
+            const url = currentThumb?.dataset.galleryThumb || '';
+            if (lightboxImg && url) {
+                lightboxImg.src = url;
+                lightbox.classList.add('open');
+            }
+        });
+        lightboxClose?.addEventListener('click', () => lightbox.classList.remove('open'));
+        lightbox.addEventListener('click', (e) => {
+            if (e.target === lightbox) lightbox.classList.remove('open');
+        });
+
+        startAutoSpin();
+    })();
 </script>
 <script>
 (function () {
