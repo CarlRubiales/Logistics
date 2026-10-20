@@ -41,12 +41,42 @@ class ProductController extends Controller
         ]);
     }
 
+    private function ensureImagesColumnExists(): void
+    {
+        try {
+            if (! \Illuminate\Support\Facades\Schema::hasColumn('products', 'images')) {
+                \Illuminate\Support\Facades\Schema::table('products', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->json('images')->nullable()->after('image');
+                });
+            }
+        } catch (\Throwable $e) {
+            // Ignore if schema cannot be altered dynamically.
+        }
+    }
+
     public function store(Request $request)
     {
+        $this->ensureImagesColumnExists();
         $validated = $this->validateProduct($request);
-        $imagePath = $request->hasFile('image')
-            ? $this->storeProductImage($request)
-            : null;
+        $uploadedSlots = [];
+
+        for ($slot = 0; $slot < 4; $slot++) {
+            if ($request->hasFile("images.$slot")) {
+                $stored = $this->storeUploadedImage($request->file("images.$slot"));
+                if ($stored) {
+                    $uploadedSlots[] = $stored;
+                }
+            }
+        }
+
+        if (empty($uploadedSlots) && $request->hasFile('image')) {
+            $single = $this->storeUploadedImage($request->file('image'));
+            if ($single) {
+                $uploadedSlots[] = $single;
+            }
+        }
+
+        $imagePath = $uploadedSlots[0] ?? null;
 
         $variantRows = collect($request->input('variants', []))
             ->filter(fn ($v) => !empty($v['name']));
@@ -55,7 +85,7 @@ class ProductController extends Controller
             ? $variantRows->sum(fn ($v) => (int) ($v['stock'] ?? 0))
             : (int) ($request->stock ?? 0);
 
-        $productId = DB::table('products')->insertGetId([
+        $insertData = [
             'seller_id' => Auth::id(),
             'name' => $validated['name'],
             'category' => $validated['category'],
@@ -68,7 +98,13 @@ class ProductController extends Controller
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ];
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('products', 'images')) {
+            $insertData['images'] = !empty($uploadedSlots) ? json_encode(array_values($uploadedSlots)) : null;
+        }
+
+        $productId = DB::table('products')->insertGetId($insertData);
 
         $this->insertVariants($productId, $variantRows);
         return back()->with('success', 'Product added successfully!');
@@ -76,6 +112,7 @@ class ProductController extends Controller
 
     public function update(Request $request, $id)
     {
+        $this->ensureImagesColumnExists();
         $product = DB::table('products')
             ->where('id', $id)
             ->where('seller_id', Auth::id())
@@ -100,14 +137,55 @@ class ProductController extends Controller
             'updated_at' => now(),
         ];
 
-        if ($request->hasFile('image')) {
-            $oldImagePath = Product::normalizeImagePath($product->image);
-
-            if ($oldImagePath) {
-                $this->deleteProductImageIfUnused($oldImagePath, (int) $id);
+        $existingImages = [];
+        if (property_exists($product, 'images') && !empty($product->images)) {
+            $decoded = json_decode((string) $product->images, true);
+            if (is_array($decoded)) {
+                $existingImages = array_values(array_filter($decoded));
             }
+        }
+        if (empty($existingImages) && !empty($product->image)) {
+            $existingImages = [$product->image];
+        }
 
-            $data['image'] = $this->storeProductImage($request);
+        $slots = [
+            0 => $existingImages[0] ?? null,
+            1 => $existingImages[1] ?? null,
+            2 => $existingImages[2] ?? null,
+            3 => $existingImages[3] ?? null,
+        ];
+
+        $slotsModified = false;
+
+        for ($slot = 0; $slot < 4; $slot++) {
+            if ((string) $request->input("remove_images.$slot") === '1') {
+                $slots[$slot] = null;
+                $slotsModified = true;
+            }
+            if ($request->hasFile("images.$slot")) {
+                $stored = $this->storeUploadedImage($request->file("images.$slot"));
+                if ($stored) {
+                    $slots[$slot] = $stored;
+                    $slotsModified = true;
+                }
+            }
+        }
+
+        if ($request->hasFile('image')) {
+            $stored = $this->storeUploadedImage($request->file('image'));
+            if ($stored) {
+                $slots[0] = $stored;
+                $slotsModified = true;
+            }
+        }
+
+        if ($slotsModified) {
+            $finalImages = array_values(array_filter($slots));
+            $data['image'] = $finalImages[0] ?? null;
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('products', 'images')) {
+                $data['images'] = !empty($finalImages) ? json_encode($finalImages) : null;
+            }
         }
 
         DB::table('products')->where('id', $id)->update($data);
@@ -127,6 +205,9 @@ class ProductController extends Controller
             'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:90'],
             'stock' => ['nullable', 'integer', 'min:0'],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'images' => ['nullable', 'array', 'max:4'],
+            'images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'remove_images' => ['nullable', 'array'],
             'variant_type' => ['nullable', 'string', 'max:100'],
             'variants' => ['nullable', 'array'],
             'variants.*.name' => ['nullable', 'string', 'max:255'],
@@ -147,10 +228,8 @@ class ProductController extends Controller
         }
     }
 
-    private function storeProductImage(Request $request): ?string
+    private function storeUploadedImage($file): ?string
     {
-        $file = $request->file('image');
-
         if (! $file) {
             return null;
         }
@@ -167,6 +246,11 @@ class ProductController extends Controller
         $file->move($directory, $filename);
 
         return Product::PUBLIC_PRODUCT_IMAGE_DIRECTORY.'/'.$filename;
+    }
+
+    private function storeProductImage(Request $request): ?string
+    {
+        return $this->storeUploadedImage($request->file('image'));
     }
 
     private function deleteProductImageIfUnused(?string $imagePath, ?int $currentProductId = null): void

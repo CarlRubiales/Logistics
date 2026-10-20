@@ -205,12 +205,14 @@
         <section class="product-detail">
             <div class="gallery">
                 <div class="thumbs">
-                    <button class="thumb active" type="button" aria-label="Product image">
-                        <img src="{{ $product->image_url }}" alt="{{ $product->name }}" loading="lazy" onerror="this.onerror=null;this.src='{{ asset('images/product-placeholder.png') }}';">
-                    </button>
+                    @foreach ($product->image_urls as $idx => $photoUrl)
+                        <button class="thumb {{ $idx === 0 ? 'active' : '' }}" type="button" data-gallery-thumb="{{ $photoUrl }}" aria-label="Product image {{ $idx + 1 }}">
+                            <img src="{{ $photoUrl }}" alt="{{ $product->name }} photo {{ $idx + 1 }}" loading="lazy" onerror="this.onerror=null;this.src='{{ asset('images/product-placeholder.png') }}';">
+                        </button>
+                    @endforeach
                 </div>
                 <div class="main-photo">
-                    <img src="{{ $product->image_url }}" alt="{{ $product->name }}" loading="lazy" onerror="this.onerror=null;this.src='{{ asset('images/product-placeholder.png') }}';">
+                    <img id="mainProductPhoto" src="{{ $product->image_url }}" alt="{{ $product->name }}" loading="lazy" onerror="this.onerror=null;this.src='{{ asset('images/product-placeholder.png') }}';">
                     <button class="zoom" type="button" aria-label="Zoom image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5M10.8 7.8v6M7.8 10.8h6"/></svg></button>
                 </div>
             </div>
@@ -621,6 +623,17 @@
         document.querySelector('[data-tab="reviews"]')?.click();
         document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
+    const mainProductPhoto = document.getElementById('mainProductPhoto');
+    document.querySelectorAll('[data-gallery-thumb]').forEach(thumb => {
+        thumb.addEventListener('click', () => {
+            const url = thumb.dataset.galleryThumb;
+            if (mainProductPhoto && url) {
+                mainProductPhoto.src = url;
+            }
+            document.querySelectorAll('[data-gallery-thumb]').forEach(el => el.classList.remove('active'));
+            thumb.classList.add('active');
+        });
+    });
 </script>
 <script>
 (function () {

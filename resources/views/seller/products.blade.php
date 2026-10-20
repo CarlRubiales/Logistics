@@ -7,6 +7,16 @@
         <div class="alert-success">{{ session('success') }}</div>
     @endif
 
+    @if ($errors->any())
+        <div style="background:#fdece6;color:#b8451f;padding:12px 16px;border-radius:12px;margin-bottom:16px;font-size:.85rem;">
+            <ul style="margin:0 0 0 18px;padding:0;">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <div style="display:flex;gap:8px;margin-bottom:16px;">
         <a href="{{ route('seller.products.index') }}" class="view-toggle-btn {{ $view === 'active' ? 'active' : '' }}">Active</a>
         <a href="{{ route('seller.products.index', ['view' => 'archived']) }}" class="view-toggle-btn {{ $view === 'archived' ? 'active' : '' }}">Archived</a>
@@ -15,7 +25,7 @@
     <div class="products-grid">
         @if ($view === 'active')
             {{-- Add Product tile --}}
-            <button type="button" class="add-product-tile" onclick="clearVariantRows('add'); document.getElementById('addProductModal').style.display='flex'" style="cursor:pointer; font-family:inherit;">
+            <button type="button" class="add-product-tile" onclick="openAddModal()" style="cursor:pointer; font-family:inherit;">
                 <div class="add-icon">+</div>
                 <div class="add-label">Add Product</div>
             </button>
@@ -26,11 +36,19 @@
                 $hasDiscount = $product->discount_percent && $product->discount_percent > 0;
                 $discountedPrice = $hasDiscount ? $product->price * (1 - $product->discount_percent / 100) : $product->price;
                 $productVariants = $variants->get($product->id, collect());
+                $rawImages = is_array($product->images) ? array_values(array_filter($product->images)) : [];
+                if (empty($rawImages) && filled($product->image)) {
+                    $rawImages = [$product->image];
+                }
+                $existingPhotoUrls = array_values(array_map(fn ($img) => \App\Models\Product::resolveImageUrl((string) $img), array_slice($rawImages, 0, 4)));
             @endphp
             <div class="product-tile">
                 <div class="product-image" style="position:relative;">
                     @if ($hasDiscount)
                         <span style="position:absolute;top:8px;left:8px;background:#B85C3B;color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;">{{ rtrim(rtrim(number_format($product->discount_percent, 1), '0'), '.') }}% OFF</span>
+                    @endif
+                    @if (count($existingPhotoUrls) > 1)
+                        <span style="position:absolute;bottom:8px;right:8px;background:rgba(43,24,38,.72);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;">{{ count($existingPhotoUrls) }}/4 photos</span>
                     @endif
                     <img src="{{ $product->image_url }}" alt="{{ $product->name }}" loading="lazy" onerror="this.onerror=null;this.src='{{ asset('images/product-placeholder.png') }}';">
                 </div>
@@ -57,7 +75,7 @@
 
                     @if ($view === 'active')
                         <button type="button" class="edit-stock-btn" style="width:100%;margin-top:8px;"
-                            onclick="openEditModal({{ $product->id }}, {{ json_encode($product->name) }}, {{ json_encode($product->category) }}, {{ json_encode($product->description) }}, {{ $product->price }}, {{ $product->discount_percent ?? 'null' }}, {{ $product->stock }}, {{ json_encode($product->variant_type) }}, {{ json_encode($productVariants->map(fn($v) => ['name' => $v->name, 'stock' => $v->stock])->values()) }})">
+                            onclick="openEditModal({{ $product->id }}, {{ json_encode($product->name) }}, {{ json_encode($product->category) }}, {{ json_encode($product->description) }}, {{ $product->price }}, {{ $product->discount_percent ?? 'null' }}, {{ $product->stock }}, {{ json_encode($product->variant_type) }}, {{ json_encode($productVariants->map(fn($v) => ['name' => $v->name, 'stock' => $v->stock])->values()) }}, {{ json_encode($existingPhotoUrls) }})">
                             Edit Product
                         </button>
                     @else
@@ -77,8 +95,8 @@
     </div>
 
     {{-- Add Product Modal --}}
-    <div id="addProductModal" style="display:none; position:fixed; inset:0; background:rgba(43,28,34,.5); align-items:center; justify-content:center; z-index:50;">
-        <div style="background:#fff; border-radius:18px; padding:28px; width:420px; max-width:90%;">
+    <div id="addProductModal" style="display:none; position:fixed; inset:0; background:rgba(43,28,34,.5); align-items:center; justify-content:center; z-index:50; padding:16px;">
+        <div style="background:#fff; border-radius:18px; padding:28px; width:460px; max-width:95%; max-height:90vh; overflow-y:auto;">
             <h2 style="font-size:18px; font-weight:800; margin-bottom:18px;">Add Product</h2>
             <form action="{{ route('seller.products.store') }}" method="POST" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:12px;">
                 @csrf
@@ -108,9 +126,30 @@
                     <button type="button" onclick="addVariantRow('add')" style="background:none;border:none;color:var(--maroon);font-size:12.5px;font-weight:700;cursor:pointer;padding:0;font-family:inherit;">+ Add variant</button>
                 </div>
 
-                <input type="file" name="image" accept="image/*">
+                <div style="border-top:1px solid var(--border);padding-top:12px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                        <span style="font-size:13px;font-weight:700;color:var(--maroon-dark);">Product Photos (4 Slots)</span>
+                        <span style="font-size:11px;color:#8B7A80;">Max 5MB each</span>
+                    </div>
+                    <div style="font-size:11.5px;color:#8B7A80;margin-bottom:10px;">Click a slot to add a photo. Slot 1 is used as the main cover photo.</div>
+                    <div class="photo-slots-grid" data-photo-slots="add">
+                        @for ($slot = 0; $slot < 4; $slot++)
+                            <div class="photo-slot" data-slot-index="{{ $slot }}" onclick="triggerPhotoSlot(this, event)">
+                                <input type="file" name="images[{{ $slot }}]" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="photo-slot-input" onchange="handlePhotoSlotChange(this)">
+                                <div class="photo-slot-placeholder">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="photo-slot-icon"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="m21 15-5-5L5 19"/></svg>
+                                    <span class="photo-slot-label">{{ $slot === 0 ? 'Cover Photo' : 'Slot ' . ($slot + 1) }}</span>
+                                    <span class="photo-slot-plus">+ Add</span>
+                                </div>
+                                <img src="" alt="Preview {{ $slot + 1 }}" class="photo-slot-preview" style="display:none;">
+                                <button type="button" class="photo-slot-remove" style="display:none;" onclick="clearPhotoSlot(this, event)" aria-label="Remove photo">&times;</button>
+                            </div>
+                        @endfor
+                    </div>
+                </div>
+
                 <div style="display:flex; gap:10px; margin-top:8px;">
-                    <button type="button" onclick="document.getElementById('addProductModal').style.display='none'" style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border); background:transparent; font-family:inherit;">Cancel</button>
+                    <button type="button" onclick="document.getElementById('addProductModal').style.display='none'" style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border); background:transparent; font-family:inherit; cursor:pointer;">Cancel</button>
                     <button type="submit" class="edit-stock-btn" style="flex:1; padding:10px;">Save Product</button>
                 </div>
             </form>
@@ -118,8 +157,8 @@
     </div>
 
     {{-- Edit Product Modal --}}
-    <div id="editProductModal" style="display:none; position:fixed; inset:0; background:rgba(43,28,34,.5); align-items:center; justify-content:center; z-index:50;">
-        <div style="background:#fff; border-radius:18px; padding:28px; width:420px; max-width:90%; max-height:88vh; overflow-y:auto;">
+    <div id="editProductModal" style="display:none; position:fixed; inset:0; background:rgba(43,28,34,.5); align-items:center; justify-content:center; z-index:50; padding:16px;">
+        <div style="background:#fff; border-radius:18px; padding:28px; width:460px; max-width:95%; max-height:90vh; overflow-y:auto;">
             <h2 style="font-size:18px; font-weight:800; margin-bottom:18px;">Edit Product</h2>
             <form id="editProductForm" method="POST" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:12px;">
                 @csrf
@@ -150,12 +189,31 @@
                     <button type="button" onclick="addVariantRow('edit')" style="background:none;border:none;color:var(--maroon);font-size:12.5px;font-weight:700;cursor:pointer;padding:0;font-family:inherit;">+ Add variant</button>
                 </div>
 
-                <div>
-                    <label style="font-size:12px;color:#8B7A80;display:block;margin-bottom:4px;">Replace image (optional)</label>
-                    <input type="file" name="image" accept="image/*">
+                <div style="border-top:1px solid var(--border);padding-top:12px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                        <span style="font-size:13px;font-weight:700;color:var(--maroon-dark);">Product Photos (4 Slots)</span>
+                        <span style="font-size:11px;color:#8B7A80;">Max 5MB each</span>
+                    </div>
+                    <div style="font-size:11.5px;color:#8B7A80;margin-bottom:10px;">Click any slot to upload or replace a photo.</div>
+                    <div class="photo-slots-grid" data-photo-slots="edit">
+                        @for ($slot = 0; $slot < 4; $slot++)
+                            <div class="photo-slot" data-slot-index="{{ $slot }}" onclick="triggerPhotoSlot(this, event)">
+                                <input type="file" name="images[{{ $slot }}]" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="photo-slot-input" onchange="handlePhotoSlotChange(this)">
+                                <input type="hidden" name="remove_images[{{ $slot }}]" value="0" class="photo-slot-remove-flag">
+                                <div class="photo-slot-placeholder">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="photo-slot-icon"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="m21 15-5-5L5 19"/></svg>
+                                    <span class="photo-slot-label">{{ $slot === 0 ? 'Cover Photo' : 'Slot ' . ($slot + 1) }}</span>
+                                    <span class="photo-slot-plus">+ Add</span>
+                                </div>
+                                <img src="" alt="Preview {{ $slot + 1 }}" class="photo-slot-preview" style="display:none;">
+                                <button type="button" class="photo-slot-remove" style="display:none;" onclick="clearPhotoSlot(this, event)" aria-label="Remove photo">&times;</button>
+                            </div>
+                        @endfor
+                    </div>
                 </div>
+
                 <div style="display:flex; gap:10px; margin-top:8px;">
-                    <button type="button" onclick="closeEditModal()" style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border); background:transparent; font-family:inherit;">Cancel</button>
+                    <button type="button" onclick="closeEditModal()" style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border); background:transparent; font-family:inherit; cursor:pointer;">Cancel</button>
                     <button type="submit" class="edit-stock-btn" style="flex:1; padding:10px;">Save Changes</button>
                 </div>
             </form>
@@ -185,6 +243,89 @@
             color: #fff;
             border-color: var(--maroon, #5B1A35);
         }
+        .photo-slots-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .photo-slot {
+            position: relative;
+            aspect-ratio: 1 / 1;
+            border: 1.5px dashed #D6C3BC;
+            border-radius: 12px;
+            background: #FBF6F3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            cursor: pointer;
+            transition: border-color .2s ease, background .2s ease, transform .15s ease;
+        }
+        .photo-slot:hover {
+            border-color: var(--maroon, #5B1A35);
+            background: #F7EDE8;
+            transform: translateY(-1px);
+        }
+        .photo-slot.has-image {
+            border-style: solid;
+            border-color: #E2D4CE;
+            background: #fff;
+        }
+        .photo-slot-input {
+            display: none;
+        }
+        .photo-slot-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            padding: 6px;
+            text-align: center;
+            color: #8B7A80;
+            pointer-events: none;
+        }
+        .photo-slot-icon {
+            width: 20px;
+            height: 20px;
+            color: #B96562;
+        }
+        .photo-slot-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: #5B1A35;
+            line-height: 1.1;
+        }
+        .photo-slot-plus {
+            font-size: 10px;
+            color: #8B7A80;
+        }
+        .photo-slot-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .photo-slot-remove {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 0;
+            background: rgba(43, 24, 38, .78);
+            color: #fff;
+            font-size: 14px;
+            line-height: 1;
+            display: grid;
+            place-items: center;
+            cursor: pointer;
+            z-index: 2;
+        }
+        .photo-slot-remove:hover {
+            background: #dc2626;
+        }
     </style>
 
     <script>
@@ -208,7 +349,84 @@
             variantIndex[prefix] = 0;
         }
 
-        function openEditModal(id, name, category, description, price, discount, stock, variantType, variantsJson) {
+        function triggerPhotoSlot(slotEl, event) {
+            if (event.target.closest('.photo-slot-remove')) return;
+            const input = slotEl.querySelector('.photo-slot-input');
+            if (input) input.click();
+        }
+
+        function handlePhotoSlotChange(input) {
+            const slotEl = input.closest('.photo-slot');
+            if (!slotEl) return;
+            const file = input.files && input.files[0];
+            if (!file) return;
+
+            if (file.size > 5 * 1024 * 1024) {
+                alert('Photo size must not exceed 5MB.');
+                input.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                setPhotoSlotPreview(slotEl, e.target.result);
+                const removeFlag = slotEl.querySelector('.photo-slot-remove-flag');
+                if (removeFlag) removeFlag.value = '0';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function setPhotoSlotPreview(slotEl, src) {
+            const placeholder = slotEl.querySelector('.photo-slot-placeholder');
+            const preview = slotEl.querySelector('.photo-slot-preview');
+            const removeBtn = slotEl.querySelector('.photo-slot-remove');
+
+            if (src) {
+                preview.src = src;
+                preview.style.display = 'block';
+                placeholder.style.display = 'none';
+                removeBtn.style.display = 'grid';
+                slotEl.classList.add('has-image');
+            } else {
+                preview.src = '';
+                preview.style.display = 'none';
+                placeholder.style.display = 'flex';
+                removeBtn.style.display = 'none';
+                slotEl.classList.remove('has-image');
+            }
+        }
+
+        function clearPhotoSlot(btn, event) {
+            event.stopPropagation();
+            const slotEl = btn.closest('.photo-slot');
+            if (!slotEl) return;
+            const input = slotEl.querySelector('.photo-slot-input');
+            if (input) input.value = '';
+            const removeFlag = slotEl.querySelector('.photo-slot-remove-flag');
+            if (removeFlag) removeFlag.value = '1';
+            setPhotoSlotPreview(slotEl, '');
+        }
+
+        function resetPhotoSlots(groupName, existingUrls = []) {
+            const container = document.querySelector(`[data-photo-slots="${groupName}"]`);
+            if (!container) return;
+            container.querySelectorAll('.photo-slot').forEach((slotEl, index) => {
+                const input = slotEl.querySelector('.photo-slot-input');
+                if (input) input.value = '';
+                const removeFlag = slotEl.querySelector('.photo-slot-remove-flag');
+                if (removeFlag) removeFlag.value = '0';
+                const url = existingUrls[index] || '';
+                setPhotoSlotPreview(slotEl, url);
+            });
+        }
+
+        function openAddModal() {
+            clearVariantRows('add');
+            resetPhotoSlots('add', []);
+            document.getElementById('addProductModal').style.display = 'flex';
+        }
+
+        function openEditModal(id, name, category, description, price, discount, stock, variantType, variantsJson, photoUrls = []) {
             document.getElementById('editProductForm').action = `/seller/products/${id}`;
             document.getElementById('edit_name').value = name;
             document.getElementById('edit_category').value = category || '';
@@ -221,6 +439,7 @@
 
             clearVariantRows('edit');
             (variantsJson || []).forEach(v => addVariantRow('edit', v.name, v.stock));
+            resetPhotoSlots('edit', photoUrls || []);
 
             document.getElementById('editProductModal').style.display = 'flex';
         }

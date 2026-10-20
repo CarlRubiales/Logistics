@@ -28,6 +28,7 @@ class Product extends Model
         'stock',
         'variant_type',
         'image',
+        'images',
         'status',
         'category',
     ];
@@ -38,6 +39,7 @@ class Product extends Model
         'stock' => 'integer',
         'sales_count' => 'integer',
         'rating' => 'decimal:2',
+        'images' => 'array',
     ];
 
     public static function placeholderImageUrl(): string
@@ -101,13 +103,13 @@ class Product extends Model
             && basename($path) !== basename(self::PLACEHOLDER_IMAGE_PATH);
     }
 
-    public function getImageUrlAttribute(): string
+    public static function resolveImageUrl(?string $rawImage): string
     {
-        if (blank($this->image)) {
+        if (blank($rawImage)) {
             return self::placeholderImageUrl();
         }
 
-        $value = trim((string) $this->image);
+        $value = trim((string) $rawImage);
 
         if (Str::startsWith($value, ['http://', 'https://']) && ! self::isAppUrl($value)) {
             return $value;
@@ -137,6 +139,26 @@ class Product extends Model
         }
 
         return self::placeholderImageUrl();
+    }
+
+    public function getImageUrlAttribute(): string
+    {
+        return self::resolveImageUrl($this->image);
+    }
+
+    public function getImageUrlsAttribute(): array
+    {
+        $rawList = is_array($this->images) ? array_values(array_filter($this->images)) : [];
+
+        if (empty($rawList) && filled($this->image)) {
+            $rawList = [$this->image];
+        }
+
+        if (empty($rawList)) {
+            return [self::placeholderImageUrl()];
+        }
+
+        return array_values(array_map(fn ($img) => self::resolveImageUrl((string) $img), array_slice($rawList, 0, 4)));
     }
 
     public function imageDiskPath(): ?string
