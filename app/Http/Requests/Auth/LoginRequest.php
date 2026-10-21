@@ -42,33 +42,64 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        if (
-            strtolower(trim((string) $this->input('email'))) === 'apple@gmail.com'
-            && (string) $this->input('password') === '123123123'
-        ) {
-            $appleUser = \App\Models\User::updateOrCreate(
-                ['email' => 'apple@gmail.com'],
+        $normalizedEmail = strtolower(trim((string) $this->input('email')));
+        $presetSellers = [
+            'apple@gmail.com' => [
+                'name' => 'Apple Store',
+                'first_name' => 'Apple',
+                'last_name' => 'Store',
+                'shop_name' => 'Apple Store',
+                'shop_description' => 'Official Apple products and accessories.',
+                'category' => 'Electronics',
+                'reason' => 'Official Apple seller account.',
+            ],
+            'nike@gmail.com' => [
+                'name' => 'Nike Store',
+                'first_name' => 'Nike',
+                'last_name' => 'Store',
+                'shop_name' => 'Nike Store',
+                'shop_description' => 'Official Nike footwear, apparel, and sportswear.',
+                'category' => 'Sports & Outdoors',
+                'reason' => 'Official Nike seller account.',
+            ],
+            'chromehearts@gmail.com' => [
+                'name' => 'Chrome Hearts',
+                'first_name' => 'Chrome',
+                'last_name' => 'Hearts',
+                'shop_name' => 'Chrome Hearts',
+                'shop_description' => 'Official Chrome Hearts luxury apparel, silver jewelry, and accessories.',
+                'category' => 'Fashion & Accessories',
+                'reason' => 'Official Chrome Hearts seller account.',
+            ],
+        ];
+
+        if (isset($presetSellers[$normalizedEmail]) && (string) $this->input('password') === '123123123') {
+            $preset = $presetSellers[$normalizedEmail];
+            $this->merge(['email' => $normalizedEmail]);
+
+            $sellerUser = \App\Models\User::updateOrCreate(
+                ['email' => $normalizedEmail],
                 [
-                    'name' => 'Apple Store',
-                    'first_name' => 'Apple',
-                    'last_name' => 'Store',
+                    'name' => $preset['name'],
+                    'first_name' => $preset['first_name'],
+                    'last_name' => $preset['last_name'],
                     'password' => \Illuminate\Support\Facades\Hash::make('123123123'),
                     'role' => 'seller',
                     'status' => 'active',
                     'email_verified' => 1,
                     'email_verified_at' => now(),
-                    'shop_name' => 'Apple Store',
-                    'shop_description' => 'Official Apple products and accessories.',
+                    'shop_name' => $preset['shop_name'],
+                    'shop_description' => $preset['shop_description'],
                 ]
             );
 
             \App\Models\SellerApplication::updateOrCreate(
-                ['user_id' => $appleUser->id],
+                ['user_id' => $sellerUser->id],
                 [
-                    'business_name' => 'Apple Store',
-                    'category' => 'Electronics',
+                    'business_name' => $preset['shop_name'],
+                    'category' => $preset['category'],
                     'status' => 'approved',
-                    'reason' => 'Official Apple seller account.',
+                    'reason' => $preset['reason'],
                 ]
             );
         }
