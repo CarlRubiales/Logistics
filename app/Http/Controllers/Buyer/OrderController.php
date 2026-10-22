@@ -162,6 +162,7 @@ class OrderController extends Controller
             'checkout_mode' => ['nullable', 'string', 'in:cart,buy_now'],
             'payment_method' => ['required', 'string', 'in:cod,gcash,maya,bank_transfer'],
             'payment_method_id' => ['nullable', 'integer'],
+            'voucher_code' => ['nullable', 'string', 'max:50'],
         ]);
 
         $selectedWallet = null;
@@ -210,7 +211,19 @@ class OrderController extends Controller
                 return ((float) $line['product']->price - $line['unit_price']) * $line['quantity'];
             }), 2);
 
-            $total = round($subtotal + $shipping - $discount, 2);
+            $netItems = max(0, round($subtotal - $discount, 2));
+            $voucherCode = strtoupper(trim((string) ($validated['voucher_code'] ?? '')));
+            $voucherSavings = match ($voucherCode) {
+                'LUMORA10' => round($netItems * 0.10, 2),
+                'LUMORA20' => round($netItems * 0.20, 2),
+                'WELCOME50' => min($netItems, 50),
+                'LESS100' => min($netItems, 100),
+                'FREESHIP' => min($shipping, 15),
+                default => 0,
+            };
+
+            $discount = round($discount + $voucherSavings, 2);
+            $total = max(0, round($subtotal + $shipping - $discount, 2));
 
             $orderData = [
                 'order_number' => $this->generateOrderNumber(),

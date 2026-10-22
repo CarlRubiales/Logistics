@@ -159,7 +159,19 @@
         .summary-row { display: flex; justify-content: space-between; gap: 20px; margin-top: 23px; color: var(--ink); font-size: 15px; }
         .summary-row strong { font-weight: 500; }
         .summary-row.discount strong { color: var(--rose); }
-        .summary-total { display: flex; justify-content: space-between; margin-top: 26px; padding-top: 29px; border-top: 1px solid #d8c9bd; color: var(--plum); font: 600 29px 'Playfair Display', Georgia, serif; }
+        .voucher-box { margin-top: 24px; padding-top: 20px; border-top: 1px dashed #d8c9bd; position: relative; z-index: 1; }
+        .voucher-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; color: var(--plum); font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+        .voucher-input-group { display: flex; gap: 8px; align-items: stretch; }
+        .voucher-input { flex: 1; min-width: 0; height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: #fffdfb; color: var(--plum); font: 600 13px Inter, Arial, sans-serif; letter-spacing: .04em; text-transform: uppercase; outline: none; transition: border-color .2s ease, box-shadow .2s ease; }
+        .voucher-input::placeholder { color: var(--muted); font-weight: 400; letter-spacing: normal; text-transform: none; }
+        .voucher-input:focus { border-color: var(--rose); box-shadow: 0 0 0 3px rgba(185, 101, 98, .12); }
+        .voucher-apply-btn { height: 44px; padding: 0 18px; border: 1px solid var(--plum); border-radius: 8px; background: var(--plum); color: #fff; font: 600 13px Inter, Arial, sans-serif; cursor: pointer; white-space: nowrap; transition: background .2s ease, transform .15s ease; }
+        .voucher-apply-btn:hover { background: var(--plum-dark); transform: translateY(-1px); }
+        .voucher-feedback { margin-top: 8px; font-size: 12px; line-height: 1.4; display: none; }
+        .voucher-feedback.success { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #4f7a5a; font-weight: 600; }
+        .voucher-feedback.error { display: block; color: var(--rose); font-weight: 500; }
+        .voucher-remove-btn { border: 0; background: transparent; color: var(--rose); font-size: 11px; font-weight: 700; text-decoration: underline; cursor: pointer; padding: 0; }
+        .summary-total { display: flex; justify-content: space-between; margin-top: 22px; padding-top: 24px; border-top: 1px solid #d8c9bd; color: var(--plum); font: 600 29px 'Playfair Display', Georgia, serif; }
         .payment-label { display: block; margin-top: 39px; margin-bottom: 14px; color: var(--plum); font: 600 21px 'Playfair Display', Georgia, serif; }
         .payment-option {
             display: flex;
@@ -405,11 +417,21 @@
             <div class="summary-row"><span>Subtotal</span><strong>₱{{ number_format($summary['subtotal'], 2) }}</strong></div>
             <div class="summary-row discount"><span>Discount</span><strong>- ₱{{ number_format($summary['discount'], 2) }}</strong></div>
             <div class="summary-row"><span>Shipping</span><strong>₱{{ number_format($summary['shipping'], 2) }}</strong></div>
-            <div class="summary-total"><span>Total</span><strong>₱{{ number_format($summary['total'], 2) }}</strong></div>
+            <div class="summary-row discount" id="voucherSummaryRow" style="display:none;"><span>Voucher (<span id="voucherSummaryCode"></span>)</span><strong id="voucherSummaryAmount">- ₱0.00</strong></div>
+            <div class="voucher-box">
+                <label class="voucher-label" for="voucherCodeInput">Voucher Code</label>
+                <div class="voucher-input-group">
+                    <input type="text" id="voucherCodeInput" class="voucher-input" placeholder="Enter voucher code" value="{{ old('voucher_code', '') }}" autocomplete="off">
+                    <button type="button" id="applyVoucherBtn" class="voucher-apply-btn">Apply</button>
+                </div>
+                <div id="voucherFeedback" class="voucher-feedback" aria-live="polite"></div>
+            </div>
+            <div class="summary-total"><span>Total</span><strong id="summaryTotalAmount" data-base-total="{{ (float) $summary['total'] }}" data-net-items="{{ round((float) $summary['subtotal'] - (float) $summary['discount'], 2) }}" data-shipping="{{ (float) $summary['shipping'] }}">₱{{ number_format($summary['total'], 2) }}</strong></div>
 
             <form method="POST" action="{{ route('buyer.checkout.store') }}">
                 @csrf
                 <input type="hidden" name="checkout_mode" value="{{ $checkoutMode ?? 'cart' }}">
+                <input type="hidden" name="voucher_code" id="appliedVoucherHidden" value="{{ old('voucher_code', '') }}">
                 @php
                     $wallets = collect($paymentMethods ?? [])
                         ->whereIn('type', ['gcash', 'maya', 'bank_transfer'])
@@ -571,6 +593,100 @@
                 const firstMatchingWallet = walletForType(methodRadio.value);
                 if (firstMatchingWallet) firstMatchingWallet.checked = true;
             });
+        });
+
+        // Voucher Code Input Logic
+        const voucherInput = document.getElementById('voucherCodeInput');
+        const applyVoucherBtn = document.getElementById('applyVoucherBtn');
+        const voucherFeedback = document.getElementById('voucherFeedback');
+        const voucherSummaryRow = document.getElementById('voucherSummaryRow');
+        const voucherSummaryCode = document.getElementById('voucherSummaryCode');
+        const voucherSummaryAmount = document.getElementById('voucherSummaryAmount');
+        const summaryTotalAmount = document.getElementById('summaryTotalAmount');
+        const appliedVoucherHidden = document.getElementById('appliedVoucherHidden');
+
+        const formatCurrency = (val) => '₱' + Number(val).toLocaleString('en-PH', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+
+        const builtInVouchers = {
+            'LUMORA10': { type: 'percent', value: 10, label: '10% OFF' },
+            'LUMORA20': { type: 'percent', value: 20, label: '20% OFF' },
+            'WELCOME50': { type: 'fixed', value: 50, label: '₱50 OFF' },
+            'LESS100': { type: 'fixed', value: 100, label: '₱100 OFF' },
+            'FREESHIP': { type: 'shipping', value: 15, label: 'Free Shipping' },
+        };
+
+        function clearVoucher() {
+            const baseTotal = parseFloat(summaryTotalAmount?.dataset.baseTotal || '0');
+            if (voucherSummaryRow) voucherSummaryRow.style.display = 'none';
+            if (summaryTotalAmount) summaryTotalAmount.textContent = formatCurrency(baseTotal);
+            if (appliedVoucherHidden) appliedVoucherHidden.value = '';
+            if (voucherFeedback) {
+                voucherFeedback.className = 'voucher-feedback';
+                voucherFeedback.innerHTML = '';
+            }
+        }
+
+        function applyVoucherCode() {
+            const rawCode = (voucherInput?.value || '').trim().toUpperCase();
+            if (!rawCode) {
+                clearVoucher();
+                if (voucherFeedback) {
+                    voucherFeedback.className = 'voucher-feedback error';
+                    voucherFeedback.textContent = 'Please enter a voucher code.';
+                }
+                return;
+            }
+
+            const baseTotal = parseFloat(summaryTotalAmount?.dataset.baseTotal || '0');
+            const netItems = parseFloat(summaryTotalAmount?.dataset.netItems || '0');
+            const shipping = parseFloat(summaryTotalAmount?.dataset.shipping || '0');
+            const rule = builtInVouchers[rawCode];
+
+            if (!rule) {
+                clearVoucher();
+                if (voucherFeedback) {
+                    voucherFeedback.className = 'voucher-feedback error';
+                    voucherFeedback.textContent = 'Invalid or expired voucher code.';
+                }
+                return;
+            }
+
+            let voucherSavings = 0;
+            if (rule.type === 'percent') {
+                voucherSavings = Math.round(netItems * (rule.value / 100) * 100) / 100;
+            } else if (rule.type === 'shipping') {
+                voucherSavings = Math.min(shipping, rule.value);
+            } else {
+                voucherSavings = Math.min(netItems, rule.value);
+            }
+
+            const newTotal = Math.max(0, Math.round((baseTotal - voucherSavings) * 100) / 100);
+
+            if (voucherSummaryCode) voucherSummaryCode.textContent = rawCode;
+            if (voucherSummaryAmount) voucherSummaryAmount.textContent = '- ' + formatCurrency(voucherSavings);
+            if (voucherSummaryRow) voucherSummaryRow.style.display = 'flex';
+            if (summaryTotalAmount) summaryTotalAmount.textContent = formatCurrency(newTotal);
+            if (appliedVoucherHidden) appliedVoucherHidden.value = rawCode;
+
+            if (voucherFeedback) {
+                voucherFeedback.className = 'voucher-feedback success';
+                voucherFeedback.innerHTML = `<span>Voucher <strong>${rawCode}</strong> (${rule.label}) applied!</span><button type="button" class="voucher-remove-btn" id="removeVoucherBtn">Remove</button>`;
+                document.getElementById('removeVoucherBtn')?.addEventListener('click', () => {
+                    if (voucherInput) voucherInput.value = '';
+                    clearVoucher();
+                });
+            }
+        }
+
+        applyVoucherBtn?.addEventListener('click', applyVoucherCode);
+        voucherInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                applyVoucherCode();
+            }
         });
     });
 </script>
