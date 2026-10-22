@@ -428,8 +428,8 @@ class DashboardController extends Controller
 
         $validated = $request->validate([
             'code' => ['required', 'string', 'max:50'],
-            'type' => ['required', 'in:percent,fixed,shipping'],
-            'value' => ['required', 'numeric', 'min:0'],
+            'type' => ['required', 'in:percent,shipping'],
+            'value' => ['nullable', 'numeric', 'min:0', 'max:100', 'required_if:type,percent'],
             'min_spend' => ['nullable', 'numeric', 'min:0'],
             'usage_limit' => ['nullable', 'integer', 'min:1'],
             'expires_at' => ['nullable', 'date'],
@@ -441,7 +441,7 @@ class DashboardController extends Controller
             ['code' => $code],
             [
                 'type' => $validated['type'],
-                'value' => (float) $validated['value'],
+                'value' => $validated['type'] === 'shipping' ? 0 : (float) ($validated['value'] ?? 0),
                 'min_spend' => (float) ($validated['min_spend'] ?? 0),
                 'usage_limit' => $validated['usage_limit'] ?? null,
                 'expires_at' => $validated['expires_at'] ?? null,

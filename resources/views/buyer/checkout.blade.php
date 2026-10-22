@@ -613,9 +613,7 @@
         const builtInVouchers = Object.assign({
             'LUMORA10': { type: 'percent', value: 10, min_spend: 0, label: '10% OFF' },
             'LUMORA20': { type: 'percent', value: 20, min_spend: 0, label: '20% OFF' },
-            'WELCOME50': { type: 'fixed', value: 50, min_spend: 0, label: '₱50 OFF' },
-            'LESS100': { type: 'fixed', value: 100, min_spend: 0, label: '₱100 OFF' },
-            'FREESHIP': { type: 'shipping', value: 15, min_spend: 0, label: 'Free Shipping' },
+            'FREESHIP': { type: 'shipping', value: 0, min_spend: 0, label: 'Free Shipping' },
         }, @json($activeVouchers ?? []));
 
         function clearVoucher() {
@@ -654,13 +652,20 @@
                 return;
             }
 
+            if (rule.min_spend && netItems < parseFloat(rule.min_spend)) {
+                clearVoucher();
+                if (voucherFeedback) {
+                    voucherFeedback.className = 'voucher-feedback error';
+                    voucherFeedback.textContent = 'Minimum spend of ' + formatCurrency(rule.min_spend) + ' required for this voucher.';
+                }
+                return;
+            }
+
             let voucherSavings = 0;
             if (rule.type === 'percent') {
                 voucherSavings = Math.round(netItems * (rule.value / 100) * 100) / 100;
-            } else if (rule.type === 'shipping') {
-                voucherSavings = Math.min(shipping, rule.value);
             } else {
-                voucherSavings = Math.min(netItems, rule.value);
+                voucherSavings = shipping;
             }
 
             const newTotal = Math.max(0, Math.round((baseTotal - voucherSavings) * 100) / 100);

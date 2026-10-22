@@ -15,6 +15,7 @@ class OrderController extends Controller
     public function index()
     {
         $sellerId = Auth::id();
+        $hasVoucherCols = \Illuminate\Support\Facades\Schema::hasColumn('orders', 'voucher_code');
 
         $orders = DB::table('order_items as oi')
             ->join('products as p', 'p.id', '=', 'oi.product_id')
@@ -30,11 +31,18 @@ class OrderController extends Controller
                 'o.status',
                 'o.created_at as order_date',
                 'u.name as buyer_name',
+                DB::raw($hasVoucherCols ? 'o.voucher_code' : 'NULL as voucher_code'),
+                DB::raw($hasVoucherCols ? 'o.voucher_type' : 'NULL as voucher_type'),
+                DB::raw($hasVoucherCols ? 'o.voucher_discount' : '0 as voucher_discount'),
+                DB::raw($hasVoucherCols ? 'o.shipping_discount' : '0 as shipping_discount'),
                 DB::raw('SUM(oi.price * oi.quantity) as seller_subtotal'),
                 DB::raw('SUM(CASE WHEN oi.seen_at IS NULL THEN 1 ELSE 0 END) as unseen_count'),
                 DB::raw('SUM(CASE WHEN oi.packed_at IS NULL THEN 1 ELSE 0 END) as unpacked_count')
             )
-            ->groupBy('o.id', 'o.order_number', 'o.status', 'o.created_at', 'u.name')
+            ->groupBy(...array_merge(
+                ['o.id', 'o.order_number', 'o.status', 'o.created_at', 'u.name'],
+                $hasVoucherCols ? ['o.voucher_code', 'o.voucher_type', 'o.voucher_discount', 'o.shipping_discount'] : []
+            ))
             ->orderByDesc('o.created_at')
             ->get();
 
@@ -44,6 +52,7 @@ class OrderController extends Controller
     public function show($orderId)
     {
         $sellerId = Auth::id();
+        $hasVoucherCols = \Illuminate\Support\Facades\Schema::hasColumn('orders', 'voucher_code');
 
         $order = DB::table('orders as o')
             ->join('users as u', 'u.id', '=', 'o.user_id')
@@ -59,7 +68,11 @@ class OrderController extends Controller
                 'u.municipality',
                 'u.barangay',
                 'u.street',
-                'u.house_number'
+                'u.house_number',
+                DB::raw($hasVoucherCols ? 'o.voucher_code' : 'NULL as voucher_code'),
+                DB::raw($hasVoucherCols ? 'o.voucher_type' : 'NULL as voucher_type'),
+                DB::raw($hasVoucherCols ? 'o.voucher_discount' : '0 as voucher_discount'),
+                DB::raw($hasVoucherCols ? 'o.shipping_discount' : '0 as shipping_discount')
             )
             ->first();
 

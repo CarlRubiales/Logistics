@@ -119,6 +119,7 @@ class OrderController extends Controller
             if (Schema::hasTable('vouchers')) {
                 $rows = DB::table('vouchers')
                     ->where('is_active', true)
+                    ->whereIn('type', ['percent', 'shipping'])
                     ->where(function ($q) {
                         $q->whereNull('expires_at')->orWhereDate('expires_at', '>=', now()->toDateString());
                     })
@@ -241,6 +242,9 @@ class OrderController extends Controller
             $netItems = max(0, round($subtotal - $discount, 2));
             $voucherCode = strtoupper(trim((string) ($validated['voucher_code'] ?? '')));
             $voucherSavings = 0;
+            $shippingDiscount = 0;
+            $appliedVoucherCode = null;
+            $appliedVoucherType = null;
 
             if ($voucherCode !== '') {
                 $dbVoucher = null;
@@ -249,6 +253,7 @@ class OrderController extends Controller
                         $dbVoucher = DB::table('vouchers')
                             ->where('code', $voucherCode)
                             ->where('is_active', true)
+                            ->whereIn('type', ['percent', 'shipping'])
                             ->where(function ($q) {
                                 $q->whereNull('expires_at')->orWhereDate('expires_at', '>=', now()->toDateString());
                             })
@@ -258,26 +263,30 @@ class OrderController extends Controller
                     $dbVoucher = null;
                 }
 
-                if ($dbVoucher && $netItems >= (float) ($dbVoucher->min_spend ?? 0)) {
-                    $voucherSavings = match ($dbVoucher->type) {
-                        'percent' => round($netItems * (((float) $dbVoucher->value) / 100), 2),
-                        'shipping' => min($shipping, (float) $dbVoucher->value),
-                        default => min($netItems, (float) $dbVoucher->value),
-                    };
-                } else {
-                    $voucherSavings = match ($voucherCode) {
-                        'LUMORA10' => round($netItems * 0.10, 2),
-                        'LUMORA20' => round($netItems * 0.20, 2),
-                        'WELCOME50' => min($netItems, 50),
-                        'LESS100' => min($netItems, 100),
-                        'FREESHIP' => min($shipping, 15),
-                        default => 0,
-                    };
+                if ($dbVoucher) {
+                    if ($netItems >= (float) ($dbVoucher->min_spend ?? 0)) {
+                        $appliedVoucherCode = $voucherCode;
+                        $appliedVoucherType = $dbVoucher->type;
+                        if ($dbVoucher->type === 'percent') {
+                            $voucherSavings = round($netItems * (((float) $dbVoucher->value) / 100), 2);
+                        } else {
+                            $shippingDiscount = $shipping;
+                        }
+                    }
+                } elseif (in_array($voucherCode, ['LUMORA10', 'LUMORA20', 'FREESHIP'], true)) {
+                    $appliedVoucherCode = $voucherCode;
+                    if ($voucherCode === 'FREESHIP') {
+                        $appliedVoucherType = 'shipping';
+                        $shippingDiscount = $shipping;
+                    } else {
+                        $appliedVoucherType = 'percent';
+                        $voucherSavings = round($netItems * ($voucherCode === 'LUMORA20' ? 0.20 : 0.10), 2);
+                    }
                 }
             }
 
             $discount = round($discount + $voucherSavings, 2);
-            $total = max(0, round($subtotal + $shipping - $discount, 2));
+            $total = max(0, round($subtotal + $shipping - $discount - $shippingDiscount, 2));
 
             $orderData = [
                 'order_number' => $this->generateOrderNumber(),
@@ -295,6 +304,13 @@ class OrderController extends Controller
 
             if (Schema::hasColumn('orders', 'buyer_id')) {
                 $orderData['buyer_id'] = $request->user()->id;
+            }
+
+            if (Schema::hasColumn('orders', 'voucher_code')) {
+                $orderData['voucher_code'] = $appliedVoucherCode;
+                $orderData['voucher_type'] = $appliedVoucherType;
+                $orderData['voucher_discount'] = $voucherSavings;
+                $orderData['shipping_discount'] = $shippingDiscount;
             }
 
             $order = Order::create($orderData);

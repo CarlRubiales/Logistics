@@ -109,6 +109,27 @@
                         PHP {{ number_format($items->sum(fn ($item) => $item->price * $item->quantity), 2) }}
                     </td>
                 </tr>
+
+                @if (!empty($order->voucher_code))
+                    <tr>
+                        <td colspan="2" style="border-bottom:none;color:var(--text-muted);">Voucher used by buyer</td>
+                        <td colspan="2" style="border-bottom:none;">
+                            <span class="stock-badge" style="background:var(--sage-2);">{{ $order->voucher_code }}</span>
+                        </td>
+                    </tr>
+                    @if ((float) $order->voucher_discount > 0)
+                        <tr>
+                            <td colspan="2" style="border-bottom:none;color:var(--text-muted);">Voucher discount</td>
+                            <td colspan="2" style="border-bottom:none;color:var(--coral);font-weight:600;">- PHP {{ number_format((float) $order->voucher_discount, 2) }}</td>
+                        </tr>
+                    @endif
+                    @if ((float) $order->shipping_discount > 0)
+                        <tr>
+                            <td colspan="2" style="border-bottom:none;color:var(--text-muted);">Free shipping</td>
+                            <td colspan="2" style="border-bottom:none;color:var(--sage-2);font-weight:600;">Shipping waived (PHP {{ number_format((float) $order->shipping_discount, 2) }})</td>
+                        </tr>
+                    @endif
+                @endif
             </tbody>
         </table>
 

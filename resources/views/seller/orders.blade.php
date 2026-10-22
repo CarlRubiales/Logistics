@@ -47,6 +47,7 @@
                     <th>Buyer</th>
                     <th>Date</th>
                     <th>Subtotal</th>
+                    <th>Voucher</th>
                     <th>Status</th>
                     <th>Packing</th>
                     <th></th>
@@ -84,6 +85,21 @@
 
                         <td>
                             PHP {{ number_format($o->seller_subtotal, 2) }}
+                        </td>
+
+                        <td>
+                            @if (!empty($o->voucher_code))
+                                <span class="stock-badge" style="background:var(--sage-2);">{{ $o->voucher_code }}</span>
+                                <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">
+                                    @if (($o->voucher_type ?? '') === 'shipping' || (float) $o->shipping_discount > 0)
+                                        Free shipping (PHP {{ number_format((float) $o->shipping_discount, 2) }})
+                                    @else
+                                        Discount - PHP {{ number_format((float) $o->voucher_discount, 2) }}
+                                    @endif
+                                </div>
+                            @else
+                                <span style="color:#999;">None</span>
+                            @endif
                         </td>
 
                         <td>
@@ -128,7 +144,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="7" style="text-align:center;color:#999;padding:20px;">
+                        <td colspan="8" style="text-align:center;color:#999;padding:20px;">
                             No orders yet.
                         </td>
                     </tr>

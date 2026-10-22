@@ -17,13 +17,12 @@
                 <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:5px;">Discount Type</label>
                 <select name="type" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--border);border-radius:10px;font-family:inherit;background:#fff;">
                     <option value="percent">Percentage (%)</option>
-                    <option value="fixed">Fixed Amount (₱)</option>
                     <option value="shipping">Free Shipping</option>
                 </select>
             </div>
             <div>
-                <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:5px;">Discount Value</label>
-                <input type="number" name="value" step="0.01" min="0" placeholder="e.g. 10" required style="width:100%;height:40px;padding:0 12px;border:1px solid var(--border);border-radius:10px;font-family:inherit;">
+                <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:5px;">Discount % (ignored for Free Shipping)</label>
+                <input type="number" name="value" step="0.01" min="0" max="100" placeholder="e.g. 10" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--border);border-radius:10px;font-family:inherit;">
             </div>
             <div>
                 <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:5px;">Min. Spend (₱)</label>
@@ -61,10 +60,8 @@
                         <td>
                             @if ($voucher->type === 'percent')
                                 {{ rtrim(rtrim(number_format((float) $voucher->value, 2), '0'), '.') }}% OFF
-                            @elseif ($voucher->type === 'shipping')
-                                Free Shipping (up to ₱{{ number_format((float) $voucher->value, 2) }})
                             @else
-                                ₱{{ number_format((float) $voucher->value, 2) }} OFF
+                                Free Shipping
                             @endif
                         </td>
                         <td>₱{{ number_format((float) $voucher->min_spend, 2) }}</td>
