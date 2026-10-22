@@ -114,12 +114,39 @@ class OrderController extends Controller
                 ->with('error', 'Select at least one product before checkout.');
         }
 
+        $activeVouchers = [];
+        try {
+            if (Schema::hasTable('vouchers')) {
+                $rows = DB::table('vouchers')
+                    ->where('is_active', true)
+                    ->where(function ($q) {
+                        $q->whereNull('expires_at')->orWhereDate('expires_at', '>=', now()->toDateString());
+                    })
+                    ->get();
+                foreach ($rows as $row) {
+                    $codeKey = strtoupper(trim((string) $row->code));
+                    $label = $row->type === 'percent'
+                        ? (rtrim(rtrim(number_format((float) $row->value, 2), '0'), '.').'% OFF')
+                        : ($row->type === 'shipping' ? 'Free Shipping' : ('₱'.number_format((float) $row->value, 2).' OFF'));
+                    $activeVouchers[$codeKey] = [
+                        'type' => $row->type,
+                        'value' => (float) $row->value,
+                        'min_spend' => (float) ($row->min_spend ?? 0),
+                        'label' => $label,
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            // Ignore if table not migrated yet
+        }
+
         return view('buyer.checkout', [
             'cartItems' => $items,
             'summary' => $this->summary($items),
             'buyer' => $request->user(),
             'cartPaymentOption' => $cartPaymentOption,
             'checkoutMode' => $checkoutMode,
+            'activeVouchers' => $activeVouchers,
             'returnUrl' => $checkoutMode === 'buy_now'
                 ? route('shop.product', ['id' => $items->first()['product_id']])
                 : route('buyer.cart'),
@@ -213,14 +240,41 @@ class OrderController extends Controller
 
             $netItems = max(0, round($subtotal - $discount, 2));
             $voucherCode = strtoupper(trim((string) ($validated['voucher_code'] ?? '')));
-            $voucherSavings = match ($voucherCode) {
-                'LUMORA10' => round($netItems * 0.10, 2),
-                'LUMORA20' => round($netItems * 0.20, 2),
-                'WELCOME50' => min($netItems, 50),
-                'LESS100' => min($netItems, 100),
-                'FREESHIP' => min($shipping, 15),
-                default => 0,
-            };
+            $voucherSavings = 0;
+
+            if ($voucherCode !== '') {
+                $dbVoucher = null;
+                try {
+                    if (Schema::hasTable('vouchers')) {
+                        $dbVoucher = DB::table('vouchers')
+                            ->where('code', $voucherCode)
+                            ->where('is_active', true)
+                            ->where(function ($q) {
+                                $q->whereNull('expires_at')->orWhereDate('expires_at', '>=', now()->toDateString());
+                            })
+                            ->first();
+                    }
+                } catch (\Throwable $e) {
+                    $dbVoucher = null;
+                }
+
+                if ($dbVoucher && $netItems >= (float) ($dbVoucher->min_spend ?? 0)) {
+                    $voucherSavings = match ($dbVoucher->type) {
+                        'percent' => round($netItems * (((float) $dbVoucher->value) / 100), 2),
+                        'shipping' => min($shipping, (float) $dbVoucher->value),
+                        default => min($netItems, (float) $dbVoucher->value),
+                    };
+                } else {
+                    $voucherSavings = match ($voucherCode) {
+                        'LUMORA10' => round($netItems * 0.10, 2),
+                        'LUMORA20' => round($netItems * 0.20, 2),
+                        'WELCOME50' => min($netItems, 50),
+                        'LESS100' => min($netItems, 100),
+                        'FREESHIP' => min($shipping, 15),
+                        default => 0,
+                    };
+                }
+            }
 
             $discount = round($discount + $voucherSavings, 2);
             $total = max(0, round($subtotal + $shipping - $discount, 2));

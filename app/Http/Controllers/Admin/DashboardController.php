@@ -391,4 +391,88 @@ class DashboardController extends Controller
 
         return $pdf->download('commission-report-'.now()->format('Y-m-d').'.pdf');
     }
+
+    private function ensureVouchersTableExists(): void
+    {
+        try {
+            if (! \Illuminate\Support\Facades\Schema::hasTable('vouchers')) {
+                \Illuminate\Support\Facades\Schema::create('vouchers', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->id();
+                    $table->string('code', 50)->unique();
+                    $table->string('type', 20)->default('percent');
+                    $table->decimal('value', 10, 2)->default(0);
+                    $table->decimal('min_spend', 10, 2)->default(0);
+                    $table->integer('usage_limit')->nullable();
+                    $table->integer('used_count')->default(0);
+                    $table->date('expires_at')->nullable();
+                    $table->boolean('is_active')->default(true);
+                    $table->timestamps();
+                });
+            }
+        } catch (\Throwable $e) {
+            // Ignore dynamic schema error
+        }
+    }
+
+    public function vouchers()
+    {
+        $this->ensureVouchersTableExists();
+        $vouchers = DB::table('vouchers')->orderByDesc('created_at')->get();
+
+        return view('admin.vouchers', compact('vouchers'));
+    }
+
+    public function storeVoucher(Request $request)
+    {
+        $this->ensureVouchersTableExists();
+
+        $validated = $request->validate([
+            'code' => ['required', 'string', 'max:50'],
+            'type' => ['required', 'in:percent,fixed,shipping'],
+            'value' => ['required', 'numeric', 'min:0'],
+            'min_spend' => ['nullable', 'numeric', 'min:0'],
+            'usage_limit' => ['nullable', 'integer', 'min:1'],
+            'expires_at' => ['nullable', 'date'],
+        ]);
+
+        $code = strtoupper(trim($validated['code']));
+
+        DB::table('vouchers')->updateOrInsert(
+            ['code' => $code],
+            [
+                'type' => $validated['type'],
+                'value' => (float) $validated['value'],
+                'min_spend' => (float) ($validated['min_spend'] ?? 0),
+                'usage_limit' => $validated['usage_limit'] ?? null,
+                'expires_at' => $validated['expires_at'] ?? null,
+                'is_active' => true,
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
+        );
+
+        return back()->with('flash_success', "Voucher {$code} saved successfully.");
+    }
+
+    public function toggleVoucher($id)
+    {
+        $this->ensureVouchersTableExists();
+        $voucher = DB::table('vouchers')->where('id', $id)->first();
+        if ($voucher) {
+            DB::table('vouchers')->where('id', $id)->update([
+                'is_active' => ! $voucher->is_active,
+                'updated_at' => now(),
+            ]);
+        }
+
+        return back()->with('flash_success', 'Voucher status updated.');
+    }
+
+    public function destroyVoucher($id)
+    {
+        $this->ensureVouchersTableExists();
+        DB::table('vouchers')->where('id', $id)->delete();
+
+        return back()->with('flash_success', 'Voucher removed.');
+    }
 }

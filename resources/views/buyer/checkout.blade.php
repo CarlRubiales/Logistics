@@ -610,13 +610,13 @@
             maximumFractionDigits: 2,
         });
 
-        const builtInVouchers = {
-            'LUMORA10': { type: 'percent', value: 10, label: '10% OFF' },
-            'LUMORA20': { type: 'percent', value: 20, label: '20% OFF' },
-            'WELCOME50': { type: 'fixed', value: 50, label: '₱50 OFF' },
-            'LESS100': { type: 'fixed', value: 100, label: '₱100 OFF' },
-            'FREESHIP': { type: 'shipping', value: 15, label: 'Free Shipping' },
-        };
+        const builtInVouchers = Object.assign({
+            'LUMORA10': { type: 'percent', value: 10, min_spend: 0, label: '10% OFF' },
+            'LUMORA20': { type: 'percent', value: 20, min_spend: 0, label: '20% OFF' },
+            'WELCOME50': { type: 'fixed', value: 50, min_spend: 0, label: '₱50 OFF' },
+            'LESS100': { type: 'fixed', value: 100, min_spend: 0, label: '₱100 OFF' },
+            'FREESHIP': { type: 'shipping', value: 15, min_spend: 0, label: 'Free Shipping' },
+        }, @json($activeVouchers ?? []));
 
         function clearVoucher() {
             const baseTotal = parseFloat(summaryTotalAmount?.dataset.baseTotal || '0');

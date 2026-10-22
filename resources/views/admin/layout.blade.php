@@ -62,7 +62,8 @@
     <a href="{{ route('admin.complaints') }}" class="nav-link {{ request()->routeIs('admin.complaints') ? 'active' : '' }}">Complaints</a>
     <a href="{{ route('admin.chat.index') }}" class="nav-link {{ request()->routeIs('admin.chat.*') ? 'active' : '' }}">Messages</a>
     <a href="{{ route('admin.commission') }}" class="nav-link {{ request()->routeIs('admin.commission') ? 'active' : '' }}">Commission</a>
-<a href="{{ route('admin.settings.index') }}" class="nav-link {{ request()->routeIs('admin.settings.*') ? 'active' : '' }}">Settings</a>
+    <a href="{{ route('admin.vouchers.index') }}" class="nav-link {{ request()->routeIs('admin.vouchers.*') ? 'active' : '' }}">Vouchers</a>
+    <a href="{{ route('admin.settings.index') }}" class="nav-link {{ request()->routeIs('admin.settings.*') ? 'active' : '' }}">Settings</a>
     <form method="POST" action="{{ route('logout') }}" class="logout-form">
         @csrf
         <button type="submit" class="logout-btn">Logout</button>

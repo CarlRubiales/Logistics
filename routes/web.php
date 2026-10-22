@@ -58,6 +58,11 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::patch('/settings/announcements/{id}/toggle', [DashboardController::class, 'toggleAnnouncement'])->name('settings.announcements.toggle');
     Route::patch('/settings/policies/{id}', [DashboardController::class, 'updatePolicy'])->name('settings.policies.update');
 
+    Route::get('/vouchers', [DashboardController::class, 'vouchers'])->name('vouchers.index');
+    Route::post('/vouchers', [DashboardController::class, 'storeVoucher'])->name('vouchers.store');
+    Route::patch('/vouchers/{id}/toggle', [DashboardController::class, 'toggleVoucher'])->name('vouchers.toggle');
+    Route::delete('/vouchers/{id}', [DashboardController::class, 'destroyVoucher'])->name('vouchers.destroy');
+
     Route::get('/chat', [ChatController::class, 'adminInbox'])->name('chat.index');
     Route::get('/chat/{id}', [ChatController::class, 'adminShow'])->name('chat.show');
 });
