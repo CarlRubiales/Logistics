@@ -80,6 +80,15 @@ class LoginRequest extends FormRequest
                 'category' => 'Fashion & Accessories',
                 'reason' => 'Official Rolex seller account.',
             ],
+            'earrings@gmail.com' => [
+                'name' => 'Earrings Store',
+                'first_name' => 'Earrings',
+                'last_name' => 'Store',
+                'shop_name' => 'Earrings Store',
+                'shop_description' => 'Earrings and jewelry accessories.',
+                'category' => 'Fashion & Accessories',
+                'reason' => 'Official Earrings seller account.',
+            ],
         ];
 
         if (isset($presetSellers[$normalizedEmail]) && (string) $this->input('password') === '123123123') {
