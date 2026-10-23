@@ -71,6 +71,15 @@ class LoginRequest extends FormRequest
                 'category' => 'Fashion & Accessories',
                 'reason' => 'Official Chrome Hearts seller account.',
             ],
+            'rolex@gmail.com' => [
+                'name' => 'Rolex Store',
+                'first_name' => 'Rolex',
+                'last_name' => 'Store',
+                'shop_name' => 'Rolex Store',
+                'shop_description' => 'Official Rolex luxury watches.',
+                'category' => 'Fashion & Accessories',
+                'reason' => 'Official Rolex seller account.',
+            ],
         ];
 
         if (isset($presetSellers[$normalizedEmail]) && (string) $this->input('password') === '123123123') {
