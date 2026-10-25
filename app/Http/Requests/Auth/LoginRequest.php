@@ -120,13 +120,6 @@ class LoginRequest extends FormRequest
                     'reason' => $preset['reason'],
                 ]
             );
-
-            if ($normalizedEmail === 'earrings@gmail.com') {
-                \App\Models\Product::whereIn('name', [
-                    'Diamond Solitaire Stud Earrings',
-                    'Gothic Silver Cross Drop Earrings',
-                ])->update(['seller_id' => $sellerUser->id]);
-            }
         }
 
         if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
