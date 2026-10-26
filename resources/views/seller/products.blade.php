@@ -550,6 +550,18 @@
             (variantsJson || []).forEach(v => addVariantRow('edit', v.name, v.stock));
             resetPhotoSlots('edit', photoUrls || []);
 
+            // Eagerly refresh CSRF token so it's always fresh when the form is submitted
+            fetch('/csrf-token', { cache: 'no-store', credentials: 'same-origin' })
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                    if (data && data.token) {
+                        document.querySelector('meta[name="csrf-token"]')?.setAttribute('content', data.token);
+                        document.querySelectorAll('input[name="_token"]').forEach(el => el.value = data.token);
+                        console.log('[CSRF] Token refreshed on modal open:', data.token.substring(0, 10) + '...');
+                    }
+                })
+                .catch(() => {});
+
             document.getElementById('editProductModal').style.display = 'flex';
         }
 
