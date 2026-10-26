@@ -26,6 +26,21 @@ Route::get('/', [ShopController::class, 'index'])->name('home');
 Route::get('/csrf-token', function () {
     return response()->json(['token' => csrf_token()]);
 })->middleware('web')->name('csrf.token');
+
+// Debug endpoint — helps diagnose 419 issues on production (remove after fix confirmed)
+Route::post('/csrf-debug', function (\Illuminate\Http\Request $request) {
+    return response()->json([
+        'has_token_in_body'   => $request->has('_token'),
+        'has_token_in_header' => $request->hasHeader('X-CSRF-TOKEN'),
+        'token_match'         => $request->has('_token')
+            ? hash_equals(csrf_token(), $request->input('_token'))
+            : false,
+        'session_id'          => session()->getId(),
+        'csrf_token'          => csrf_token(),
+        'post_keys'           => array_keys($request->post()),
+        'content_length'      => $request->header('Content-Length'),
+    ]);
+})->middleware('web')->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class);
 Route::get('/about', function () {
     return view('about');
 })->name('about');

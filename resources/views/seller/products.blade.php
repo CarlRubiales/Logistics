@@ -628,6 +628,13 @@
                     let token = getCsrfToken();
                     let formData = buildFormData(token);
 
+                    // Calculate payload size for debugging
+                    let payloadSize = 0;
+                    for (const [k, v] of formData.entries()) {
+                        payloadSize += (typeof v === 'string' ? v.length : v.size || 0);
+                    }
+                    console.log('[CSRF Debug] Submitting form:', form.id, '| Token:', token ? token.substring(0,10)+'...' : 'MISSING', '| Payload ~', Math.round(payloadSize/1024), 'KB', '| Action:', form.action);
+
                     let response = await fetch(form.action, {
                         method: 'POST',
                         body: formData,
@@ -641,7 +648,9 @@
 
                     // If 419 Page Expired: auto-refresh token and retry ONCE seamlessly
                     if (response.status === 419) {
+                        console.warn('[CSRF Debug] Got 419 on first attempt. Trying to refresh token...');
                         const freshToken = await refreshCsrfToken();
+                        console.log('[CSRF Debug] Fresh token:', freshToken ? freshToken.substring(0,10)+'...' : 'FAILED TO GET');
                         if (freshToken) {
                             formData = buildFormData(freshToken);
                             response = await fetch(form.action, {
@@ -658,10 +667,12 @@
                     }
 
                     if (response.ok || response.redirected) {
+                        console.log('[CSRF Debug] Success! Status:', response.status);
                         window.location.reload();
                         return;
                     }
 
+                    console.error('[CSRF Debug] Final response status:', response.status, '| URL:', response.url);
                     if (response.status === 419) {
                         alert('Your session has expired. Please refresh the page and try again.');
                         if (submitBtn) {
