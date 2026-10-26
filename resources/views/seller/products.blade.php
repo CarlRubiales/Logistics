@@ -590,15 +590,15 @@
 
                 async function refreshCsrfToken() {
                     try {
-                        const res = await fetch(window.location.href, { cache: 'no-store' });
-                        const html = await res.text();
-                        const doc = new DOMParser().parseFromString(html, 'text/html');
-                        const token = doc.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
-                            || doc.querySelector('input[name="_token"]')?.value;
-                        if (token) {
-                            document.querySelector('meta[name="csrf-token"]')?.setAttribute('content', token);
-                            document.querySelectorAll('input[name="_token"]').forEach(el => el.value = token);
-                            return token;
+                        // Use dedicated lightweight endpoint instead of re-fetching the full page
+                        const res = await fetch('/csrf-token', { cache: 'no-store', credentials: 'same-origin' });
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data && data.token) {
+                                document.querySelector('meta[name="csrf-token"]')?.setAttribute('content', data.token);
+                                document.querySelectorAll('input[name="_token"]').forEach(el => el.value = data.token);
+                                return data.token;
+                            }
                         }
                     } catch (err) {
                         console.error('Failed to refresh CSRF token:', err);
@@ -606,16 +606,32 @@
                     return null;
                 }
 
+                // Build FormData manually — skip file inputs to avoid exceeding post_max_size.
+                // Images are already compressed and stored in hidden image_data inputs.
+                function buildFormData(token) {
+                    const fd = new FormData();
+                    for (const el of form.elements) {
+                        if (!el.name) continue;
+                        // Skip file inputs — base64 data is in hidden image_data inputs
+                        if (el.type === 'file') continue;
+                        if (el.type === 'checkbox' || el.type === 'radio') {
+                            if (el.checked) fd.append(el.name, el.value);
+                        } else {
+                            fd.append(el.name, el.value ?? '');
+                        }
+                    }
+                    if (token) fd.set('_token', token);
+                    return fd;
+                }
+
                 try {
                     let token = getCsrfToken();
-                    let formData = new FormData(form);
-                    if (token) {
-                        formData.set('_token', token);
-                    }
+                    let formData = buildFormData(token);
 
                     let response = await fetch(form.action, {
                         method: 'POST',
                         body: formData,
+                        credentials: 'same-origin',
                         headers: {
                             'X-Requested-With': 'XMLHttpRequest',
                             'X-CSRF-TOKEN': token,
@@ -627,11 +643,11 @@
                     if (response.status === 419) {
                         const freshToken = await refreshCsrfToken();
                         if (freshToken) {
-                            formData = new FormData(form);
-                            formData.set('_token', freshToken);
+                            formData = buildFormData(freshToken);
                             response = await fetch(form.action, {
                                 method: 'POST',
                                 body: formData,
+                                credentials: 'same-origin',
                                 headers: {
                                     'X-Requested-With': 'XMLHttpRequest',
                                     'X-CSRF-TOKEN': freshToken,
@@ -647,7 +663,7 @@
                     }
 
                     if (response.status === 419) {
-                        alert('Your session has expired. Please refresh the page to save changes.');
+                        alert('Your session has expired. Please refresh the page and try again.');
                         if (submitBtn) {
                             submitBtn.disabled = false;
                             submitBtn.innerHTML = origText;
@@ -673,6 +689,7 @@
                     window.location.reload();
                 } catch (netErr) {
                     console.error('Submit error:', netErr);
+                    // Last resort: native form submit (may still 419 if session is truly dead)
                     form.submit();
                 }
             });

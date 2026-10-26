@@ -21,6 +21,11 @@ use App\Http\Controllers\Buyer\ShopController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [ShopController::class, 'index'])->name('home');
+
+// CSRF token refresh endpoint — returns a fresh token for AJAX form submissions
+Route::get('/csrf-token', function () {
+    return response()->json(['token' => csrf_token()]);
+})->middleware('web')->name('csrf.token');
 Route::get('/about', function () {
     return view('about');
 })->name('about');
