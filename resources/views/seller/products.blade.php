@@ -125,8 +125,24 @@
                 <input type="text" name="name" placeholder="Product name" required class="stock-input" style="width:100%;">
                 <select name="category" required class="stock-input" style="width:100%;">
                     <option value="">Select category</option>
-                    @foreach (($categoryLeaves ?? []) as $cat)
-                        <option value="{{ $cat['slug'] }}">{{ $cat['label'] }}</option>
+                    @foreach (($categoryTree ?? []) as $group)
+                        <optgroup label="{{ $group['label'] }}">
+                            @foreach (($group['children'] ?? []) as $child)
+                                @if (!empty($child['children']))
+                                    @foreach ($child['children'] as $sub)
+                                        @if (!empty($sub['children']))
+                                            @foreach ($sub['children'] as $leaf)
+                                                <option value="{{ $leaf['slug'] }}">{{ $child['label'] }} › {{ $sub['label'] }} › {{ $leaf['label'] }}</option>
+                                            @endforeach
+                                        @else
+                                            <option value="{{ $sub['slug'] }}">{{ $child['label'] }} › {{ $sub['label'] }}</option>
+                                        @endif
+                                    @endforeach
+                                @else
+                                    <option value="{{ $child['slug'] }}">{{ $child['label'] }}</option>
+                                @endif
+                            @endforeach
+                        </optgroup>
                     @endforeach
                 </select>
                 <textarea name="description" placeholder="Description (optional)" class="stock-input" style="width:100%; height:70px;"></textarea>
@@ -189,8 +205,24 @@
                 <input type="text" name="name" id="edit_name" placeholder="Product name" required class="stock-input" style="width:100%;">
                 <select name="category" id="edit_category" required class="stock-input" style="width:100%;">
                     <option value="">Select category</option>
-                    @foreach (($categoryLeaves ?? []) as $cat)
-                        <option value="{{ $cat['slug'] }}">{{ $cat['label'] }}</option>
+                    @foreach (($categoryTree ?? []) as $group)
+                        <optgroup label="{{ $group['label'] }}">
+                            @foreach (($group['children'] ?? []) as $child)
+                                @if (!empty($child['children']))
+                                    @foreach ($child['children'] as $sub)
+                                        @if (!empty($sub['children']))
+                                            @foreach ($sub['children'] as $leaf)
+                                                <option value="{{ $leaf['slug'] }}">{{ $child['label'] }} › {{ $sub['label'] }} › {{ $leaf['label'] }}</option>
+                                            @endforeach
+                                        @else
+                                            <option value="{{ $sub['slug'] }}">{{ $child['label'] }} › {{ $sub['label'] }}</option>
+                                        @endif
+                                    @endforeach
+                                @else
+                                    <option value="{{ $child['slug'] }}">{{ $child['label'] }}</option>
+                                @endif
+                            @endforeach
+                        </optgroup>
                     @endforeach
                 </select>
                 <textarea name="description" id="edit_description" placeholder="Description (optional)" class="stock-input" style="width:100%; height:70px;"></textarea>
