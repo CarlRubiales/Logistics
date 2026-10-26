@@ -419,7 +419,7 @@
                 const img = new Image();
                 img.onload = function () {
                     try {
-                        const maxDim = 1200;
+                        const maxDim = 1000;
                         let w = img.width;
                         let h = img.height;
                         if (w > maxDim || h > maxDim) {
@@ -436,7 +436,7 @@
                         canvas.height = h;
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, w, h);
-                        callback(canvas.toDataURL('image/jpeg', 0.86));
+                        callback(canvas.toDataURL('image/jpeg', 0.82));
                     } catch (err) {
                         callback(rawDataUrl);
                     }
@@ -455,8 +455,8 @@
             const file = input.files && input.files[0];
             if (!file) return;
 
-            if (file.size > 5 * 1024 * 1024) {
-                alert('Photo size must not exceed 5MB.');
+            if (file.size > 15 * 1024 * 1024) {
+                alert('Photo size must not exceed 15MB.');
                 input.value = '';
                 return;
             }
@@ -467,6 +467,8 @@
                 if (dataInput) dataInput.value = dataUrl;
                 const removeFlag = slotEl.querySelector('.photo-slot-remove-flag');
                 if (removeFlag) removeFlag.value = '0';
+                // Clear the raw file input so we don't send multi-megabyte duplicates that exceed post_max_size
+                input.value = '';
             });
         }
 
@@ -566,5 +568,117 @@
                 document.getElementById('removeProductForm').submit();
             }
         });
+
+        function setupAjaxFormSubmit(formId) {
+            const form = document.getElementById(formId);
+            if (!form) return;
+
+            form.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const submitBtn = form.querySelector('button[type="submit"]');
+                const origText = submitBtn ? submitBtn.innerHTML : '';
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = 'Saving...';
+                }
+
+                function getCsrfToken() {
+                    return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                        || form.querySelector('input[name="_token"]')?.value
+                        || '';
+                }
+
+                async function refreshCsrfToken() {
+                    try {
+                        const res = await fetch(window.location.href, { cache: 'no-store' });
+                        const html = await res.text();
+                        const doc = new DOMParser().parseFromString(html, 'text/html');
+                        const token = doc.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                            || doc.querySelector('input[name="_token"]')?.value;
+                        if (token) {
+                            document.querySelector('meta[name="csrf-token"]')?.setAttribute('content', token);
+                            document.querySelectorAll('input[name="_token"]').forEach(el => el.value = token);
+                            return token;
+                        }
+                    } catch (err) {
+                        console.error('Failed to refresh CSRF token:', err);
+                    }
+                    return null;
+                }
+
+                try {
+                    let token = getCsrfToken();
+                    let formData = new FormData(form);
+                    if (token) {
+                        formData.set('_token', token);
+                    }
+
+                    let response = await fetch(form.action, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRF-TOKEN': token,
+                            'Accept': 'application/json, text/html, */*'
+                        }
+                    });
+
+                    // If 419 Page Expired: auto-refresh token and retry ONCE seamlessly
+                    if (response.status === 419) {
+                        const freshToken = await refreshCsrfToken();
+                        if (freshToken) {
+                            formData = new FormData(form);
+                            formData.set('_token', freshToken);
+                            response = await fetch(form.action, {
+                                method: 'POST',
+                                body: formData,
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                    'X-CSRF-TOKEN': freshToken,
+                                    'Accept': 'application/json, text/html, */*'
+                                }
+                            });
+                        }
+                    }
+
+                    if (response.ok || response.redirected) {
+                        window.location.reload();
+                        return;
+                    }
+
+                    if (response.status === 419) {
+                        alert('Your session has expired. Please refresh the page to save changes.');
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = origText;
+                        }
+                        return;
+                    }
+
+                    if (response.status === 422) {
+                        const resData = await response.json().catch(() => null);
+                        if (resData && resData.errors) {
+                            const errMsgs = Object.values(resData.errors).flat().join('\n');
+                            alert('Please fix the following:\n' + errMsgs);
+                        } else {
+                            alert('Validation error. Please check form inputs.');
+                        }
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = origText;
+                        }
+                        return;
+                    }
+
+                    window.location.reload();
+                } catch (netErr) {
+                    console.error('Submit error:', netErr);
+                    form.submit();
+                }
+            });
+        }
+
+        setupAjaxFormSubmit('editProductForm');
+        setupAjaxFormSubmit('addProductForm');
     </script>
 @endsection

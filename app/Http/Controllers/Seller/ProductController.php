@@ -110,6 +110,11 @@ class ProductController extends Controller
         $productId = DB::table('products')->insertGetId($insertData);
 
         $this->insertVariants($productId, $variantRows);
+
+        if ($request->wantsJson()) {
+            return response()->json(['success' => true, 'message' => 'Product added successfully!']);
+        }
+
         return back()->with('success', 'Product added successfully!');
     }
 
@@ -202,6 +207,10 @@ class ProductController extends Controller
         DB::table('products')->where('id', $id)->update($data);
         DB::table('product_variants')->where('product_id', $id)->delete();
         $this->insertVariants($id, $variantRows);
+
+        if ($request->wantsJson()) {
+            return response()->json(['success' => true, 'message' => 'Product updated.']);
+        }
 
         return back()->with('success', 'Product updated.');
     }
