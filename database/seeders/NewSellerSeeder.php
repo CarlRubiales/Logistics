@@ -22,6 +22,16 @@ class NewSellerSeeder extends Seeder
                 'updated_at'  => now(),
             ],
             [
+                'name'        => 'New Balance Store',
+                'email'       => 'newbalance1@gmail.com',
+                'password'    => Hash::make('123123123'),
+                'role'        => 'seller',
+                'status'      => 'active',
+                'shop_name'   => 'New Balance Store',
+                'created_at'  => now(),
+                'updated_at'  => now(),
+            ],
+            [
                 'name'        => 'Xiaomi Store',
                 'email'       => 'xiaomi@gmail.com',
                 'password'    => Hash::make('123123123'),
