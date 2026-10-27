@@ -34,13 +34,12 @@ class NewSellerSeeder extends Seeder
         ];
 
         foreach ($sellers as $sellerData) {
-            // Only insert if the email doesn't already exist
-            if (! User::where('email', $sellerData['email'])->exists()) {
-                User::create($sellerData);
-                $this->command->info("Created seller: {$sellerData['email']}");
-            } else {
-                $this->command->warn("Skipped (already exists): {$sellerData['email']}");
-            }
+            // updateOrCreate ensures password is always set correctly even if user exists
+            $user = User::updateOrCreate(
+                ['email' => $sellerData['email']],
+                $sellerData
+            );
+            $this->command->info(($user->wasRecentlyCreated ? 'Created' : 'Updated') . " seller: {$sellerData['email']}");
         }
     }
 }
