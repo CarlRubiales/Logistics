@@ -4,14 +4,20 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\CommissionTransaction;
+use App\Models\DestinationArea;
+use App\Models\EmailOtpVerification;
 use App\Models\ErpMessage;
+use App\Models\Hub;
 use App\Models\Parcel;
 use App\Models\ParcelScan;
+use App\Models\RiderAreaAssignment;
 use App\Models\RiderProfile;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -82,9 +88,10 @@ class RiderApiController extends Controller
         }
 
         if ($profile->registration_status === 'disapproved' || $profile->registration_status === 'rejected') {
+            $reasonMsg = $profile->registration_note ? ": {$profile->registration_note}" : '. Please check your email for the notice.';
             return response()->json([
                 'status' => 'error',
-                'message' => 'Your rider registration was not approved. Please contact logistics support.',
+                'message' => 'Your rider registration was not approved' . $reasonMsg,
             ], 403);
         }
 
@@ -124,6 +131,124 @@ class RiderApiController extends Controller
     }
 
     /**
+     * Return list of active hubs for rider registration dropdown.
+     */
+    public function hubs(): JsonResponse
+    {
+        $hubs = Hub::where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'branch', 'address', 'city']);
+
+        return response()->json(['status' => 'success', 'hubs' => $hubs]);
+    }
+
+    /**
+     * Send 6-digit email OTP verification code.
+     */
+    public function sendOtp(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+            'name' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $email = strtolower(trim($validated['email']));
+
+        if (User::where('email', $email)->exists()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'This email address is already registered. Please log in instead.',
+            ], 422);
+        }
+
+        $otp = str_pad((string) random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+
+        EmailOtpVerification::updateOrCreate(
+            ['email' => $email],
+            [
+                'otp' => $otp,
+                'expires_at' => now()->addMinutes(15),
+                'is_verified' => false,
+            ]
+        );
+
+        $mailSent = false;
+        $mailError = null;
+
+        try {
+            Mail::send('emails.rider_otp', [
+                'name' => $validated['name'] ?? 'Rider',
+                'otp' => $otp,
+            ], function ($message) use ($email, $otp) {
+                $message->to($email)
+                    ->subject('Your Lumora Rider Verification Code: ' . $otp);
+            });
+            $mailSent = true;
+        } catch (\Throwable $e) {
+            Log::error('Failed to send rider OTP email to ' . $email . ': ' . $e->getMessage());
+            $mailError = $e->getMessage();
+        }
+
+        if (! $mailSent) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unable to send verification code to your email. Please verify your email address and try again.',
+            ], 500);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "A 6-digit verification code has been sent to {$email}. Please check your Gmail inbox or spam folder.",
+            'mail_sent' => true,
+        ]);
+    }
+
+    /**
+     * Verify email OTP code.
+     */
+    public function verifyOtp(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+            'otp' => ['required', 'string'],
+        ]);
+
+        $email = strtolower(trim($validated['email']));
+        $otp = trim((string) $validated['otp']);
+
+        $record = EmailOtpVerification::where('email', $email)->first();
+
+        if (! $record) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No verification code was requested for this email address.',
+            ], 422);
+        }
+
+        if ($record->expires_at < now()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Verification code has expired. Please tap Resend Code to receive a fresh code.',
+            ], 422);
+        }
+
+        if (trim((string) $record->otp) !== $otp) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Invalid verification code. Please check the 6-digit code sent to your Gmail and try again.',
+            ], 422);
+        }
+
+        $record->update(['is_verified' => true]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Email verified successfully!',
+            'verified' => true,
+        ]);
+    }
+
+    /**
      * Register a new rider.
      */
     public function register(Request $request): JsonResponse
@@ -135,7 +260,24 @@ class RiderApiController extends Controller
             'phone' => ['nullable', 'string', 'max:40'],
             'vehicle_type' => ['nullable', 'string', 'max:80'],
             'license_number' => ['nullable', 'string', 'max:80'],
+            'otp' => ['nullable', 'string'],
+            'hub_id' => ['nullable', 'integer', 'exists:hubs,id'],
         ]);
+
+        $email = strtolower(trim($validated['email']));
+
+        $otpRecord = EmailOtpVerification::where('email', $email)->first();
+        if ($otpRecord && ! $otpRecord->is_verified) {
+            $inputOtp = trim((string) ($validated['otp'] ?? ''));
+            if (! empty($inputOtp) && trim((string) $otpRecord->otp) === $inputOtp && $otpRecord->expires_at >= now()) {
+                $otpRecord->update(['is_verified' => true]);
+            } else {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Please enter the 6-digit verification code sent to your Gmail to complete registration.',
+                ], 422);
+            }
+        }
 
         $vehicleType = match (strtolower(trim($validated['vehicle_type'] ?? 'motorcycle'))) {
             'tricycle' => 'Tricycle',
@@ -184,15 +326,38 @@ class RiderApiController extends Controller
             }
         }
 
+        // Resolve hub and associated branch for automated assignment
+        $hub = null;
+        if (! empty($validated['hub_id'])) {
+            $hub = Hub::find($validated['hub_id']);
+        }
+
+        $branchName = null;
+        if ($hub) {
+            $branchName = $hub->branch;
+            if (! $branchName) {
+                if (stripos($hub->name, 'cruz') !== false || stripos($hub->city, 'cruz') !== false) {
+                    $branchName = 'Santa Cruz';
+                } elseif (stripos($hub->name, 'pila') !== false || stripos($hub->city, 'pila') !== false) {
+                    $branchName = 'Pila';
+                } else {
+                    $branchName = $hub->name;
+                }
+            }
+        }
+
         $user = User::create([
             'name' => $validated['name'],
-            'email' => $validated['email'],
+            'email' => $email,
             'password' => Hash::make($validated['password']),
+            'email_verified_at' => now(),
             'role' => 'rider',
+            'branch' => $branchName,
         ]);
 
         $profile = RiderProfile::create([
             'user_id' => $user->id,
+            'hub_id' => $hub?->id,
             'phone' => $validated['phone'] ?? null,
             'vehicle_type' => $vehicleType,
             'license_number' => $validated['license_number'] ?? null,
@@ -202,9 +367,38 @@ class RiderApiController extends Controller
             'availability' => 'offline',
         ]);
 
+        // Automate area assignment based on chosen hub / branch
+        $assignedAreas = [];
+        if ($branchName) {
+            $matchedAreas = DestinationArea::where('branch', $branchName)
+                ->where('is_active', true)
+                ->get();
+
+            if ($matchedAreas->isEmpty()) {
+                $matchedAreas = DestinationArea::where('name', 'like', "%{$branchName}%")
+                    ->orWhere('branch', 'like', "%{$branchName}%")
+                    ->where('is_active', true)
+                    ->get();
+            }
+
+            foreach ($matchedAreas as $index => $area) {
+                RiderAreaAssignment::updateOrCreate(
+                    [
+                        'rider_profile_id' => $profile->id,
+                        'destination_area_id' => $area->id,
+                    ],
+                    [
+                        'is_active' => true,
+                        'is_primary' => ($index === 0),
+                    ]
+                );
+                $assignedAreas[] = $area->name;
+            }
+        }
+
         return response()->json([
             'status' => 'success',
-            'message' => 'Registration submitted successfully. Awaiting administrator approval.',
+            'message' => 'Registration submitted to ' . ($hub ? $hub->name : 'your local Hub') . '! Your application is pending review. You will receive an email in your Gmail when approved.',
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
@@ -213,6 +407,8 @@ class RiderApiController extends Controller
                 'registration_status' => $profile->registration_status,
                 'has_license' => ! empty($profile->license_photo_path),
                 'has_or_cr' => ! empty($profile->or_cr_photo_path),
+                'hub' => $hub ? ['id' => $hub->id, 'name' => $hub->name, 'branch' => $branchName] : null,
+                'assigned_areas' => $assignedAreas,
             ],
         ], 201);
     }

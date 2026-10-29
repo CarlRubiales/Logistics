@@ -29,7 +29,10 @@ Route::prefix('v1')->group(function () {
 
     // Mobile Rider API (Public)
     Route::post('/rider/login', [RiderApiController::class, 'login']);
+    Route::post('/rider/send-otp', [RiderApiController::class, 'sendOtp']);
+    Route::post('/rider/verify-otp', [RiderApiController::class, 'verifyOtp']);
     Route::post('/rider/register', [RiderApiController::class, 'register']);
+    Route::get('/hubs', [RiderApiController::class, 'hubs']);
 
     // Mobile Rider API (Protected via Sanctum)
     Route::middleware('auth:sanctum')->prefix('rider')->group(function () {

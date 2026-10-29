@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CommissionTransaction;
 use App\Models\DestinationArea;
 use App\Models\ErpMessage;
+use App\Models\Hub;
 use App\Models\Parcel;
 use App\Models\ParcelScan;
 use App\Models\RiderAreaAssignment;
@@ -12,6 +13,8 @@ use App\Models\RiderProfile;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
@@ -54,18 +57,19 @@ class RiderController extends Controller
             'role' => 'rider',
         ]);
 
-        RiderProfile::create([
+        $profile = RiderProfile::create([
             'user_id' => $user->id,
             'phone' => $data['phone'],
             'vehicle_type' => $vehicleType,
             'license_number' => $data['license_number'] ?? null,
             'license_photo_path' => $licensePath,
             'or_cr_photo_path' => $orCrPath,
-            'registration_status' => 'pending',
+            'registration_status' => 'approved',
+            'approved_at' => now(),
             'availability' => 'offline',
         ]);
 
-        return redirect()->route('login')->with('status', 'Registration submitted. An administrator will review your Driver’s License and OR/CR before approving your account.');
+        return redirect()->route('login')->with('status', 'Registration complete. You may now log in to access your rider portal.');
     }
 
     public function document(RiderProfile $rider, string $type)
@@ -153,12 +157,58 @@ class RiderController extends Controller
             $status = $request->boolean('approved') ? 'approved' : 'disapproved';
         }
 
+        $reason = trim($request->input('reason') ?? $request->input('rejection_reason') ?? $request->input('note') ?? '');
+
         $rider->update([
             'registration_status' => $status,
             'approved_at' => $status === 'approved' ? now() : null,
-            'approved_by' => $status === 'approved' ? $request->user()->id : null,
+            'approved_by' => $status === 'approved' ? $request->user()?->id : null,
+            'registration_note' => $status === 'disapproved' ? ($reason ?: 'Document requirements not met.') : null,
         ]);
-        return back()->with('success', "Rider {$rider->user->name} status updated to " . ucfirst($status) . ".");
+
+        $user = $rider->user;
+        $hubName = $rider->hub?->name ?? ($user?->branch ? "{$user->branch} Hub" : 'Lumora Logistics Hub');
+        $branch = $user?->branch ?? ($rider->hub?->branch ?? 'Local Branch');
+
+        if ($user && ! empty($user->email)) {
+            if ($status === 'approved') {
+                try {
+                    Mail::send('emails.rider_approved', [
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'hubName' => $hubName,
+                        'branch' => $branch,
+                        'vehicle' => $rider->vehicle_type ?? 'Motorcycle',
+                    ], function ($m) use ($user, $hubName) {
+                        $m->to($user->email)
+                            ->subject("✓ Application Approved - Welcome to {$hubName} (Lumora Logistics)");
+                    });
+                } catch (\Throwable $e) {
+                    Log::error("Failed to send approval email to {$user->email}: " . $e->getMessage());
+                }
+            } elseif ($status === 'disapproved') {
+                try {
+                    Mail::send('emails.rider_rejected', [
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'hubName' => $hubName,
+                        'branch' => $branch,
+                        'reason' => $reason ?: 'Document verification criteria were not fulfilled. Please contact your hub coordinator.',
+                    ], function ($m) use ($user, $hubName) {
+                        $m->to($user->email)
+                            ->subject("Notice Regarding Your Courier Application - {$hubName}");
+                    });
+                } catch (\Throwable $e) {
+                    Log::error("Failed to send rejection email to {$user->email}: " . $e->getMessage());
+                }
+            }
+        }
+
+        $actionText = $status === 'approved'
+            ? 'approved and notified via Gmail'
+            : ($status === 'disapproved' ? 'rejected and notified with reason via Gmail' : 'status updated');
+
+        return back()->with('success', "Rider {$rider->user->name} has been {$actionText}.");
     }
 
     public function assignArea(Request $request, RiderProfile $rider)

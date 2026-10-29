@@ -8,6 +8,7 @@ class RiderProfile extends Model
 {
     protected $fillable = [
         'user_id',
+        'hub_id',
         'phone',
         'vehicle_type',
         'license_number',
@@ -21,6 +22,7 @@ class RiderProfile extends Model
     ];
     protected function casts(): array { return ['approved_at' => 'datetime']; }
     public function user() { return $this->belongsTo(User::class); }
+    public function hub() { return $this->belongsTo(Hub::class); }
     public function approver() { return $this->belongsTo(User::class, 'approved_by'); }
     public function areaAssignments() { return $this->hasMany(RiderAreaAssignment::class); }
     public function areas() { return $this->belongsToMany(DestinationArea::class, 'rider_area_assignments'); }

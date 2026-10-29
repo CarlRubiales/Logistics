@@ -348,7 +348,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .server-alert.error span { background: var(--status-failed-line); color: var(--status-failed); }
 
 .login-page { min-height: 100vh; background: var(--cream); }
-.login-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(360px, .9fr) minmax(420px, 1.1fr); }
+.login-shell { display: grid; grid-template-columns: minmax(360px, .9fr) minmax(420px, 1.1fr); }
 .login-art { position: relative; overflow: hidden; display: flex; flex-direction: column; padding: 47px clamp(34px, 6vw, 100px); color: var(--cream); background: var(--plum); }
 .login-art::before, .login-art::after { content: ''; position: absolute; border: 1px solid rgba(251, 239, 234, .16); border-radius: 50%; pointer-events: none; }
 .login-art::before { width: 560px; height: 560px; right: -290px; bottom: -140px; }

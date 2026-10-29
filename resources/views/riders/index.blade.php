@@ -172,6 +172,11 @@
                                             <span class="status-chip pending" style="font-size: 10px; margin-bottom: 4px;"><b></b>Pending Approval</span>
                                         @else
                                             <span class="status-chip exception" style="font-size: 10px; margin-bottom: 4px;"><b></b>Disapproved</span>
+                                            @if($rider->registration_note)
+                                                <div style="font-size: 10.5px; color: #C62828; margin-top: 3px; max-width: 160px; line-height: 1.3;" title="{{ $rider->registration_note }}">
+                                                    Note: {{ \Illuminate\Support\Str::limit($rider->registration_note, 45) }}
+                                                </div>
+                                            @endif
                                         @endif
 
                                         <!-- Availability Dot -->
@@ -238,37 +243,29 @@
                                                 </a>
 
                                                 <!-- Suspend / Disapprove button -->
-                                                <form method="POST" action="{{ route('riders.approval', $rider) }}" onsubmit="return confirm('Suspend / Disapprove {{ $rider->user->name }}? This will revoke active assignments.');">
-                                                    @csrf
-                                                    <input type="hidden" name="status" value="disapproved">
-                                                    <button type="submit" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #C62828; border-color: rgba(198, 40, 40, 0.35); background: #FFF;">
-                                                        Suspend
-                                                    </button>
-                                                </form>
+                                                <button type="button" onclick="openRejectModal('{{ $rider->id }}', '{{ addslashes($rider->user->name) }}')" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #C62828; border-color: rgba(198, 40, 40, 0.35); background: #FFF; cursor: pointer;">
+                                                    Suspend
+                                                </button>
                                             @elseif($rider->registration_status === 'pending')
                                                 <!-- Approve button -->
-                                                <form method="POST" action="{{ route('riders.approval', $rider) }}">
+                                                <form method="POST" action="{{ route('riders.approval', $rider) }}" style="display: inline;">
                                                     @csrf
                                                     <input type="hidden" name="status" value="approved">
-                                                    <button type="submit" class="primary-button" style="padding: 4px 10px; font-size: 11px; font-weight: 800; background: #2E7D32; border: none; color: #FFF; border-radius: 6px;">
+                                                    <button type="submit" class="primary-button" style="padding: 4px 10px; font-size: 11px; font-weight: 800; background: #2E7D32; border: none; color: #FFF; border-radius: 6px; cursor: pointer;">
                                                         ✓ Approve
                                                     </button>
                                                 </form>
 
-                                                <!-- Reject / Disapprove button -->
-                                                <form method="POST" action="{{ route('riders.approval', $rider) }}">
-                                                    @csrf
-                                                    <input type="hidden" name="status" value="disapproved">
-                                                    <button type="submit" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #C62828; border-color: rgba(198, 40, 40, 0.35); background: #FFF;">
-                                                        ✕ Reject
-                                                    </button>
-                                                </form>
+                                                <!-- Reject button -->
+                                                <button type="button" onclick="openRejectModal('{{ $rider->id }}', '{{ addslashes($rider->user->name) }}')" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #C62828; border-color: rgba(198, 40, 40, 0.35); background: #FFF; cursor: pointer;">
+                                                    ✕ Reject
+                                                </button>
                                             @else
                                                 <!-- Re-approve button -->
-                                                <form method="POST" action="{{ route('riders.approval', $rider) }}">
+                                                <form method="POST" action="{{ route('riders.approval', $rider) }}" style="display: inline;">
                                                     @csrf
                                                     <input type="hidden" name="status" value="approved">
-                                                    <button type="submit" class="primary-button" style="padding: 4px 10px; font-size: 11px; font-weight: 800; background: #2E7D32; border: none; color: #FFF; border-radius: 6px;">
+                                                    <button type="submit" class="primary-button" style="padding: 4px 10px; font-size: 11px; font-weight: 800; background: #2E7D32; border: none; color: #FFF; border-radius: 6px; cursor: pointer;">
                                                         ✓ Re-approve
                                                     </button>
                                                 </form>
@@ -291,5 +288,47 @@
         </div>
     </main>
 </div>
+
+<!-- Rejection Reason Modal -->
+<div id="rejectModal" style="display: none; position: fixed; inset: 0; background: rgba(45, 21, 34, 0.5); backdrop-filter: blur(2px); z-index: 99999; align-items: center; justify-content: center;">
+    <div style="background: #FFFFFF; border-radius: 14px; max-width: 480px; width: 92%; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); border: 1px solid #EBDDD8; animation: popIn 0.2s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="display: inline-block; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; background: #FDE8E8; color: #C62828; text-align: center; font-weight: bold; font-size: 14px;">✕</span>
+                <h3 style="margin: 0; font-size: 17px; font-weight: 800; color: #2D1522;">Reject Courier Application</h3>
+            </div>
+            <button type="button" onclick="closeRejectModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #8A7B7E; line-height: 1;">✕</button>
+        </div>
+        <p style="font-size: 13px; color: #6E5D57; margin: 0 0 14px 0; line-height: 1.5;">
+            Rejecting courier: <strong id="rejectRiderName" style="color: #2D1522;"></strong>.<br>
+            Please provide a specific reason. <strong style="color: #2D1522;">This explanation will be sent directly to the rider's Gmail account.</strong>
+        </p>
+        <form id="rejectForm" method="POST" action="">
+            @csrf
+            <input type="hidden" name="status" value="disapproved">
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; font-weight: 700; color: #2D1522; margin-bottom: 6px;">Reason for Rejection *</label>
+                <textarea name="reason" id="rejectReasonInput" required rows="3" style="width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #EBDDD8; border-radius: 8px; font-size: 13px; font-family: inherit; color: #2D1522; resize: vertical;" placeholder="e.g. Your Driver's License copy is blurry and unreadable. Please re-upload a clear photo of your valid license."></textarea>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button type="button" onclick="closeRejectModal()" class="secondary-button" style="padding: 6px 14px; font-size: 12px; cursor: pointer;">Cancel</button>
+                <button type="submit" class="primary-button" style="background: #C62828; color: #FFF; border: none; padding: 6px 16px; font-size: 12px; font-weight: 800; border-radius: 6px; cursor: pointer;">Send Rejection & Email Rider</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openRejectModal(riderId, riderName) {
+    document.getElementById('rejectRiderName').innerText = riderName;
+    document.getElementById('rejectForm').action = '/riders/' + riderId + '/approval';
+    document.getElementById('rejectReasonInput').value = '';
+    document.getElementById('rejectModal').style.display = 'flex';
+    setTimeout(function() { document.getElementById('rejectReasonInput').focus(); }, 100);
+}
+function closeRejectModal() {
+    document.getElementById('rejectModal').style.display = 'none';
+}
+</script>
 </body>
 </html>

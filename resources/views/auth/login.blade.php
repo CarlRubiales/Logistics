@@ -6,6 +6,126 @@
     <meta name="theme-color" content="#3D1B3D">
     <title>Sign in — Lumora Logistics</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <style>
+        html {
+            height: 100%;
+        }
+
+        /* Centered viewport layout with soft beige background */
+        body.login-page {
+            min-height: 100vh;
+            min-height: 100dvh;
+            width: 100%;
+            margin: 0;
+            padding: clamp(16px, 3vh, 40px);
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #F5EDE4;
+            position: relative;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Main Container: Fixed dimensions on desktop, guaranteed to never stretch on browser zoom-out */
+        .login-shell {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 1080px !important;
+            height: 720px !important;
+            min-height: 0 !important;
+            max-height: min(720px, calc(100vh - 48px));
+            margin: auto;
+            border-radius: 18px;
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: minmax(360px, .92fr) minmax(420px, 1.08fr);
+            box-shadow: 
+                0 32px 85px -15px rgba(50, 18, 42, 0.24),
+                0 12px 35px -8px rgba(50, 18, 42, 0.12),
+                0 0 0 1px rgba(224, 198, 186, 0.65);
+            background: #FFFFFF;
+            transition: box-shadow 0.3s ease;
+        }
+
+        /* Left brand art panel */
+        .login-art {
+            height: 100%;
+            box-sizing: border-box;
+            padding: 44px 44px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            background: linear-gradient(160deg, #2A1124 0%, #3D1B3D 55%, #4C1D40 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-art-copy {
+            margin: auto 0;
+            max-width: 380px;
+        }
+
+        .login-art h1 {
+            font-size: clamp(32px, 3.2vw, 46px);
+            margin: 14px 0;
+            line-height: 1.08;
+        }
+
+        /* Right form container */
+        .login-card-wrap {
+            height: 100%;
+            box-sizing: border-box;
+            padding: 40px clamp(24px, 4vw, 52px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: #FFFFFF;
+            overflow-y: auto;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 380px;
+            padding: 0;
+            margin: auto 0;
+        }
+
+        .login-legal {
+            margin-top: 24px;
+            text-align: center;
+        }
+
+        /* Responsive handling for tablets & mobile */
+        @media (max-width: 860px) {
+            body.login-page {
+                padding: 16px;
+                align-items: flex-start;
+            }
+
+            .login-shell {
+                display: block;
+                height: auto !important;
+                max-height: none !important;
+                max-width: 460px !important;
+                margin: 20px auto;
+                border-radius: 18px;
+            }
+
+            .login-art {
+                display: none;
+            }
+
+            .login-card-wrap {
+                min-height: auto;
+                padding: 36px 24px;
+            }
+        }
+    </style>
 </head>
 <body class="logistics-page login-page">
     <main class="login-shell">

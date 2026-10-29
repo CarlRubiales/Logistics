@@ -258,7 +258,6 @@
                                         <th style="min-width: 240px;">Submitted Requirements / Documents</th>
                                         <th>Review Status</th>
                                         <th>Duty Status</th>
-                                        <th style="text-align: right;">Approval Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -350,30 +349,6 @@
                                                     </span>
                                                 @endif
                                             </td>
-
-                                            <td style="text-align: right;">
-                                                <div style="display: inline-flex; gap: 6px; align-items: center;">
-                                                    @if($rider->registration_status !== 'approved')
-                                                        <form method="POST" action="{{ route('riders.approval', $rider) }}" style="display: inline;">
-                                                            @csrf
-                                                            <input type="hidden" name="status" value="approved">
-                                                            <button type="submit" class="secondary-button" style="padding: 3px 9px; font-size: 11px; color: #1E6B37; border-color: #1E6B37; height: auto;">
-                                                                ✓ Approve
-                                                            </button>
-                                                        </form>
-                                                    @endif
-
-                                                    @if($rider->registration_status !== 'disapproved')
-                                                        <form method="POST" action="{{ route('riders.approval', $rider) }}" style="display: inline;" onsubmit="return confirm('Disapprove courier account for {{ $rider->user->name }}?');">
-                                                            @csrf
-                                                            <input type="hidden" name="status" value="disapproved">
-                                                            <button type="submit" class="secondary-button" style="padding: 3px 9px; font-size: 11px; color: #C62828; border-color: #C62828; height: auto;">
-                                                                ✕ Reject
-                                                            </button>
-                                                        </form>
-                                                    @endif
-                                                </div>
-                                            </td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -408,7 +383,6 @@
                                     <th style="min-width: 240px;">Submitted Requirements / Documents</th>
                                     <th>Review Status</th>
                                     <th>Assign Branch Area</th>
-                                    <th style="text-align: right;">Approval Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -456,24 +430,6 @@
                                                     Assign
                                                 </button>
                                             </form>
-                                        </td>
-                                        <td style="text-align: right;">
-                                            <div style="display: inline-flex; gap: 6px;">
-                                                <form method="POST" action="{{ route('riders.approval', $rider) }}" style="display: inline;">
-                                                    @csrf
-                                                    <input type="hidden" name="status" value="approved">
-                                                    <button type="submit" class="secondary-button" style="padding: 3px 8px; font-size: 11px; color: #1E6B37; border-color: #1E6B37; height: auto;">
-                                                        ✓ Approve
-                                                    </button>
-                                                </form>
-                                                <form method="POST" action="{{ route('riders.approval', $rider) }}" style="display: inline;">
-                                                    @csrf
-                                                    <input type="hidden" name="status" value="disapproved">
-                                                    <button type="submit" class="secondary-button" style="padding: 3px 8px; font-size: 11px; color: #C62828; border-color: #C62828; height: auto;">
-                                                        ✕ Reject
-                                                    </button>
-                                                </form>
-                                            </div>
                                         </td>
                                     </tr>
                                 @endforeach
