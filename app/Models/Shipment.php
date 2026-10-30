@@ -80,6 +80,34 @@ class Shipment extends Model
         return 'Lumora Express';
     }
 
+    public function scopeForDate($query, $date)
+    {
+        if (! $date) {
+            return $query;
+        }
+
+        if (! $date instanceof \Carbon\CarbonInterface) {
+            try {
+                $date = \Carbon\Carbon::parse($date, 'Asia/Manila');
+            } catch (\Throwable $e) {
+                $date = \Carbon\Carbon::now('Asia/Manila');
+            }
+        }
+
+        $dateStr = $date->format('Y-m-d');
+        $startUtc = $date->copy()->startOfDay()->setTimezone('UTC')->toDateTimeString();
+        $endUtc = $date->copy()->endOfDay()->setTimezone('UTC')->toDateTimeString();
+
+        return $query->where(function ($q) use ($startUtc, $endUtc, $dateStr) {
+            $q->whereBetween('created_at', [$startUtc, $endUtc])
+              ->orWhereDate('created_at', $dateStr)
+              ->orWhereHas('parcels', function ($pq) use ($startUtc, $endUtc, $dateStr) {
+                  $pq->whereBetween('created_at', [$startUtc, $endUtc])
+                     ->orWhereDate('created_at', $dateStr);
+              });
+        });
+    }
+
     public function order(): BelongsTo { return $this->belongsTo(Order::class); }
     public function fulfillmentLocation(): BelongsTo { return $this->belongsTo(FulfillmentLocation::class); }
     public function parcels(): HasMany { return $this->hasMany(Parcel::class); }

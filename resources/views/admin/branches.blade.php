@@ -169,6 +169,9 @@
                 </div>
             </section>
 
+            <!-- Dashboard Date Selector -->
+            @include('partials.dashboard_date_selector')
+
             <!-- Metric Cards -->
             <section class="metric-grid-elevated">
                 <article class="metric-card-elevated plum">

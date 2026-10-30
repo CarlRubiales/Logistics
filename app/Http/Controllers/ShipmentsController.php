@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Shipment;
 use App\Models\Store;
 use App\Services\ShipmentStatusService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -17,11 +18,25 @@ class ShipmentsController extends Controller
             return redirect()->route('admin.dashboard');
         }
 
+        $tz = 'Asia/Manila';
+        $todayPht = Carbon::now($tz)->toDateString();
+        $selectedDateStr = $request->input('date', $todayPht);
+
+        try {
+            $selectedDate = Carbon::createFromFormat('Y-m-d', $selectedDateStr, $tz);
+        } catch (\Throwable $e) {
+            $selectedDate = Carbon::now($tz);
+            $selectedDateStr = $todayPht;
+        }
+
+        $isToday = $selectedDate->toDateString() === $todayPht;
+        $formattedDate = $selectedDate->format('F d, Y');
+
         $store = Store::where('is_active', true)->first();
         $status = $request->string('status')->toString();
         $search = trim($request->string('search')->toString());
         $branch = $request->user()?->getBranchName();
-        $base = Shipment::query()->when($store, fn ($query) => $query->whereHas('order', fn ($q) => $q->where('store_id', $store->id)));
+        $base = Shipment::query()->forDate($selectedDate)->when($store, fn ($query) => $query->whereHas('order', fn ($q) => $q->where('store_id', $store->id)));
         if ($branch) {
             $base->where(function ($q) use ($branch) {
                 $q->where('destination_city', 'like', "%{$branch}%")
@@ -68,7 +83,7 @@ class ShipmentsController extends Controller
             ]);
         }
 
-        return view('shipments.index', compact('shipments', 'stats', 'status', 'search', 'store'));
+        return view('shipments.index', compact('shipments', 'stats', 'status', 'search', 'store', 'selectedDateStr', 'formattedDate', 'isToday'));
     }
 
     public function show(Request $request, Shipment $shipment)

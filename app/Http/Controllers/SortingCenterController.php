@@ -11,6 +11,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Validation\Rule;
 use App\Models\RiderProfile;
 use App\Models\RiderAreaAssignment;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -22,8 +23,26 @@ class SortingCenterController extends Controller
             return redirect()->route('admin.dashboard');
         }
 
+        $tz = 'Asia/Manila';
+        $todayPht = Carbon::now($tz)->toDateString();
+        $selectedDateStr = $request->input('date', $todayPht);
+
+        try {
+            $selectedDate = Carbon::createFromFormat('Y-m-d', $selectedDateStr, $tz);
+        } catch (\Throwable $e) {
+            $selectedDate = Carbon::now($tz);
+            $selectedDateStr = $todayPht;
+        }
+
+        $isToday = $selectedDate->toDateString() === $todayPht;
+        $formattedDate = $selectedDate->format('F d, Y');
+
         $branch = $request->user()?->getBranchName();
-        $query = Parcel::with(['area', 'rider.user', 'shipment'])->forBranch($branch)->latest();
+        $query = Parcel::with(['area', 'rider.user', 'shipment'])
+            ->forBranch($branch)
+            ->forDate($selectedDate)
+            ->latest();
+
         if ($request->filled('status')) $query->where('status', $request->string('status'));
         if ($request->filled('search')) {
             $term = $request->string('search');
@@ -43,19 +62,25 @@ class SortingCenterController extends Controller
         }
         $riders = $ridersQuery->get();
 
-        $counts = Parcel::query()->forBranch($branch)->select('status', DB::raw('count(*) as total'))->groupBy('status')->pluck('total', 'status');
+        $counts = Parcel::query()
+            ->forBranch($branch)
+            ->forDate($selectedDate)
+            ->select('status', DB::raw('count(*) as total'))
+            ->groupBy('status')
+            ->pluck('total', 'status');
 
         if ($request->wantsJson() || $request->query('format') === 'json') {
             return response()->json([
                 'status' => 'success',
                 'branch' => $branch,
+                'date' => $selectedDateStr,
                 'counts' => $counts,
                 'total' => $parcels->total(),
-                'latest_update' => Parcel::query()->forBranch($branch)->max('updated_at'),
+                'latest_update' => Parcel::query()->forBranch($branch)->forDate($selectedDate)->max('updated_at'),
             ]);
         }
 
-        return view('sorting-center.index', compact('parcels', 'areas', 'riders', 'counts', 'branch'));
+        return view('sorting-center.index', compact('parcels', 'areas', 'riders', 'counts', 'branch', 'selectedDateStr', 'formattedDate', 'isToday'));
     }
 
     public function receive(Request $request, ParcelIntakeService $intake)

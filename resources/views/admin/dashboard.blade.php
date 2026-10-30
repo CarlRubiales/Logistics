@@ -34,7 +34,7 @@
                     </p>
                 </div>
                 <div class="dash-quick-links">
-                    <a href="{{ route('admin.branches') }}" class="dash-link-pill primary">
+                    <a href="{{ route('admin.branches', request()->has('date') ? ['date' => request('date')] : []) }}" class="dash-link-pill primary">
                         📍 Branches & Couriers
                     </a>
                     <a href="{{ route('admin.riders') }}" class="dash-link-pill secondary">
@@ -48,6 +48,9 @@
                     </a>
                 </div>
             </section>
+
+            <!-- Dashboard Date Selector -->
+            @include('partials.dashboard_date_selector')
 
             <!-- Elevated KPI Metric Cards -->
             <section class="metric-grid-elevated">

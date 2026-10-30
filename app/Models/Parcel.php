@@ -24,7 +24,38 @@ class Parcel extends Model
         if (! $branch) {
             return $query;
         }
-        return $query->where('branch', $branch);
+        return $query->where(function ($q) use ($branch) {
+            $q->where('branch', $branch)
+              ->orWhere(function ($q2) use ($branch) {
+                  $q2->where(function ($q3) {
+                      $q3->whereNull('branch')->orWhere('branch', '');
+                  })->where('city', $branch);
+              });
+        });
+    }
+
+    public function scopeForDate($query, $date)
+    {
+        if (! $date) {
+            return $query;
+        }
+
+        if (! $date instanceof \Carbon\CarbonInterface) {
+            try {
+                $date = \Carbon\Carbon::parse($date, 'Asia/Manila');
+            } catch (\Throwable $e) {
+                $date = \Carbon\Carbon::now('Asia/Manila');
+            }
+        }
+
+        $dateStr = $date->format('Y-m-d');
+        $startUtc = $date->copy()->startOfDay()->setTimezone('UTC')->toDateTimeString();
+        $endUtc = $date->copy()->endOfDay()->setTimezone('UTC')->toDateTimeString();
+
+        return $query->where(function ($q) use ($startUtc, $endUtc, $dateStr) {
+            $q->whereBetween('created_at', [$startUtc, $endUtc])
+              ->orWhereDate('created_at', $dateStr);
+        });
     }
 
     public function store() { return $this->belongsTo(Store::class); }

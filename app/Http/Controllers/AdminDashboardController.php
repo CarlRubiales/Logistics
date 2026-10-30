@@ -8,6 +8,7 @@ use App\Models\RiderAreaAssignment;
 use App\Models\RiderProfile;
 use App\Models\Shipment;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,14 +25,29 @@ class AdminDashboardController extends Controller
     {
         abort_unless($request->user()->isMasterAdmin(), 403, 'Access denied. Master Logistics Administrator privileges required.');
 
-        // 1. Overall System Metrics
-        $totalParcels = Parcel::count();
-        $totalDelivered = Parcel::where('status', 'delivered')->count();
-        $totalInTransit = Parcel::whereIn('status', ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'])->count();
-        $totalExceptions = Parcel::whereIn('status', ['exception', 'failed', 'cancelled'])->count();
+        // Timezone: Philippine Time (Asia/Manila, UTC+8)
+        $tz = 'Asia/Manila';
+        $todayPht = Carbon::now($tz)->toDateString();
+        $selectedDateStr = $request->input('date', $todayPht);
+
+        try {
+            $selectedDate = Carbon::createFromFormat('Y-m-d', $selectedDateStr, $tz);
+        } catch (\Throwable $e) {
+            $selectedDate = Carbon::now($tz);
+            $selectedDateStr = $todayPht;
+        }
+
+        $isToday = $selectedDate->toDateString() === $todayPht;
+        $formattedDate = $selectedDate->format('F d, Y');
+
+        // 1. Overall System Metrics for the selected date
+        $totalParcels = Parcel::forDate($selectedDate)->count();
+        $totalDelivered = Parcel::forDate($selectedDate)->where('status', 'delivered')->count();
+        $totalInTransit = Parcel::forDate($selectedDate)->whereIn('status', ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'])->count();
+        $totalExceptions = Parcel::forDate($selectedDate)->whereIn('status', ['exception', 'failed', 'cancelled'])->count();
         $totalRiders = RiderProfile::where('registration_status', 'approved')->count();
 
-        // 2. Branch Breakdown
+        // 2. Branch Breakdown for the selected date
         $knownBranches = DestinationArea::whereNotNull('branch')->where('branch', '!=', '')->distinct()->pluck('branch')
             ->merge(Parcel::whereNotNull('branch')->where('branch', '!=', '')->distinct()->pluck('branch'))
             ->merge(User::whereNotNull('branch')->where('branch', '!=', '')->distinct()->pluck('branch'))
@@ -42,8 +58,8 @@ class AdminDashboardController extends Controller
             $knownBranches = collect(['Pila', 'Santa Cruz']);
         }
 
-        $hubSummaries = $knownBranches->map(function ($branchName) {
-            $parcels = Parcel::forBranch($branchName);
+        $hubSummaries = $knownBranches->map(function ($branchName) use ($selectedDate) {
+            $parcels = Parcel::forBranch($branchName)->forDate($selectedDate);
             $areas = DestinationArea::where('is_active', true)->forBranch($branchName);
             $areaIds = $areas->pluck('id');
 
@@ -89,7 +105,10 @@ class AdminDashboardController extends Controller
             'totalExceptions',
             'totalRiders',
             'hubSummaries',
-            'logisticsUsers'
+            'logisticsUsers',
+            'selectedDateStr',
+            'formattedDate',
+            'isToday'
         ));
     }
 
@@ -101,6 +120,20 @@ class AdminDashboardController extends Controller
     {
         abort_unless($request->user()->isMasterAdmin(), 403, 'Access denied. Master Administrator privileges required.');
 
+        $tz = 'Asia/Manila';
+        $todayPht = Carbon::now($tz)->toDateString();
+        $selectedDateStr = $request->input('date', $todayPht);
+
+        try {
+            $selectedDate = Carbon::createFromFormat('Y-m-d', $selectedDateStr, $tz);
+        } catch (\Throwable $e) {
+            $selectedDate = Carbon::now($tz);
+            $selectedDateStr = $todayPht;
+        }
+
+        $isToday = $selectedDate->toDateString() === $todayPht;
+        $formattedDate = $selectedDate->format('F d, Y');
+
         $knownBranches = DestinationArea::whereNotNull('branch')->where('branch', '!=', '')->distinct()->pluck('branch')
             ->merge(Parcel::whereNotNull('branch')->where('branch', '!=', '')->distinct()->pluck('branch'))
             ->merge(User::whereNotNull('branch')->where('branch', '!=', '')->distinct()->pluck('branch'))
@@ -111,8 +144,8 @@ class AdminDashboardController extends Controller
             $knownBranches = collect(['Pila', 'Santa Cruz']);
         }
 
-        // Build rich branch details including assigned riders
-        $branchData = $knownBranches->map(function ($branchName) {
+        // Build rich branch details including assigned riders for the selected date
+        $branchData = $knownBranches->map(function ($branchName) use ($selectedDate) {
             $account = User::where('branch', $branchName)->first();
             $areas = DestinationArea::where('branch', $branchName)->orderBy('name')->get();
             $areaIds = $areas->pluck('id');
@@ -126,8 +159,9 @@ class AdminDashboardController extends Controller
                     $q->orWhereHas('user', fn ($uq) => $uq->where('branch', $branchName));
                 })
                 ->get()
-                ->map(function ($rider) {
+                ->map(function ($rider) use ($selectedDate) {
                     $activeParcels = $rider->parcels()
+                        ->forDate($selectedDate)
                         ->whereIn('status', ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'])
                         ->count();
 
@@ -147,8 +181,8 @@ class AdminDashboardController extends Controller
                     ];
                 });
 
-            // Parcels for this branch
-            $parcels = Parcel::forBranch($branchName);
+            // Parcels for this branch on the selected date
+            $parcels = Parcel::forBranch($branchName)->forDate($selectedDate);
             $totalParcels = (clone $parcels)->count();
             $inTransit = (clone $parcels)->whereIn('status', ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'])->count();
             $delivered = (clone $parcels)->where('status', 'delivered')->count();
@@ -175,7 +209,7 @@ class AdminDashboardController extends Controller
 
         $allAreas = DestinationArea::where('is_active', true)->orderBy('branch')->orderBy('name')->get();
 
-        return view('admin.branches', compact('branchData', 'unassignedRiders', 'allAreas'));
+        return view('admin.branches', compact('branchData', 'unassignedRiders', 'allAreas', 'selectedDateStr', 'formattedDate', 'isToday'));
     }
 
     /**
