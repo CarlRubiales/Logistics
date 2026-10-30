@@ -11,36 +11,17 @@ class OrderItem extends Model
     use HasFactory;
 
     protected $fillable = [
-        'order_id',
-        'product_id',
-        'seller_id',
-        'quantity',
-        'price',
-        'subtotal',
-        'seen_at',
-        'packed_at',
+        'order_id', 'external_id', 'sku', 'name', 'quantity',
+        'quantity_fulfilled', 'unit_price', 'metadata',
     ];
 
-    protected $casts = [
-        'quantity' => 'integer',
-        'price' => 'decimal:2',
-        'subtotal' => 'decimal:2',
-        'seen_at' => 'datetime',
-        'packed_at' => 'datetime',
-    ];
+    protected function casts(): array
+    {
+        return ['metadata' => 'array', 'unit_price' => 'decimal:2'];
+    }
 
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
-    }
-
-    public function product(): BelongsTo
-    {
-        return $this->belongsTo(Product::class);
-    }
-
-    public function seller(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'seller_id');
     }
 }

@@ -1,20 +1,5 @@
 <?php
 
-$rawMailer = (string) env('MAIL_MAILER', 'smtp');
-$rawHost = trim((string) env('MAIL_HOST', 'smtp.gmail.com'));
-$rawPort = (int) env('MAIL_PORT', 587);
-$rawUsername = trim((string) env('MAIL_USERNAME', ''));
-$rawPassword = trim((string) env('MAIL_PASSWORD', ''));
-$rawFromAddress = trim((string) env('MAIL_FROM_ADDRESS', ''));
-
-$useFallbackSmtp = $rawHost !== 'smtp.gmail.com'
-    || $rawUsername === ''
-    || strtolower($rawUsername) === 'null'
-    || $rawPassword === ''
-    || strtolower($rawPassword) === 'null';
-
-$defaultPoolPass = implode('', ['inbl', 'vfee', 'nigm', 'mbdt']);
-
 return [
 
     /*
@@ -29,7 +14,7 @@ return [
     |
     */
 
-    'default' => ($rawMailer === 'log' || $rawMailer === '') ? 'smtp' : $rawMailer,
+    'default' => env('MAIL_MAILER', 'log'),
 
     /*
     |--------------------------------------------------------------------------
@@ -54,24 +39,13 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => $useFallbackSmtp ? null : env('MAIL_SCHEME'),
-            'url' => $useFallbackSmtp ? null : env('MAIL_URL'),
-            'host' => $useFallbackSmtp ? 'smtp.gmail.com' : $rawHost,
-            'port' => $useFallbackSmtp ? 587 : ($rawPort ?: 587),
-            'username' => $useFallbackSmtp ? 'jsobrevinas6@gmail.com' : $rawUsername,
-            'password' => $useFallbackSmtp ? $defaultPoolPass : $rawPassword,
-            'timeout' => 10,
-            'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
-        ],
-
-        'gmail_ssl' => [
-            'transport' => 'smtp',
-            'scheme' => 'smtps',
-            'host' => 'smtp.gmail.com',
-            'port' => 465,
-            'username' => $useFallbackSmtp ? 'jsobrevinas6@gmail.com' : $rawUsername,
-            'password' => $useFallbackSmtp ? $defaultPoolPass : $rawPassword,
-            'timeout' => 10,
+            'scheme' => env('MAIL_SCHEME'),
+            'url' => env('MAIL_URL'),
+            'host' => env('MAIL_HOST', '127.0.0.1'),
+            'port' => env('MAIL_PORT', 2525),
+            'username' => env('MAIL_USERNAME'),
+            'password' => env('MAIL_PASSWORD'),
+            'timeout' => null,
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
@@ -137,10 +111,8 @@ return [
     */
 
     'from' => [
-        'address' => ($rawFromAddress === '' || $rawFromAddress === 'hello@example.com' || strtolower($rawFromAddress) === 'null')
-            ? 'jsobrevinas6@gmail.com'
-            : $rawFromAddress,
-        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Lumora')),
+        'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
+        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
 ];

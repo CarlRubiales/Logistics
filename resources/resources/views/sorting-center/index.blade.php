@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sorting Center — Lumora Logistics</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+</head>
+<body class="logistics-page">
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand-lockup"><div class="brand-mark"><span></span><span></span><span></span></div><div><div class="brand-name">LUMORA</div><div class="brand-subtitle">LOGISTICS</div></div></div>
+        <div class="workspace-switcher"><div class="workspace-icon">L</div><div class="workspace-copy"><span>Workspace</span><strong>Lumora Beauty</strong></div></div>
+        <nav class="side-nav" aria-label="Primary navigation">
+            <div class="nav-label">Workspace</div>
+            <a class="nav-item" href="{{ route('dashboard') }}"><span class="nav-icon">⌂</span><span>Overview</span></a>
+            <a class="nav-item active" href="{{ route('sorting-center.index') }}"><span class="nav-icon">▦</span><span>Sorting Center</span></a>
+            <a class="nav-item" href="{{ route('shipments.index') }}"><span class="nav-icon">◈</span><span>Shipments</span></a>
+            <a class="nav-item" href="{{ route('orders.index') }}"><span class="nav-icon">▤</span><span>Orders</span></a>
+            <a class="nav-item" href="{{ route('inventory.index') }}"><span class="nav-icon">▥</span><span>Inventory</span></a>
+            <div class="nav-label second">Manage</div>
+            <a class="nav-item" href="{{ route('exceptions.index') }}"><span class="nav-icon">!</span><span>Exceptions</span></a>
+            <a class="nav-item" href="{{ route('locations.index') }}"><span class="nav-icon">⌖</span><span>Locations</span></a>
+            <a class="nav-item" href="{{ route('settings.index') }}"><span class="nav-icon">⚙</span><span>Settings</span></a>
+        </nav>
+        <div class="sidebar-bottom"><div class="profile-row"><div class="avatar">{{ strtoupper(substr(auth()->user()->name ?? 'A', 0, 1)) }}</div><div class="profile-copy"><strong>{{ auth()->user()->name ?? 'Admin' }}</strong><small>{{ auth()->user()->role ?? 'admin' }}</small></div></div><form action="{{ route('logout') }}" method="POST" class="logout-form">@csrf<button type="submit">↪&nbsp; Sign out</button></form></div>
+    </aside>
+    <main class="main-content">
+        <header class="topbar"><div class="breadcrumb"><span>Workspace</span><span class="crumb-divider">/</span><strong>Sorting Center</strong></div><div class="topbar-actions"><span class="user-name">{{ auth()->user()->name ?? 'Admin' }}</span></div></header>
+        <div class="content-wrap">
+            @if(session('success'))<div class="server-alert" role="status"><span>✓</span>{{ session('success') }}</div>@endif
+            @if($errors->any())<div class="server-alert error" role="alert"><span>!</span>{{ $errors->first() }}</div>@endif
+            <section class="welcome-row"><div><div class="eyebrow">SORTING CENTER OPERATIONS</div><h1>Parcel control desk</h1><p class="intro">Receive, scan, determine the delivery area, sort, and assign every parcel to the correct rider.</p></div></section>
+            <section class="metric-grid">
+                @foreach([['received','Received'],['scanned','Scanned'],['sorted','Sorted'],['assigned','Assigned']] as [$key,$label])
+                    <article class="metric-card {{ ['received'=>'coral-wash','scanned'=>'plum-wash','sorted'=>'sage-wash','assigned'=>'gold-wash'][$key] }}"><div class="metric-top"><span class="metric-label">{{ $label }}</span><span class="metric-icon plum">{{ $counts[$key] ?? 0 }}</span></div><div class="metric-value">{{ $counts[$key] ?? 0 }}</div><div class="metric-trend positive">Live queue <small>today</small></div></article>
+                @endforeach
+            </section>
+            <section class="dashboard-grid">
+                <article class="panel"><div class="panel-heading"><div><div class="section-kicker">RECEIVE PARCEL</div><h2>New parcel intake</h2></div></div>
+                    <form method="POST" action="{{ route('sorting-center.receive') }}" class="form-grid">@csrf
+                        <label>Parcel number<input name="parcel_number" value="{{ old('parcel_number') }}" placeholder="#1004" required></label>
+                        <label>Barcode<input name="barcode" value="{{ old('barcode') }}" placeholder="Scan or type barcode"></label>
+                        <label>Recipient name<input name="recipient_name" value="{{ old('recipient_name') }}" required></label>
+                        <label>Phone<input name="recipient_phone" value="{{ old('recipient_phone') }}"></label>
+                        <label class="full-span">Delivery address<textarea name="address_line" required>{{ old('address_line') }}</textarea></label>
+                        <label>City / municipality<input name="city" value="{{ old('city') }}" placeholder="Santa Cruz" required></label>
+                        <label>Province<input name="province" value="{{ old('province', 'Laguna') }}"></label>
+                        <label>Postal code<input name="postal_code" value="{{ old('postal_code') }}"></label>
+                        <label>Area override<select name="destination_area_id"><option value="">Determine after scan</option>@foreach($areas as $area)<option value="{{ $area->id }}">{{ $area->name }} ({{ $area->code }})</option>@endforeach</select></label>
+                        <button class="primary-button full-span" type="submit">＋ Receive parcel</button>
+                    </form>
+                </article>
+                <article class="panel"><div class="panel-heading"><div><div class="section-kicker">WORKFLOW</div><h2>Processing sequence</h2></div></div><div class="exception-list"><div class="exception-item"><span class="exception-symbol coral-bg">1</span><span class="exception-copy"><strong>Receive</strong><small>Register the parcel and address.</small></span></div><div class="exception-item"><span class="exception-symbol plum-bg">2</span><span class="exception-copy"><strong>Scan</strong><small>Confirm barcode and parcel identity.</small></span></div><div class="exception-item"><span class="exception-symbol sage-bg">3</span><span class="exception-copy"><strong>Determine area</strong><small>Use the destination mapping or override.</small></span></div><div class="exception-item"><span class="exception-symbol gold-bg">4</span><span class="exception-copy"><strong>Assign rider</strong><small>Only riders assigned to that area are eligible.</small></span></div></div></article>
+            </section>
+            <section class="panel shipments-panel"><div class="panel-heading shipments-heading"><div><div class="section-kicker">LIVE PARCEL QUEUE</div><h2>Sorting center parcels</h2></div><form method="GET"><input name="search" value="{{ request('search') }}" placeholder="Search parcel, recipient, city"><select name="status"><option value="">All statuses</option>@foreach(['received','scanned','sorted','assigned','rider_received'] as $status)<option value="{{ $status }}" @selected(request('status') === $status)>{{ ucwords(str_replace('_',' ', $status)) }}</option>@endforeach</select><button class="secondary-button" type="submit">Filter</button></form></div>
+                <div class="table-wrap"><table class="shipments-table"><thead><tr><th>Parcel</th><th>Recipient / address</th><th>Area</th><th>Status</th><th>Rider</th><th>Actions</th></tr></thead><tbody>
+                    @forelse($parcels as $parcel)<tr><td><strong>{{ $parcel->parcel_number }}</strong><small>{{ $parcel->barcode ?: 'No barcode' }}</small></td><td>{{ $parcel->recipient_name }}<small>{{ $parcel->city }}, {{ $parcel->province }}</small></td><td>{{ $parcel->area?->name ?: 'Not determined' }}<small>{{ $parcel->sort_bin ?: 'No bin' }}</small></td><td><span class="status-chip {{ $parcel->status === 'assigned' || $parcel->status === 'rider_received' ? 'in-transit' : 'packed' }}"><b></b>{{ ucwords(str_replace('_',' ', $parcel->status)) }}</span></td><td>{{ $parcel->rider?->user?->name ?: 'Unassigned' }}</td><td><div class="table-actions">
+                        @if(in_array($parcel->status, ['received']))<form method="POST" action="{{ route('sorting-center.scan', $parcel) }}">@csrf<button class="text-button" type="submit">Scan</button></form>@endif
+                        @if(in_array($parcel->status, ['scanned','received']))<form method="POST" action="{{ route('sorting-center.sort', $parcel) }}">@csrf<select name="destination_area_id" required><option value="">Area</option>@foreach($areas as $area)<option value="{{ $area->id }}">{{ $area->name }}</option>@endforeach</select><input name="sort_bin" placeholder="Bin"><button class="text-button" type="submit">Sort</button></form>@endif
+                        @if($parcel->destination_area_id && in_array($parcel->status, ['sorted']))<form method="POST" action="{{ route('sorting-center.assign', $parcel) }}">@csrf<select name="assigned_rider_id" required><option value="">Rider</option>@foreach($riders as $rider)@if($rider->areas->contains('id', $parcel->destination_area_id))<option value="{{ $rider->id }}">{{ $rider->user->name }}</option>@endif @endforeach</select><input name="commission_amount" type="number" min="0" step="0.01" placeholder="₱ commission"><button class="text-button" type="submit">Assign</button></form>@endif
+                    </div></td></tr>@empty<tr><td colspan="6">No parcels found. Receive the first parcel above.</td></tr>@endforelse
+                </tbody></table></div><div class="table-footer">{{ $parcels->links() }}</div>
+            </section>
+        </div>
+    </main>
+</div>
+</body></html>
