@@ -274,13 +274,20 @@ class ScannerApiController extends Controller
             $code = (string) $waybill['barcode'];
         }
 
-        // Find parcel by barcode, parcel_number (e.g. LM-TRK-000001), or ID
+        // Find parcel by barcode, parcel_number (e.g. LM-TRK-000001), or shipment tracking_number
         $parcel = Parcel::with(['area', 'rider.user', 'shipment', 'order.items'])
-            ->where('barcode', $code)
-            ->orWhere('barcode', $rawCode)
-            ->orWhere('parcel_number', $code)
-            ->orWhere('id', is_numeric($code) ? (int) $code : -1)
-            ->orWhereHas('shipment', fn ($q) => $q->where('tracking_number', $code))
+            ->where(function ($q) use ($code, $rawCode, $waybill) {
+                $q->where('barcode', $code)
+                  ->orWhere('barcode', $rawCode)
+                  ->orWhere('parcel_number', $code)
+                  ->orWhereHas('shipment', fn ($sq) => $sq->where('tracking_number', $code));
+
+                if (! $waybill && is_numeric($code)) {
+                    $q->orWhere(function ($idQ) use ($code) {
+                        $idQ->where('id', (int) $code)->whereNull('barcode');
+                    });
+                }
+            })
             ->first();
 
         // 1. If parcel already exists in the system
