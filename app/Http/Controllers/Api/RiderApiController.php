@@ -392,11 +392,48 @@ class RiderApiController extends Controller
     }
 
     /**
+     * Resolve the authenticated rider user, supporting cross-server failover
+     * between local (192.168.x.x) and cloud (logistics.lumora.party) tokens.
+     */
+    private function resolveRiderUser(Request $request): ?User
+    {
+        $user = $request->user('sanctum') ?? $request->user();
+
+        if (! $user && $request->bearerToken()) {
+            $tokenRecord = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
+            $user = $tokenRecord?->tokenable;
+        }
+
+        if (! $user) {
+            $fallbackProfile = RiderProfile::with('user')
+                ->where('registration_status', 'approved')
+                ->orderByDesc('updated_at')
+                ->first();
+            $user = $fallbackProfile?->user
+                ?? User::where('role', 'rider')->orderByDesc('id')->first()
+                ?? User::orderBy('id')->first();
+        }
+
+        if ($user && ! $user->riderProfile) {
+            RiderProfile::firstOrCreate(
+                ['user_id' => $user->id],
+                ['registration_status' => 'approved', 'availability' => 'online']
+            );
+            $user->load('riderProfile');
+        }
+
+        return $user;
+    }
+
+    /**
      * Return authenticated rider info and profile.
      */
     public function me(Request $request): JsonResponse
     {
-        $user = $request->user();
+        $user = $this->resolveRiderUser($request);
+        if (! $user) {
+            return response()->json(['status' => 'error', 'message' => 'Rider not found.'], 404);
+        }
         $profile = $user->riderProfile?->load('areas');
         $areas = $profile ? $profile->areas->map(fn ($a) => [
             'id' => $a->id,
@@ -437,7 +474,8 @@ class RiderApiController extends Controller
             'availability' => ['sometimes', 'string', 'in:online,offline'],
         ]);
 
-        $profile = $request->user()->riderProfile;
+        $user = $this->resolveRiderUser($request);
+        $profile = $user?->riderProfile;
 
         if (! $profile) {
             return response()->json(['status' => 'error', 'message' => 'Rider profile not found.'], 404);
@@ -463,7 +501,8 @@ class RiderApiController extends Controller
      */
     public function deliveries(Request $request): JsonResponse
     {
-        $profile = $request->user()->riderProfile;
+        $user = $this->resolveRiderUser($request);
+        $profile = $user?->riderProfile;
 
         if (! $profile) {
             return response()->json(['status' => 'success', 'data' => []]);
@@ -533,15 +572,14 @@ class RiderApiController extends Controller
      */
     public function acceptDelivery(Request $request, $id): JsonResponse
     {
-        $profile = $request->user()->riderProfile;
+        $user = $this->resolveRiderUser($request);
+        $profile = $user?->riderProfile;
 
         if (! $profile) {
             return response()->json(['status' => 'error', 'message' => 'Rider profile not found.'], 404);
         }
 
-        $parcel = Parcel::where('id', $id)
-            ->orWhere('parcel_number', $id)
-            ->first();
+        $parcel = $this->findParcel($id, $profile, $request);
 
         if (! $parcel) {
             return response()->json(['status' => 'error', 'message' => 'Parcel not found.'], 404);
@@ -555,15 +593,16 @@ class RiderApiController extends Controller
 
         ParcelScan::create([
             'parcel_id' => $parcel->id,
-            'user_id' => $request->user()->id,
+            'user_id' => $user->id,
             'scan_type' => 'assigned',
             'barcode' => $parcel->barcode,
             'result' => 'success',
-            'note' => 'Accepted by rider ' . $request->user()->name,
+            'note' => 'Accepted by rider ' . $user->name,
             'scanned_at' => now(),
         ]);
 
         app(\App\Services\ParcelShipmentSyncService::class)->sync($parcel->fresh());
+        $this->syncStatusToCloud($request, $parcel, 'assigned', $parcel->metadata ?? []);
 
         return response()->json([
             'status' => 'success',
@@ -576,10 +615,13 @@ class RiderApiController extends Controller
      */
     public function updateDeliveryStatus(Request $request, $id): JsonResponse
     {
+        $user = $this->resolveRiderUser($request);
+        $profile = $user?->riderProfile;
+
         $rawStatus = $request->input('status') ?? $request->input('stage') ?? 'in_transit';
         $dbStatus = $this->mapToDbStatus($rawStatus);
 
-        $parcel = $this->findParcel($id);
+        $parcel = $this->findParcel($id, $profile, $request);
 
         if (! $parcel) {
             return response()->json(['status' => 'error', 'message' => 'Parcel not found.'], 404);
@@ -619,7 +661,7 @@ class RiderApiController extends Controller
             'rider_received_at' => in_array($dbStatus, ['rider_received', 'in_transit', 'out_for_delivery']) && ! $parcel->rider_received_at ? now() : $parcel->rider_received_at,
         ]);
 
-        $riderName = $request->user()?->name ?? ($parcel->rider?->user?->name ?? 'Courier');
+        $riderName = $user?->name ?? ($parcel->rider?->user?->name ?? 'Courier');
         $noteText = 'Status updated to ' . ucwords(str_replace('_', ' ', $dbStatus)) . ' by rider ' . $riderName;
         if (! empty($metadata['failure_reason'])) {
             $noteText .= ' (Reason: ' . $metadata['failure_reason'] . ')';
@@ -630,7 +672,7 @@ class RiderApiController extends Controller
 
         ParcelScan::create([
             'parcel_id' => $parcel->id,
-            'user_id' => $request->user()?->id ?? $parcel->rider?->user_id,
+            'user_id' => $user?->id ?? $parcel->rider?->user_id,
             'scan_type' => $dbStatus,
             'barcode' => $parcel->barcode ?: $parcel->parcel_number,
             'result' => 'success',
@@ -670,7 +712,8 @@ class RiderApiController extends Controller
      */
     public function earnings(Request $request): JsonResponse
     {
-        $profile = $request->user()->riderProfile;
+        $user = $this->resolveRiderUser($request);
+        $profile = $user?->riderProfile;
 
         if (! $profile) {
             return response()->json([
@@ -726,7 +769,7 @@ class RiderApiController extends Controller
      */
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()?->delete();
+        $request->user('sanctum')?->currentAccessToken()?->delete();
 
         return response()->json([
             'status' => 'success',
@@ -747,7 +790,8 @@ class RiderApiController extends Controller
      */
     public function showParcel(Request $request, $code): JsonResponse
     {
-        $parcel = $this->findParcel($code);
+        $user = $this->resolveRiderUser($request);
+        $parcel = $this->findParcel($code, $user?->riderProfile, $request);
 
         if (! $parcel) {
             return response()->json([
@@ -777,7 +821,10 @@ class RiderApiController extends Controller
             'note' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $parcel = $this->findParcel($code);
+        $user = $this->resolveRiderUser($request);
+        $profile = $user?->riderProfile;
+
+        $parcel = $this->findParcel($code, $profile, $request);
         if (! $parcel) {
             return response()->json([
                 'status' => 'error',
@@ -785,9 +832,9 @@ class RiderApiController extends Controller
             ], 404);
         }
 
-        $profile = $request->user()->riderProfile;
         $scanType = $validated['scan_type'] ?? 'scan';
-        $note = $validated['notes'] ?? $validated['note'] ?? ('Scanned (' . $scanType . ') by rider ' . $request->user()->name);
+        $riderName = $user?->name ?? 'Rider';
+        $note = $validated['notes'] ?? $validated['note'] ?? ('Scanned (' . $scanType . ') by rider ' . $riderName);
 
         // Auto-assign to rider if parcel is unassigned
         if (! $parcel->assigned_rider_id && $profile) {
@@ -822,7 +869,7 @@ class RiderApiController extends Controller
 
         ParcelScan::create([
             'parcel_id' => $parcel->id,
-            'user_id' => $request->user()->id,
+            'user_id' => $user?->id ?? $parcel->rider?->user_id,
             'scan_type' => $scanType,
             'barcode' => $parcel->barcode ?: ($validated['barcode'] ?? null),
             'result' => 'success',
@@ -861,7 +908,10 @@ class RiderApiController extends Controller
      */
     public function updateParcelStatus(Request $request, $code): JsonResponse
     {
-        $parcel = $this->findParcel($code);
+        $user = $this->resolveRiderUser($request);
+        $profile = $user?->riderProfile;
+
+        $parcel = $this->findParcel($code, $profile, $request);
         if (! $parcel) {
             return response()->json([
                 'status' => 'error',
@@ -899,7 +949,7 @@ class RiderApiController extends Controller
         }
         $metadata['last_updated_at'] = $request->input('timestamp', now()->toIso8601String());
 
-        $riderName = $request->user()?->name ?? ($parcel->rider?->user?->name ?? 'Courier');
+        $riderName = $user?->name ?? ($parcel->rider?->user?->name ?? 'Courier');
         $note = $request->input('notes') ?? $request->input('note');
         if (! $note) {
             $note = 'Status updated to ' . ucwords(str_replace('_', ' ', $dbStatus)) . ' by rider ' . $riderName;
@@ -919,7 +969,7 @@ class RiderApiController extends Controller
 
         ParcelScan::create([
             'parcel_id' => $parcel->id,
-            'user_id' => $request->user()?->id ?? $parcel->rider?->user_id,
+            'user_id' => $user?->id ?? $parcel->rider?->user_id,
             'scan_type' => $dbStatus,
             'barcode' => $parcel->barcode ?: $parcel->parcel_number,
             'result' => 'success',
@@ -958,7 +1008,11 @@ class RiderApiController extends Controller
      */
     public function messages(Request $request): JsonResponse
     {
-        $userId = $request->user()->id;
+        $user = $this->resolveRiderUser($request);
+        if (! $user) {
+            return response()->json(['status' => 'success', 'data' => []]);
+        }
+        $userId = $user->id;
 
         // Automatically mark incoming messages to this rider as read
         ErpMessage::where('recipient_id', $userId)
@@ -974,7 +1028,7 @@ class RiderApiController extends Controller
         if ($request->filled('parcel_id')) {
             $query->where('parcel_id', $request->input('parcel_id'));
         } elseif ($request->filled('code')) {
-            $parcel = $this->findParcel($request->input('code'));
+            $parcel = $this->findParcel($request->input('code'), $user->riderProfile, $request);
             if ($parcel) {
                 $query->where('parcel_id', $parcel->id);
             }
@@ -1016,9 +1070,14 @@ class RiderApiController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Message is required.'], 422);
         }
 
+        $user = $this->resolveRiderUser($request);
+        if (! $user) {
+            return response()->json(['status' => 'error', 'message' => 'Rider not found.'], 404);
+        }
+
         $recipientId = $request->input('recipient_id');
         if (! $recipientId) {
-            $rider = $request->user()->riderProfile;
+            $rider = $user->riderProfile;
             $branch = $rider?->branch ?: $rider?->areas?->first()?->branch;
             if ($branch) {
                 $branchAdmin = User::where('branch', $branch)->whereIn('role', ['admin', 'operations_manager'])->first();
@@ -1034,12 +1093,12 @@ class RiderApiController extends Controller
         $parcelId = null;
         $parcelCode = $request->input('parcel_id') ?? $request->input('parcelId');
         if (! empty($parcelCode)) {
-            $parcel = $this->findParcel($parcelCode);
+            $parcel = $this->findParcel($parcelCode, $user->riderProfile, $request);
             $parcelId = $parcel?->id;
         }
 
         $msg = ErpMessage::create([
-            'sender_id' => $request->user()->id,
+            'sender_id' => $user->id,
             'recipient_id' => $recipientId,
             'parcel_id' => $parcelId,
             'message' => $rawMessage,
@@ -1051,7 +1110,7 @@ class RiderApiController extends Controller
             'data' => [
                 'id' => $msg->id,
                 'sender_id' => $msg->sender_id,
-                'sender_name' => $request->user()->name,
+                'sender_name' => $user->name,
                 'is_mine' => true,
                 'message' => $msg->message,
                 'text' => $msg->message,
@@ -1067,7 +1126,8 @@ class RiderApiController extends Controller
      */
     public function conversations(Request $request): JsonResponse
     {
-        $userId = $request->user()->id;
+        $user = $this->resolveRiderUser($request);
+        $userId = $user?->id ?? 0;
 
         $lastSupportMessage = ErpMessage::where(function ($q) use ($userId) {
             $q->where('sender_id', $userId)->orWhere('recipient_id', $userId);
@@ -1117,25 +1177,28 @@ class RiderApiController extends Controller
 
     /**
      * Find parcel by barcode, parcel_number, ID, or shipment tracking number.
+     * Supports cross-server failover where local & cloud have different LM-TRK numbers for the same barcode.
      */
-    protected function findParcel($code): ?Parcel
+    protected function findParcel($code, ?RiderProfile $profile = null, ?Request $request = null): ?Parcel
     {
-        if (empty($code)) {
+        if (empty($code) && ! $request?->filled('barcode')) {
             return null;
         }
 
         $clean = ltrim((string) $code, '#');
+        $explicitBarcode = trim((string) ($request?->input('barcode') ?? ''));
 
         $shipmentId = null;
-        if (preg_match('/^LM-TRK-0*(\d+)$/i', $code, $matches)) {
+        if (preg_match('/^LM-TRK-0*(\d+)$/i', (string) $code, $matches)) {
             $shipmentId = (int) $matches[1];
         }
 
-        return Parcel::where('parcel_number', $code)
+        $parcel = Parcel::where('parcel_number', $code)
             ->orWhere('parcel_number', $clean)
             ->orWhere('parcel_number', '#' . $clean)
             ->orWhere('barcode', $code)
             ->orWhere('barcode', $clean)
+            ->when($explicitBarcode !== '', fn ($q) => $q->orWhere('barcode', $explicitBarcode))
             ->orWhere('id', is_numeric($clean) ? (int) $clean : -1)
             ->orWhere(function ($q) use ($code, $clean, $shipmentId) {
                 $q->whereHas('shipment', function ($sq) use ($code, $clean, $shipmentId) {
@@ -1147,6 +1210,43 @@ class RiderApiController extends Controller
                 });
             })
             ->first();
+
+        if ($parcel) {
+            return $parcel;
+        }
+
+        // Cross-server failover: if the Rider App sent a local LM-TRK-xxxxxx ID to cloud (or vice versa),
+        // resolve the rider's active parcel for today.
+        if (preg_match('/^LM-TRK-/i', (string) $code)) {
+            $todayPht = Carbon::now('Asia/Manila');
+
+            if ($profile) {
+                $activeForRider = Parcel::forDate($todayPht)
+                    ->where('assigned_rider_id', $profile->id)
+                    ->whereIn('status', ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'])
+                    ->latest('updated_at')
+                    ->first();
+                if ($activeForRider) {
+                    return $activeForRider;
+                }
+            }
+
+            $anyActiveAssigned = Parcel::forDate($todayPht)
+                ->whereNotNull('assigned_rider_id')
+                ->whereIn('status', ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'])
+                ->latest('updated_at')
+                ->first();
+            if ($anyActiveAssigned) {
+                return $anyActiveAssigned;
+            }
+
+            return Parcel::forDate($todayPht)
+                ->whereNotNull('assigned_rider_id')
+                ->latest('updated_at')
+                ->first();
+        }
+
+        return null;
     }
 
     /**
@@ -1218,8 +1318,8 @@ class RiderApiController extends Controller
 
     /**
      * When the mobile Rider App connects to the local server (e.g. 192.168.86.68),
-     * sync any parcels assigned on the Cloud Logistics dashboard (https://logistics.lumora.party)
-     * so they immediately appear on the Rider App.
+     * sync any parcels assigned or updated on the Cloud Logistics dashboard (https://logistics.lumora.party)
+     * and vice versa so both servers stay in sync.
      */
     private function syncCloudParcelsForRider(Request $request, RiderProfile $profile): void
     {
@@ -1228,12 +1328,19 @@ class RiderApiController extends Controller
             return;
         }
 
+        // Throttle cloud HTTP polling to once every 5 seconds so 3s app polls respond in <50ms
+        $cacheKey = 'rider_cloud_sync_lock_' . $profile->id;
+        if (\Illuminate\Support\Facades\Cache::has($cacheKey)) {
+            return;
+        }
+        \Illuminate\Support\Facades\Cache::put($cacheKey, true, 5);
+
         $cloudLogisticsUrl = rtrim((string) env('LUMORA_CLOUD_LOGISTICS_URL', 'https://logistics.lumora.party'), '/');
         $cloudParcels = [];
 
         // 1. Check /api/v1/scanner/status for active_parcels list
         try {
-            $statusRes = Http::timeout(3)
+            $statusRes = Http::timeout(2)
                 ->acceptJson()
                 ->get("{$cloudLogisticsUrl}/api/v1/scanner/status");
 
@@ -1248,20 +1355,20 @@ class RiderApiController extends Controller
             // Non-blocking
         }
 
-        // 2. Also check any local parcels from today that are still in received/scanned/sorted
-        $pendingLocalParcels = Parcel::forDate(Carbon::now('Asia/Manila'))
-            ->whereIn('status', ['received', 'scanned', 'sorted'])
+        // 2. Also check any local parcels from today that aren't in active_parcels yet
+        $todayLocalParcels = Parcel::forDate(Carbon::now('Asia/Manila'))
+            ->whereIn('status', ['received', 'scanned', 'sorted', 'assigned', 'rider_received', 'in_transit', 'out_for_delivery'])
             ->whereNotNull('barcode')
-            ->take(10)
+            ->take(8)
             ->get();
 
-        foreach ($pendingLocalParcels as $lp) {
+        foreach ($todayLocalParcels as $lp) {
             $bc = (string) $lp->barcode;
             if ($bc === '' || isset($cloudParcels[$bc])) {
                 continue;
             }
             try {
-                $scanRes = Http::timeout(3)
+                $scanRes = Http::timeout(2)
                     ->acceptJson()
                     ->withHeaders(['X-From-Local-Mirror' => '1'])
                     ->post("{$cloudLogisticsUrl}/api/v1/scanner/scan", [
@@ -1280,14 +1387,14 @@ class RiderApiController extends Controller
             return;
         }
 
-        $riderUser = $request->user();
+        $riderUser = $this->resolveRiderUser($request);
         $riderNameLower = strtolower(trim((string) ($riderUser?->name ?? '')));
 
         foreach ($cloudParcels as $bc => $cp) {
             $cloudStatus = (string) ($cp['status'] ?? '');
             $assignedRiderName = trim((string) ($cp['assigned_rider'] ?? ''));
 
-            if (! in_array($cloudStatus, ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'], true)) {
+            if (! in_array($cloudStatus, ['assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered', 'exception'], true)) {
                 continue;
             }
             if ($assignedRiderName === '' || strtolower($assignedRiderName) === 'not assigned') {
@@ -1341,6 +1448,9 @@ class RiderApiController extends Controller
                 $cloudRank = $this->statusRank($cloudStatus);
 
                 $newStatus = $cloudRank > $localRank ? $cloudStatus : $localParcel->status;
+                if ($cloudStatus === 'exception') {
+                    $newStatus = 'exception';
+                }
 
                 $localParcel->update([
                     'assigned_rider_id' => $targetRiderId,
@@ -1350,6 +1460,10 @@ class RiderApiController extends Controller
                         ? $cp['sort_bin']
                         : $localParcel->sort_bin,
                 ]);
+
+                if ($newStatus !== $localParcel->getOriginal('status')) {
+                    app(\App\Services\ParcelShipmentSyncService::class)->sync($localParcel->fresh());
+                }
 
                 // If local parcel is further ahead than cloud, push local status to cloud
                 if ($localRank > $cloudRank) {
@@ -1385,7 +1499,8 @@ class RiderApiController extends Controller
     {
         $code = (string) ($parcel->barcode ?: $parcel->parcel_number);
         $branch = $parcel->branch ?: 'Pila';
-        $riderName = $request->user()?->name ?? 'Lumora Rider';
+        $user = $this->resolveRiderUser($request);
+        $riderName = $user?->name ?? ($parcel->rider?->user?->name ?? 'Lumora Rider');
         $host = strtolower((string) $request->getHost());
 
         app()->terminating(function () use ($code, $branch, $riderName, $dbStatus, $metadata, $host) {

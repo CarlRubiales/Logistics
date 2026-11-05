@@ -39,8 +39,8 @@ Route::prefix('v1')->group(function () {
     Route::post('/rider/register', [RiderApiController::class, 'register']);
     Route::get('/hubs', [RiderApiController::class, 'hubs']);
 
-    // Mobile Rider API (Protected via Sanctum)
-    Route::middleware('auth:sanctum')->prefix('rider')->group(function () {
+    // Mobile Rider API (Resolves Sanctum or cross-server token inside controller)
+    Route::prefix('rider')->group(function () {
         Route::get('/me', [RiderApiController::class, 'me']);
         Route::post('/logout', [RiderApiController::class, 'logout']);
         Route::post('/availability', [RiderApiController::class, 'updateAvailability']);

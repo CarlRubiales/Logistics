@@ -375,6 +375,34 @@ class ScannerApiController extends Controller
                     $branchUpdate['rider_received_at'] = now();
                 }
                 $parcel->update($branchUpdate);
+
+                if ($oldStatus !== $forceStatus) {
+                    ParcelScan::create([
+                        'parcel_id' => $parcel->id,
+                        'user_id' => $parcel->rider?->user_id ?? $userId,
+                        'scan_type' => $forceStatus,
+                        'barcode' => $parcel->barcode ?: $code,
+                        'result' => 'success',
+                        'note' => 'Status synced to ' . ucwords(str_replace('_', ' ', $forceStatus)) . " by {$operatorName}",
+                        'scanned_at' => now(),
+                    ]);
+                }
+
+                if ($forceStatus === 'delivered' && $parcel->assigned_rider_id) {
+                    \App\Models\CommissionTransaction::firstOrCreate(
+                        [
+                            'rider_profile_id' => $parcel->assigned_rider_id,
+                            'parcel_id' => $parcel->id,
+                        ],
+                        [
+                            'amount' => 150.00,
+                            'status' => 'pending',
+                            'description' => 'Delivery payout for ' . $parcel->parcel_number,
+                            'earned_at' => now(),
+                        ]
+                    );
+                }
+
                 app(ParcelShipmentSyncService::class)->sync($parcel->fresh());
                 $this->notifyRemoteWaybillStatus($code, $forceStatus, $branch, $operatorName);
                 return response()->json([
