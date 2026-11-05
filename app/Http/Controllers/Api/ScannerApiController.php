@@ -891,7 +891,7 @@ class ScannerApiController extends Controller
 
         $cloudLogisticsUrl = rtrim((string) env('LUMORA_CLOUD_LOGISTICS_URL', 'https://logistics.lumora.party'), '/');
         try {
-            Http::timeout(5)
+            $res = Http::timeout(5)
                 ->acceptJson()
                 ->withHeaders(['X-From-Local-Mirror' => '1'])
                 ->post("{$cloudLogisticsUrl}/api/v1/scanner/scan", array_filter([
@@ -905,6 +905,30 @@ class ScannerApiController extends Controller
                     'city' => $waybill['city'] ?? null,
                     'province' => $waybill['province'] ?? null,
                 ], fn ($v) => $v !== null));
+
+            if ($res->successful() && is_array($res->json('parcel'))) {
+                $cp = $res->json('parcel');
+                $cloudStatus = (string) ($cp['status'] ?? '');
+                $assignedRiderName = trim((string) ($cp['assigned_rider'] ?? ''));
+
+                if (in_array($cloudStatus, ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'], true) && $assignedRiderName !== '' && strtolower($assignedRiderName) !== 'not assigned') {
+                    $matchedRider = \App\Models\RiderProfile::whereHas('user', function ($q) use ($assignedRiderName) {
+                        $q->whereRaw('LOWER(name) = ?', [strtolower($assignedRiderName)]);
+                    })->first() ?? \App\Models\RiderProfile::where('registration_status', 'approved')->first();
+
+                    if ($matchedRider) {
+                        $localParcel = Parcel::where('barcode', $code)->first();
+                        if ($localParcel && in_array($localParcel->status, ['received', 'scanned', 'sorted'], true)) {
+                            $localParcel->update([
+                                'assigned_rider_id' => $matchedRider->id,
+                                'status' => $cloudStatus,
+                                'assigned_at' => $localParcel->assigned_at ?? now(),
+                                'sort_bin' => (! empty($cp['sort_bin']) && $cp['sort_bin'] !== 'Pending Sorting') ? $cp['sort_bin'] : $localParcel->sort_bin,
+                            ]);
+                        }
+                    }
+                }
+            }
         } catch (\Throwable $e) {
             // Non-blocking
         }
