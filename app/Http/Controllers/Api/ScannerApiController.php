@@ -113,6 +113,16 @@ class ScannerApiController extends Controller
         $scannedCount = $counts['scanned'] ?? 0;
         $receivedCount = $counts['received'] ?? 0;
 
+        $activeParcels = (clone $parcelQuery)
+            ->with(['order.items', 'shipment', 'area', 'rider.user'])
+            ->forDate(now('Asia/Manila'))
+            ->latest('updated_at')
+            ->take(25)
+            ->get()
+            ->map(fn (Parcel $p) => $this->transformParcel($p))
+            ->values()
+            ->all();
+
         return response()->json([
             'status' => 'success',
             'service' => 'Lumora Parcel Scanner Engine',
@@ -129,6 +139,7 @@ class ScannerApiController extends Controller
             'total_parcels' => $totalParcels,
             'latest_update' => $latestUpdate,
             'scans_today' => $recentCount,
+            'active_parcels' => $activeParcels,
             'signature' => md5("{$totalParcels}-{$latestUpdate}-{$scannedCount}-{$recentCount}"),
             'timestamp' => now()->toIso8601String(),
         ]);
@@ -350,6 +361,29 @@ class ScannerApiController extends Controller
             }
 
             $oldStatus = $parcel->status;
+            $forceStatus = $request->input('force_status');
+            if ($forceStatus && in_array($forceStatus, ['assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered', 'exception'], true)) {
+                $existingMeta = is_array($parcel->metadata) ? $parcel->metadata : [];
+                $incomingMeta = is_array($request->input('metadata')) ? $request->input('metadata') : [];
+                $branchUpdate['status'] = $forceStatus;
+                $branchUpdate['metadata'] = array_merge($existingMeta, $branchUpdate['metadata'] ?? [], $incomingMeta);
+                if (in_array($forceStatus, ['rider_received', 'in_transit', 'out_for_delivery'], true) && ! $parcel->rider_received_at) {
+                    $branchUpdate['rider_received_at'] = now();
+                }
+                $parcel->update($branchUpdate);
+                app(ParcelShipmentSyncService::class)->sync($parcel->fresh());
+                $this->notifyRemoteWaybillStatus($code, $forceStatus, $branch, $operatorName);
+                return response()->json([
+                    'status' => 'success',
+                    'result_type' => 'status_synced',
+                    'is_already_scanned' => true,
+                    'message' => "Parcel {$parcel->parcel_number} status synced to {$forceStatus}.",
+                    'parcel' => $this->transformParcel($parcel->fresh(['order.items', 'shipment', 'area', 'rider.user'])),
+                    'stage' => $forceStatus,
+                    'ready_for_sorting' => false,
+                ]);
+            }
+
             $isAlreadyScanned = in_array($oldStatus, ['scanned', 'sorted', 'assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered']);
 
             if ($isAlreadyScanned) {
