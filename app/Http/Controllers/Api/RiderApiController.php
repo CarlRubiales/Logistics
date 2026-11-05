@@ -585,6 +585,10 @@ class RiderApiController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Parcel not found.'], 404);
         }
 
+        if ($dbStatus !== 'exception' && $this->statusRank($parcel->status) > $this->statusRank($dbStatus)) {
+            $dbStatus = $parcel->status;
+        }
+
         // Merge incoming payload into parcel metadata
         $metadata = $parcel->metadata ?? [];
         $metadata['last_status_code'] = $rawStatus;
@@ -802,6 +806,10 @@ class RiderApiController extends Controller
             default => $parcel->status,
         };
 
+        if ($newStatus !== 'exception' && $this->statusRank($parcel->status) > $this->statusRank($newStatus)) {
+            $newStatus = $parcel->status;
+        }
+
         $updateData = ['status' => $newStatus];
         if (! empty($validated['barcode']) && ! $parcel->barcode) {
             $updateData['barcode'] = $validated['barcode'];
@@ -863,6 +871,10 @@ class RiderApiController extends Controller
 
         $rawStatus = $request->input('status') ?? $request->input('stage') ?? 'in_transit';
         $dbStatus = $this->mapToDbStatus($rawStatus);
+
+        if ($dbStatus !== 'exception' && $this->statusRank($parcel->status) > $this->statusRank($dbStatus)) {
+            $dbStatus = $parcel->status;
+        }
 
         $metadata = $parcel->metadata ?? [];
         $metadata['last_status_code'] = $rawStatus;
@@ -1325,9 +1337,10 @@ class RiderApiController extends Controller
             }
 
             if ($localParcel) {
-                $newStatus = in_array($localParcel->status, ['received', 'scanned', 'sorted'], true)
-                    ? $cloudStatus
-                    : $localParcel->status;
+                $localRank = $this->statusRank($localParcel->status);
+                $cloudRank = $this->statusRank($cloudStatus);
+
+                $newStatus = $cloudRank > $localRank ? $cloudStatus : $localParcel->status;
 
                 $localParcel->update([
                     'assigned_rider_id' => $targetRiderId,
@@ -1337,55 +1350,81 @@ class RiderApiController extends Controller
                         ? $cp['sort_bin']
                         : $localParcel->sort_bin,
                 ]);
+
+                // If local parcel is further ahead than cloud, push local status to cloud
+                if ($localRank > $cloudRank) {
+                    $this->syncStatusToCloud($request, $localParcel, $localParcel->status, $localParcel->metadata ?? []);
+                }
             }
         }
     }
 
     /**
+     * Numeric progression rank to prevent stale offline queue retries from downgrading parcel status.
+     */
+    private function statusRank(?string $status): int
+    {
+        return match ($status) {
+            'received' => 1,
+            'scanned' => 2,
+            'sorted' => 3,
+            'assigned' => 4,
+            'rider_received', 'in_transit' => 5,
+            'out_for_delivery' => 6,
+            'delivered' => 7,
+            default => 0,
+        };
+    }
+
+    /**
      * Propagate Rider status updates (pickup, out_for_delivery, delivered, exception)
-     * to both the live Cloud Logistics dashboard and the live Lumora E-Commerce website.
+     * to both the live Cloud Logistics dashboard and the live Lumora E-Commerce website
+     * after the HTTP response is sent so the mobile app never times out.
      */
     private function syncStatusToCloud(Request $request, Parcel $parcel, string $dbStatus, array $metadata = []): void
     {
         $code = (string) ($parcel->barcode ?: $parcel->parcel_number);
+        $branch = $parcel->branch ?: 'Pila';
         $riderName = $request->user()?->name ?? 'Lumora Rider';
-
-        // 1. Update live Lumora E-Commerce website (https://lumora.party)
-        $ecommerceBaseUrl = rtrim((string) env('LUMORA_ECOMMERCE_URL', 'https://lumora.party'), '/');
-        try {
-            Http::timeout(3)
-                ->acceptJson()
-                ->post("{$ecommerceBaseUrl}/api/logistics/waybill/" . urlencode($code) . '/status', [
-                    'status' => $dbStatus,
-                    'hub' => ($parcel->branch ?: 'Pila') . ' Hub',
-                    'operator' => $riderName,
-                    'note' => "Parcel status updated to {$dbStatus} by rider {$riderName}",
-                ]);
-        } catch (\Throwable $e) {
-            // Non-blocking
-        }
-
-        // 2. If running locally, mirror status update to Cloud Logistics (https://logistics.lumora.party)
         $host = strtolower((string) $request->getHost());
-        if (str_contains($host, 'lumora.party')) {
-            return;
-        }
 
-        $cloudLogisticsUrl = rtrim((string) env('LUMORA_CLOUD_LOGISTICS_URL', 'https://logistics.lumora.party'), '/');
-        try {
-            Http::timeout(4)
-                ->acceptJson()
-                ->withHeaders(['X-From-Local-Mirror' => '1'])
-                ->post("{$cloudLogisticsUrl}/api/v1/scanner/scan", [
-                    'barcode' => $code,
-                    'branch' => $parcel->branch ?: 'Pila',
-                    'operator' => $riderName,
-                    'force_status' => $dbStatus,
-                    'metadata' => $metadata,
-                ]);
-        } catch (\Throwable $e) {
-            // Non-blocking
-        }
+        app()->terminating(function () use ($code, $branch, $riderName, $dbStatus, $metadata, $host) {
+            // 1. Update live Lumora E-Commerce website (https://lumora.party)
+            $ecommerceBaseUrl = rtrim((string) env('LUMORA_ECOMMERCE_URL', 'https://lumora.party'), '/');
+            try {
+                Http::timeout(3)
+                    ->acceptJson()
+                    ->post("{$ecommerceBaseUrl}/api/logistics/waybill/" . urlencode($code) . '/status', [
+                        'status' => $dbStatus,
+                        'hub' => $branch . ' Hub',
+                        'operator' => $riderName,
+                        'note' => "Parcel status updated to {$dbStatus} by rider {$riderName}",
+                    ]);
+            } catch (\Throwable $e) {
+                // Non-blocking
+            }
+
+            // 2. If running locally, mirror status update to Cloud Logistics (https://logistics.lumora.party)
+            if (str_contains($host, 'lumora.party')) {
+                return;
+            }
+
+            $cloudLogisticsUrl = rtrim((string) env('LUMORA_CLOUD_LOGISTICS_URL', 'https://logistics.lumora.party'), '/');
+            try {
+                Http::timeout(4)
+                    ->acceptJson()
+                    ->withHeaders(['X-From-Local-Mirror' => '1'])
+                    ->post("{$cloudLogisticsUrl}/api/v1/scanner/scan", [
+                        'barcode' => $code,
+                        'branch' => $branch,
+                        'operator' => $riderName,
+                        'force_status' => $dbStatus,
+                        'metadata' => $metadata,
+                    ]);
+            } catch (\Throwable $e) {
+                // Non-blocking
+            }
+        });
     }
 }
 

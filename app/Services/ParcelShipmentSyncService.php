@@ -116,20 +116,26 @@ class ParcelShipmentSyncService
 
         // Push status update back to live Lumora E-Commerce website if linked to a waybill
         $waybillCode = $parcel->metadata['waybill_order_id'] ?? $parcel->barcode;
-        if ($waybillCode && in_array($parcel->status, ['in_transit', 'out_for_delivery', 'delivered', 'cancelled'], true)) {
-            $ecommerceBaseUrl = rtrim((string) env('LUMORA_ECOMMERCE_URL', 'https://lumora.party'), '/');
-            try {
-                \Illuminate\Support\Facades\Http::timeout(3)
-                    ->acceptJson()
-                    ->post("{$ecommerceBaseUrl}/api/logistics/waybill/" . urlencode((string) $waybillCode) . '/status', [
-                        'status' => $parcel->status,
-                        'hub' => ($parcel->branch ?: 'Main') . ' Hub',
-                        'rider_name' => $parcel->rider?->user?->name,
-                        'note' => "Parcel status updated to {$parcel->status} via Lumora Logistics",
-                    ]);
-            } catch (\Throwable $e) {
-                // Non-blocking
-            }
+        $parcelStatus = $parcel->status;
+        $branchName = $parcel->branch ?: 'Main';
+        $riderName = $parcel->rider?->user?->name;
+
+        if ($waybillCode && in_array($parcelStatus, ['in_transit', 'out_for_delivery', 'delivered', 'cancelled'], true)) {
+            app()->terminating(function () use ($waybillCode, $parcelStatus, $branchName, $riderName) {
+                $ecommerceBaseUrl = rtrim((string) env('LUMORA_ECOMMERCE_URL', 'https://lumora.party'), '/');
+                try {
+                    \Illuminate\Support\Facades\Http::timeout(3)
+                        ->acceptJson()
+                        ->post("{$ecommerceBaseUrl}/api/logistics/waybill/" . urlencode((string) $waybillCode) . '/status', [
+                            'status' => $parcelStatus,
+                            'hub' => $branchName . ' Hub',
+                            'rider_name' => $riderName,
+                            'note' => "Parcel status updated to {$parcelStatus} via Lumora Logistics",
+                        ]);
+                } catch (\Throwable $e) {
+                    // Non-blocking
+                }
+            });
         }
     }
 }

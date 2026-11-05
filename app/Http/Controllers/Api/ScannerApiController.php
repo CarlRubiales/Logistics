@@ -363,6 +363,10 @@ class ScannerApiController extends Controller
             $oldStatus = $parcel->status;
             $forceStatus = $request->input('force_status');
             if ($forceStatus && in_array($forceStatus, ['assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered', 'exception'], true)) {
+                $ranks = ['received' => 1, 'scanned' => 2, 'sorted' => 3, 'assigned' => 4, 'rider_received' => 5, 'in_transit' => 5, 'out_for_delivery' => 6, 'delivered' => 7];
+                if ($forceStatus !== 'exception' && ($ranks[$oldStatus] ?? 0) > ($ranks[$forceStatus] ?? 0)) {
+                    $forceStatus = $oldStatus;
+                }
                 $existingMeta = is_array($parcel->metadata) ? $parcel->metadata : [];
                 $incomingMeta = is_array($request->input('metadata')) ? $request->input('metadata') : [];
                 $branchUpdate['status'] = $forceStatus;
@@ -911,14 +915,15 @@ class ScannerApiController extends Controller
                 $cloudStatus = (string) ($cp['status'] ?? '');
                 $assignedRiderName = trim((string) ($cp['assigned_rider'] ?? ''));
 
-                if (in_array($cloudStatus, ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'], true) && $assignedRiderName !== '' && strtolower($assignedRiderName) !== 'not assigned') {
+                $ranks = ['received' => 1, 'scanned' => 2, 'sorted' => 3, 'assigned' => 4, 'rider_received' => 5, 'in_transit' => 5, 'out_for_delivery' => 6, 'delivered' => 7];
+                if (in_array($cloudStatus, ['assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered'], true) && $assignedRiderName !== '' && strtolower($assignedRiderName) !== 'not assigned') {
                     $matchedRider = \App\Models\RiderProfile::whereHas('user', function ($q) use ($assignedRiderName) {
                         $q->whereRaw('LOWER(name) = ?', [strtolower($assignedRiderName)]);
                     })->first() ?? \App\Models\RiderProfile::where('registration_status', 'approved')->first();
 
                     if ($matchedRider) {
                         $localParcel = Parcel::where('barcode', $code)->first();
-                        if ($localParcel && in_array($localParcel->status, ['received', 'scanned', 'sorted'], true)) {
+                        if ($localParcel && ($ranks[$cloudStatus] ?? 0) > ($ranks[$localParcel->status] ?? 0)) {
                             $localParcel->update([
                                 'assigned_rider_id' => $matchedRider->id,
                                 'status' => $cloudStatus,
