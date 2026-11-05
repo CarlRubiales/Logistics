@@ -356,6 +356,7 @@ class ScannerApiController extends Controller
                 if (! empty($branchUpdate)) {
                     $parcel->update($branchUpdate);
                 }
+                $this->mirrorScanToCloudLogistics($request, $code, $branch, $operatorName, $waybill);
                 return response()->json([
                     'status' => 'already_scanned',
                     'result_type' => 'already_scanned',
@@ -387,6 +388,7 @@ class ScannerApiController extends Controller
 
             app(ParcelShipmentSyncService::class)->sync($parcel->fresh());
             $this->notifyRemoteWaybillStatus($code, 'scanned', $branch, $operatorName);
+            $this->mirrorScanToCloudLogistics($request, $code, $branch, $operatorName, $waybill);
 
             return response()->json([
                 'status' => 'success',
@@ -465,6 +467,7 @@ class ScannerApiController extends Controller
         ]);
 
         $this->notifyRemoteWaybillStatus($code, 'scanned', $branch, $operatorName);
+        $this->mirrorScanToCloudLogistics($request, $code, $branch, $operatorName, $waybill);
 
         return response()->json([
             'status' => 'success',
@@ -836,6 +839,38 @@ class ScannerApiController extends Controller
                     'operator' => $operator,
                     'note' => "Parcel {$status} at " . ($branch ? "{$branch} Hub" : 'Lumora Logistics Hub'),
                 ]);
+        } catch (\Throwable $e) {
+            // Non-blocking
+        }
+    }
+
+    /**
+     * When a mobile scanner scans against the local hub server (e.g. 192.168.86.68),
+     * automatically mirror the scan to the live Cloud Logistics dashboard (https://logistics.lumora.party).
+     */
+    private function mirrorScanToCloudLogistics(Request $request, string $code, ?string $branch, ?string $operatorName, ?array $waybill = null): void
+    {
+        $host = strtolower((string) $request->getHost());
+        if ($request->hasHeader('X-From-Local-Mirror') || str_contains($host, 'lumora.party')) {
+            return;
+        }
+
+        $cloudLogisticsUrl = rtrim((string) env('LUMORA_CLOUD_LOGISTICS_URL', 'https://logistics.lumora.party'), '/');
+        try {
+            Http::timeout(5)
+                ->acceptJson()
+                ->withHeaders(['X-From-Local-Mirror' => '1'])
+                ->post("{$cloudLogisticsUrl}/api/v1/scanner/scan", array_filter([
+                    'barcode' => $code,
+                    'branch' => $branch,
+                    'operator' => $operatorName,
+                    'device' => 'Local Hub Mirror',
+                    'recipient_name' => $waybill['recipient_name'] ?? null,
+                    'recipient_phone' => $waybill['recipient_phone'] ?? null,
+                    'address_line' => $waybill['address_line'] ?? null,
+                    'city' => $waybill['city'] ?? null,
+                    'province' => $waybill['province'] ?? null,
+                ], fn ($v) => $v !== null));
         } catch (\Throwable $e) {
             // Non-blocking
         }
