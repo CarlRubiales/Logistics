@@ -786,7 +786,7 @@
                             <x-account-recent-chats />
 
                             <div class="account-menu-divider"></div>
-                            <form method="POST" action="{{ route('logout') }}">
+                            <form method="POST" action="{{ route('logout') }}" onsubmit="return confirm('Are you sure you want to log out?');">
                                 @csrf
                                 <button type="submit" class="account-menu-button logout-menu" role="menuitem">
                                     <span class="account-menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 17 5 12l5-5"/><path d="M5 12h12"/><path d="M14 4h5v16h-5"/></svg></span>

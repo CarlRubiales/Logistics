@@ -62,6 +62,19 @@ class Shipment extends Model
             if (in_array($shipment->status, ['in_transit', 'out_for_delivery', 'delivered', 'exception', 'failed', 'cancelled'], true)) {
                 $shipment->parcels()->update(['status' => $shipment->status, 'updated_at' => now()]);
             }
+
+            // Keep parent order in sync with delivery and shipping transitions
+            if ($shipment->order) {
+                $orderStatus = match ($shipment->status) {
+                    'delivered' => 'delivered',
+                    'in_transit', 'out_for_delivery', 'packed' => 'processing',
+                    'cancelled' => 'cancelled',
+                    default => null,
+                };
+                if ($orderStatus && $shipment->order->status !== $orderStatus) {
+                    $shipment->order->updateQuietly(['status' => $orderStatus]);
+                }
+            }
         });
     }
 

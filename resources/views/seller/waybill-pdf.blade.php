@@ -18,13 +18,27 @@
     table.items th { background: #5B1A35; color: #fff; text-align: left; padding: 6px 8px; font-size: 10px; }
     table.items td { border: 1px solid #F0E2DA; padding: 6px 8px; font-size: 11px; }
     .footer { margin-top: 20px; font-size: 10px; color: #8B7A80; text-align: center; }
+    .barcode { margin: 0 auto; text-align: center; }
+    .barcode table { height: 44px; margin: 0 auto 5px; }
+    .barcode td { height: 44px; }
+    .barcode-number { color: #2B1C22; font-family: Helvetica, Arial, sans-serif; font-size: 12px; font-weight: bold; letter-spacing: 2px; }
 </style>
 </head>
 <body>
     <div class="brand">LUM<span class="accent">O</span>RA</div>
     <div class="brand-tagline">BEAUTY LIVES HERE</div>
     <div class="document-label">Shipping Label</div>
-    <div style="font-size:11px;color:#8B7A80;">Order #{{ $order->id }} &middot; {{ \Carbon\Carbon::parse($order->created_at)->format('M d, Y') }}</div>
+    <div style="font-size:11px;color:#8B7A80;">
+        Order #{{ $order->id }} &middot; {{ \Carbon\Carbon::parse($order->created_at)->format('M d, Y') }}
+        @if (!empty($order->payment_method))
+            &middot; Payment: {{ match(strtolower($order->payment_method)) { 'cod' => 'COD', 'gcash' => 'GCash', 'maya', 'paymaya' => 'PayMaya', default => strtoupper($order->payment_method) } }}
+        @endif
+    </div>
+
+    <div class="barcode">
+        {!! $barcodeHtml !!}
+        <div class="barcode-number">{{ $barcodeValue }}</div>
+    </div>
 
     <div class="label-box">
         <div class="row">

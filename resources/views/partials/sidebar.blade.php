@@ -66,28 +66,22 @@
                         <span class="sidebar-pill-role" style="font-size: 9.5px; font-weight: 700; color: #8A7B7E; text-transform: uppercase; letter-spacing: 0.4px;">DELIVERY PARTNER</span>
                     </div>
                 </div>
-                <form action="{{ route('logout') }}" method="POST" style="margin: 0; padding: 0; display: inline-flex;">
-                    @csrf
-                    <button type="submit" class="sidebar-pill-logout" title="Sign out" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(198, 40, 40, 0.2); background: rgba(198, 40, 40, 0.08); color: #C62828; display: grid; place-items: center; cursor: pointer; flex-shrink: 0;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                            <polyline points="16 17 21 12 16 7"></polyline>
-                            <line x1="21" y1="12" x2="9" y2="12"></line>
-                        </svg>
-                    </button>
-                </form>
-            </div>
-            <form action="{{ route('logout') }}" method="POST" style="margin-top: 8px;">
-                @csrf
-                <button type="submit" class="sidebar-logout-btn" style="display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; height: 32px; border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(255, 255, 255, 0.08); border-radius: 8px; color: rgba(255, 253, 251, 0.9); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.18s;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <button type="button" class="sidebar-pill-logout" title="Sign out" onclick="openLogoutModal()" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(198, 40, 40, 0.2); background: rgba(198, 40, 40, 0.08); color: #C62828; display: grid; place-items: center; cursor: pointer; flex-shrink: 0;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                         <polyline points="16 17 21 12 16 7"></polyline>
                         <line x1="21" y1="12" x2="9" y2="12"></line>
                     </svg>
-                    <span>Sign out</span>
                 </button>
-            </form>
+            </div>
+            <button type="button" class="sidebar-logout-btn" onclick="openLogoutModal()" style="margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; height: 32px; border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(255, 255, 255, 0.08); border-radius: 8px; color: rgba(255, 253, 251, 0.9); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.18s;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+                <span>Sign out</span>
+            </button>
         </div>
     @else
         <div class="brand-lockup"><div class="brand-mark"><span></span><span></span><span></span></div><div><div class="brand-name">LUMORA</div><div class="brand-subtitle">LOGISTICS</div></div></div>
@@ -169,31 +163,26 @@
                     </div>
                 </div>
 
-                <!-- Sign Out icon button inside the white pill -->
-                <form action="{{ route('logout') }}" method="POST" style="margin: 0; padding: 0; display: inline-flex;">
-                    @csrf
-                    <button type="submit" class="sidebar-pill-logout" title="Sign out" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(198, 40, 40, 0.2); background: rgba(198, 40, 40, 0.08); color: #C62828; display: grid; place-items: center; cursor: pointer; flex-shrink: 0;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                            <polyline points="16 17 21 12 16 7"></polyline>
-                            <line x1="21" y1="12" x2="9" y2="12"></line>
-                        </svg>
-                    </button>
-                </form>
-            </div>
-
-            <!-- Sign Out Full Button on Sidebar -->
-            <form action="{{ route('logout') }}" method="POST" style="margin-top: 8px;">
-                @csrf
-                <button type="submit" class="sidebar-logout-btn" style="display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; height: 32px; border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(255, 255, 255, 0.08); border-radius: 8px; color: rgba(255, 253, 251, 0.9); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.18s;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <!-- Sign Out icon button inside the white pill with confirmation modal -->
+                <button type="button" class="sidebar-pill-logout" title="Sign out" onclick="openLogoutModal()" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(198, 40, 40, 0.2); background: rgba(198, 40, 40, 0.08); color: #C62828; display: grid; place-items: center; cursor: pointer; flex-shrink: 0;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                         <polyline points="16 17 21 12 16 7"></polyline>
                         <line x1="21" y1="12" x2="9" y2="12"></line>
                     </svg>
-                    <span>Sign out</span>
                 </button>
-            </form>
+            </div>
+
+            <!-- Sign Out Full Button on Sidebar -->
+            <button type="button" class="sidebar-logout-btn" onclick="openLogoutModal()" style="margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; height: 32px; border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(255, 255, 255, 0.08); border-radius: 8px; color: rgba(255, 253, 251, 0.9); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.18s;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+                <span>Sign out</span>
+            </button>
         </div>
     @endif
+    @include('partials.logout-modal')
 </aside>

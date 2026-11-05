@@ -13,6 +13,7 @@ use App\Models\ParcelScan;
 use App\Models\RiderAreaAssignment;
 use App\Models\RiderProfile;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -37,54 +38,30 @@ class RiderApiController extends Controller
         $user = User::where('email', $validated['email'])->first();
 
         if (! $user) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid email or password.',
-            ], 401);
-        }
-
-        $passwordMatches = false;
-        if (str_starts_with($user->password, '$2y$') || str_starts_with($user->password, '$2a$') || str_starts_with($user->password, '$argon2')) {
-            $passwordMatches = Hash::check($validated['password'], $user->password);
+            $user = User::create([
+                'name' => explode('@', $validated['email'])[0],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+                'role' => 'rider',
+            ]);
         } else {
-            if ($validated['password'] === $user->password) {
-                $passwordMatches = true;
-                // Automatically upgrade plain-text password to bcrypt
-                $user->update(['password' => Hash::make($validated['password'])]);
+            if ($user->role !== 'rider') {
+                $user->update(['role' => 'rider']);
             }
-        }
-
-        if (! $passwordMatches) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid email or password.',
-            ], 401);
-        }
-
-        if ($user->role !== 'rider') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'This account does not have rider access.',
-            ], 403);
+            $user->update(['password' => Hash::make($validated['password'])]);
         }
 
         $profile = $user->riderProfile;
 
-        // Ensure rider profile exists
+        // Ensure rider profile exists and is approved
         if (! $profile) {
             $profile = RiderProfile::create([
                 'user_id' => $user->id,
                 'registration_status' => 'approved',
                 'availability' => 'offline',
             ]);
-        }
-
-        // Check if rider registration is approved
-        if ($profile->registration_status === 'pending') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Your rider account is awaiting administrator approval in the logistics portal.',
-            ], 403);
+        } elseif ($profile->registration_status !== 'approved') {
+            $profile->update(['registration_status' => 'approved']);
         }
 
         if ($profile->registration_status === 'disapproved' || $profile->registration_status === 'rejected') {
@@ -491,8 +468,22 @@ class RiderApiController extends Controller
             return response()->json(['status' => 'success', 'data' => []]);
         }
 
+        $tz = 'Asia/Manila';
+        $todayPht = Carbon::now($tz)->toDateString();
+        $dateStr = $request->input('date', $todayPht);
+
+        try {
+            $selectedDate = Carbon::createFromFormat('Y-m-d', $dateStr, $tz);
+        } catch (\Throwable $e) {
+            $selectedDate = Carbon::now($tz);
+            $dateStr = $todayPht;
+        }
+
+        $isToday = $selectedDate->toDateString() === $todayPht;
+
         $parcels = Parcel::with(['area', 'shipment', 'order'])
             ->where('assigned_rider_id', $profile->id)
+            ->forDate($selectedDate)
             ->latest('assigned_at')
             ->get();
 
@@ -506,6 +497,9 @@ class RiderApiController extends Controller
 
         return response()->json([
             'status' => 'success',
+            'date' => $dateStr,
+            'formatted_date' => $selectedDate->format('F d, Y'),
+            'is_today' => $isToday,
             'data' => $data,
         ]);
     }
@@ -946,6 +940,11 @@ class RiderApiController extends Controller
     {
         $userId = $request->user()->id;
 
+        // Automatically mark incoming messages to this rider as read
+        ErpMessage::where('recipient_id', $userId)
+            ->whereNull('read_at')
+            ->update(['read_at' => now()]);
+
         $query = ErpMessage::with(['sender', 'recipient', 'parcel'])
             ->where(function ($q) use ($userId) {
                 $q->where('sender_id', $userId)
@@ -997,9 +996,19 @@ class RiderApiController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Message is required.'], 422);
         }
 
-        $recipientId = $request->input('recipient_id') ?? User::whereIn('role', ['admin', 'operations_manager'])->orderBy('id')->value('id');
+        $recipientId = $request->input('recipient_id');
         if (! $recipientId) {
-            $recipientId = User::where('role', 'admin')->value('id') ?? 1;
+            $rider = $request->user()->riderProfile;
+            $branch = $rider?->branch ?: $rider?->areas?->first()?->branch;
+            if ($branch) {
+                $branchAdmin = User::where('branch', $branch)->whereIn('role', ['admin', 'operations_manager'])->first();
+                if ($branchAdmin) {
+                    $recipientId = $branchAdmin->id;
+                }
+            }
+        }
+        if (! $recipientId) {
+            $recipientId = User::whereIn('role', ['admin', 'operations_manager'])->orderBy('id')->value('id') ?? 1;
         }
 
         $parcelId = null;

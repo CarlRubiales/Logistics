@@ -31,13 +31,33 @@ class User extends Authenticatable
         if (! empty($this->branch)) {
             return $this->branch;
         }
-        if (strcasecmp($this->name, 'pila') === 0) {
+        $nameOrEmail = strtolower(($this->name ?? '') . ' ' . ($this->email ?? ''));
+        if (str_contains($nameOrEmail, 'pila')) {
             return 'Pila';
         }
-        if (stripos($this->name, 'santa cruz') !== false) {
+        if (str_contains($nameOrEmail, 'santa cruz') || str_contains($nameOrEmail, 'stacruz') || str_contains($nameOrEmail, 'sta cruz') || str_contains($nameOrEmail, 'cruz')) {
             return 'Santa Cruz';
         }
-        return null;
+        if (str_contains($nameOrEmail, 'victoria')) {
+            return 'Victoria';
+        }
+        if (str_contains($nameOrEmail, 'los banos') || str_contains($nameOrEmail, 'losbanos')) {
+            return 'Los Banos';
+        }
+        if (str_contains($nameOrEmail, 'main') || str_contains($nameOrEmail, 'central') || str_contains($nameOrEmail, 'hq')) {
+            return 'Main';
+        }
+        // Match against existing active hubs
+        $hubs = Hub::where('is_active', true)->get();
+        foreach ($hubs as $hub) {
+            if ($hub->branch && str_contains($nameOrEmail, strtolower($hub->branch))) {
+                return $hub->branch;
+            }
+            if ($hub->name && str_contains($nameOrEmail, strtolower($hub->name))) {
+                return $hub->branch ?: $hub->name;
+            }
+        }
+        return $hubs->first()?->branch ?: 'Pila';
     }
 
     public function isMasterAdmin(): bool

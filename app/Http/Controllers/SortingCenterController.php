@@ -105,6 +105,29 @@ class SortingCenterController extends Controller
             $data['branch'] = $branch;
         }
 
+        if (! empty($data['barcode'])) {
+            $data['barcode'] = trim($data['barcode'], "*# \t\n\r\0\x0B");
+            $wb = app(\App\Http\Controllers\Api\ScannerApiController::class)->resolveWaybillData($data['barcode']);
+            if ($wb) {
+                $data['order_number'] = $wb['order_number'] ?? null;
+                $data['total'] = $wb['total_amount'] ?? 0;
+                $data['cod_amount'] = $wb['cod_amount'] ?? 0;
+                $data['items'] = $wb['items'] ?? [];
+                $data['metadata'] = [
+                    'source' => 'lumora_waybill',
+                    'waybill_order_id' => $wb['order_id'] ?? null,
+                    'waybill_order_number' => $wb['order_number'] ?? null,
+                    'shop_name' => $wb['shop_name'] ?? 'Lumora Marketplace',
+                    'payment_method' => $wb['payment_method'] ?? 'cod',
+                    'is_cod' => $wb['is_cod'] ?? true,
+                    'cod_amount' => (float) ($wb['cod_amount'] ?? 0),
+                    'total_amount' => (float) ($wb['total_amount'] ?? 0),
+                    'items_summary' => $wb['items_summary'] ?? null,
+                    'items' => $wb['items'] ?? [],
+                ];
+            }
+        }
+
         try {
             $parcel = $intake->receive($data, $request->user()->id);
         } catch (QueryException $exception) {

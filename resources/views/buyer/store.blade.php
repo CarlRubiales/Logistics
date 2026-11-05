@@ -259,7 +259,7 @@
                             @if (Auth::user()->role === 'seller')
                                 <a href="{{ route('seller.dashboard') }}">Seller dashboard</a>
                             @endif
-                            <form method="POST" action="{{ route('logout') }}">
+                            <form method="POST" action="{{ route('logout') }}" onsubmit="return confirm('Are you sure you want to log out?');">
                                 @csrf
                                 <button type="submit">Log out</button>
                             </form>

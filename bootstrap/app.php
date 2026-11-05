@@ -13,12 +13,23 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->validateCsrfTokens(except: [
+            'logout',
+            '/logout',
+            'api/*',
+        ]);
         $middleware->alias([
             'logistics' => \App\Http\Middleware\EnsureLogisticsRole::class,
             'rider' => \App\Http\Middleware\EnsureRiderRole::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (\Illuminate\Session\TokenMismatchException $e, Request $request) {
+            if ($request->is('logout') || $request->is('*/logout')) {
+                \Illuminate\Support\Facades\Auth::logout();
+                return redirect()->route('login');
+            }
+        });
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );

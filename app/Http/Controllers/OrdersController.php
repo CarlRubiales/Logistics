@@ -35,6 +35,7 @@ class OrdersController extends Controller
             'all' => (clone $base)->count(),
             'paid' => (clone $base)->where('status', 'paid')->count(),
             'processing' => (clone $base)->whereIn('status', ['processing', 'fulfilled'])->count(),
+            'delivered' => (clone $base)->where('status', 'delivered')->count(),
             'cancelled' => (clone $base)->where('status', 'cancelled')->count(),
         ];
 

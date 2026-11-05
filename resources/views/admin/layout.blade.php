@@ -64,7 +64,7 @@
     <a href="{{ route('admin.commission') }}" class="nav-link {{ request()->routeIs('admin.commission') ? 'active' : '' }}">Commission</a>
     <a href="{{ route('admin.vouchers.index') }}" class="nav-link {{ request()->routeIs('admin.vouchers.*') ? 'active' : '' }}">Vouchers</a>
     <a href="{{ route('admin.settings.index') }}" class="nav-link {{ request()->routeIs('admin.settings.*') ? 'active' : '' }}">Settings</a>
-    <form method="POST" action="{{ route('logout') }}" class="logout-form">
+    <form method="POST" action="{{ route('logout') }}" class="logout-form" onsubmit="return confirm('Are you sure you want to log out?');">
         @csrf
         <button type="submit" class="logout-btn">Logout</button>
     </form>

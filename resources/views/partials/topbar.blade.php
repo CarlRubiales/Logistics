@@ -38,12 +38,12 @@
                 @endif
             </a>
 
-            <!-- Clean User Profile Pill (No Sign Out on Toolbar) -->
-            <div class="topbar-user-pill" style="display: inline-flex; align-items: center; gap: 10px; padding: 4px 14px 4px 6px; border-radius: 999px; background: #FFFDFB; border: 1px solid #EBDDD8; box-shadow: 0 2px 6px rgba(61, 27, 61, 0.04);">
-                <div class="topbar-user-avatar" style="width: 30px; height: 30px; min-width: 30px; border-radius: 50%; color: #FFFDFB; font-weight: 800; font-size: 11px; display: grid; place-items: center; flex-shrink: 0; {{ auth()->user()->isMasterAdmin() ? 'background: linear-gradient(135deg, #3D1B3D, #793779);' : 'background: linear-gradient(135deg, #E2703A, #B96562);' }}">
+            <!-- User Profile Pill Matching Toolbar With Sign Out -->
+            <div class="topbar-user-pill" style="display: inline-flex; align-items: center; gap: 9px; padding: 4px 6px 4px 6px; border-radius: 999px; background: #FFFDFB; border: 1px solid #EBDDD8; box-shadow: 0 2px 6px rgba(61, 27, 61, 0.04);">
+                <div class="topbar-user-avatar" style="width: 32px; height: 32px; min-width: 32px; border-radius: 50%; color: #FFFDFB; font-weight: 800; font-size: 11px; display: grid; place-items: center; flex-shrink: 0; {{ auth()->user()->isMasterAdmin() ? 'background: linear-gradient(135deg, #3D1B3D, #793779);' : 'background: linear-gradient(135deg, #E2703A, #B96562);' }}">
                     {{ strtoupper(substr(auth()->user()->isMasterAdmin() ? 'HQ' : (auth()->user()->getBranchName() ?? auth()->user()->name), 0, 2)) }}
                 </div>
-                <div class="topbar-user-info" style="display: flex; flex-direction: column; min-width: 0;">
+                <div class="topbar-user-info" style="display: flex; flex-direction: column; min-width: 0; padding-right: 4px;">
                     <span class="topbar-user-name" title="{{ auth()->user()->name }}" style="font-size: 12.5px; font-weight: 800; color: #3D1B3D; white-space: nowrap; line-height: 1.2; text-transform: uppercase;">
                         {{ auth()->user()->getBranchName() ? strtoupper(auth()->user()->getBranchName()) : (auth()->user()->isMasterAdmin() ? 'CENTRAL HQ' : strtoupper(auth()->user()->name)) }}
                     </span>
@@ -51,7 +51,16 @@
                         {{ auth()->user()->isMasterAdmin() ? 'SUPER ADMIN' : (auth()->user()->getBranchName() ? strtoupper(auth()->user()->getBranchName()) . ' ADMIN' : 'ADMIN') }}
                     </span>
                 </div>
+                <!-- Sign Out icon button inside the topbar pill with confirmation modal -->
+                <button type="button" class="sidebar-pill-logout" title="Sign out" onclick="openLogoutModal()" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(198, 40, 40, 0.2); background: rgba(198, 40, 40, 0.08); color: #C62828; display: grid; place-items: center; cursor: pointer; flex-shrink: 0;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                </button>
             </div>
+            @include('partials.logout-modal')
         @endauth
     </div>
 </header>

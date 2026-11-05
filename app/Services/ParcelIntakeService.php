@@ -23,30 +23,61 @@ class ParcelIntakeService
                 'state' => $data['province'], 'postal_code' => $data['postal_code'] ?? null,
                 'country' => 'PH', 'phone' => $data['recipient_phone'],
             ];
+
+            $totalAmount = (float) ($data['total'] ?? $data['cod_amount'] ?? 0);
+            $orderMetadata = array_merge(['source' => 'parcel_intake'], $data['metadata'] ?? []);
+
             // An internal order reference, never used as the visible Track ID.
             $order = Order::create([
-                'store_id' => $store->id, 'external_id' => 'intake-'.Str::uuid(),
-                'customer_name' => $data['recipient_name'], 'shipping_address' => $address,
-                'status' => 'pending', 'total' => 0, 'ordered_at' => now(),
-                'metadata' => ['source' => 'parcel_intake'],
+                'store_id' => $store->id,
+                'external_id' => $data['external_id'] ?? ('intake-'.Str::uuid()),
+                'order_number' => $data['order_number'] ?? null,
+                'customer_name' => $data['recipient_name'],
+                'shipping_address' => $address,
+                'status' => 'pending',
+                'total' => $totalAmount,
+                'ordered_at' => now(),
+                'metadata' => $orderMetadata,
             ]);
+
+            if (! empty($data['items']) && is_array($data['items'])) {
+                foreach ($data['items'] as $idx => $item) {
+                    $order->items()->create([
+                        'name' => $item['name'] ?? $item['product_name'] ?? 'Order Item',
+                        'sku' => $item['sku'] ?? ('LM-SKU-' . ($item['product_id'] ?? ($idx + 1))),
+                        'quantity' => (int) ($item['qty'] ?? $item['quantity'] ?? 1),
+                        'unit_price' => (float) ($item['unit_price'] ?? 0),
+                    ]);
+                }
+            }
+
             $shipment = $order->shipments()->create([
                 'carrier' => 'Lumora Express', 'status' => 'pending',
                 'destination_city' => $data['city'], 'destination_state' => $data['province'],
-                'destination_country' => 'PH', 'metadata' => ['source' => 'parcel_intake'],
+                'destination_country' => 'PH', 'metadata' => $orderMetadata,
             ]);
+
             // The database primary key allocates the sequence safely across concurrent admins.
             $shipment->update(['tracking_number' => $shipment->lumora_tracking_id]);
-            $parcel = Parcel::create(array_merge($data, [
+
+            $parcelAttributes = collect($data)->only([
+                'destination_area_id', 'branch', 'assigned_rider_id', 'barcode',
+                'recipient_name', 'recipient_phone', 'address_line', 'city',
+                'province', 'postal_code', 'sort_bin',
+            ])->all();
+
+            $parcel = Parcel::create(array_merge($parcelAttributes, [
                 'store_id' => $store->id, 'order_id' => $order->id, 'shipment_id' => $shipment->id,
                 'parcel_number' => $shipment->lumora_tracking_id,
                 'status' => 'received', 'received_at' => now(),
-                'metadata' => ['source' => 'parcel_intake'],
+                'metadata' => $orderMetadata,
             ]));
+
             $parcel->scans()->create([
                 'user_id' => $userId, 'scan_type' => 'receive',
                 'barcode' => $parcel->barcode, 'scanned_at' => now(),
             ]);
+
             return $parcel;
         }, 3);
     }

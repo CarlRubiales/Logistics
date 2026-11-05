@@ -54,7 +54,9 @@ class Parcel extends Model
 
         return $query->where(function ($q) use ($startUtc, $endUtc, $dateStr) {
             $q->whereBetween('created_at', [$startUtc, $endUtc])
-              ->orWhereDate('created_at', $dateStr);
+              ->orWhereDate('created_at', $dateStr)
+              ->orWhereBetween('assigned_at', [$startUtc, $endUtc])
+              ->orWhereDate('assigned_at', $dateStr);
         });
     }
 

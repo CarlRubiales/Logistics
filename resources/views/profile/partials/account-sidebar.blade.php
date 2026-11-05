@@ -57,7 +57,7 @@
                 <x-buyer-profile.nav-item :href="route('buyer.wallet.index')" label="Wallet" :active="$active === 'payment-methods'">
                     <x-slot name="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></x-slot>
                 </x-buyer-profile.nav-item>
-                <form method="POST" action="{{ route('logout') }}" class="logout-nav-form">
+                <form method="POST" action="{{ route('logout') }}" class="logout-nav-form" onsubmit="return confirm('Are you sure you want to log out?');">
                     @csrf
                     <button type="submit" class="logout-nav-button">
                         <span class="profile-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></span>

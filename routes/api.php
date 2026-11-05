@@ -9,6 +9,10 @@ use App\Http\Middleware\AuthenticateIntegration;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
+// Bridge endpoints for Lumora E-Commerce Waybill integration
+Route::get('/logistics/waybill/{barcode}', [ScannerApiController::class, 'waybillLookup']);
+Route::post('/logistics/waybill/{barcode}/status', [ScannerApiController::class, 'waybillStatusUpdate']);
+
 Route::prefix('v1')->group(function () {
     Route::get('/health', function () {
         return response()->json([
@@ -25,6 +29,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/scan', [ScannerApiController::class, 'scan']);
         Route::post('/batch-sync', [ScannerApiController::class, 'batchSync']);
         Route::get('/recent', [ScannerApiController::class, 'recentScans']);
+        Route::get('/waybill/{barcode}', [ScannerApiController::class, 'waybillLookup']);
     });
 
     // Mobile Rider API (Public)
@@ -53,6 +58,7 @@ Route::prefix('v1')->group(function () {
 
         // Operations Communication & Messages
         Route::get('/messages', [RiderApiController::class, 'messages']);
+        Route::get('/chat/messages', [RiderApiController::class, 'messages']);
         Route::post('/messages', [RiderApiController::class, 'sendMessage']);
         Route::post('/chat/messages', [RiderApiController::class, 'sendMessage']);
         Route::get('/conversations', [RiderApiController::class, 'conversations']);

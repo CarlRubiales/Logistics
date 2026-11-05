@@ -153,6 +153,41 @@
 
     setInterval(checkLiveUpdates, pollInterval);
     checkLiveUpdates();
+
+    // Auto-populate waybill info when a Lumora waybill barcode is scanned/entered in "New parcel intake"
+    const barcodeInput = document.querySelector('input[name="barcode"]');
+    if (barcodeInput) {
+        let lookupTimer = null;
+        const triggerWaybillLookup = async (rawVal) => {
+            const code = (rawVal || '').trim().replace(/^\*+|\*+$/g, '');
+            if (!code) return;
+            try {
+                const res = await fetch('/api/v1/scanner/waybill/' + encodeURIComponent(code), {
+                    headers: { 'Accept': 'application/json' }
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data && data.found && data.waybill) {
+                    const wb = data.waybill;
+                    const nameEl = document.querySelector('input[name="recipient_name"]');
+                    const phoneEl = document.querySelector('input[name="recipient_phone"]');
+                    const addrEl = document.querySelector('textarea[name="address_line"]');
+                    const cityEl = document.querySelector('input[name="city"]');
+                    const provEl = document.querySelector('input[name="province"]');
+                    if (nameEl && wb.recipient_name) nameEl.value = wb.recipient_name;
+                    if (phoneEl && wb.recipient_phone) phoneEl.value = wb.recipient_phone;
+                    if (addrEl && wb.address_line) addrEl.value = wb.address_line;
+                    if (cityEl && wb.city) cityEl.value = wb.city;
+                    if (provEl && wb.province) provEl.value = wb.province;
+                }
+            } catch (e) {}
+        };
+        barcodeInput.addEventListener('change', (e) => triggerWaybillLookup(e.target.value));
+        barcodeInput.addEventListener('input', (e) => {
+            clearTimeout(lookupTimer);
+            lookupTimer = setTimeout(() => triggerWaybillLookup(e.target.value), 450);
+        });
+    }
 })();
 </script>
 </body></html>

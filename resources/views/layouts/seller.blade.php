@@ -176,7 +176,7 @@
             </button>
         </form>
 
-        <form method="POST" action="{{ route('logout') }}" class="logout-form">
+        <form method="POST" action="{{ route('logout') }}" class="logout-form" onsubmit="return confirm('Are you sure you want to log out?');">
             @csrf
             <button type="submit" class="logout-btn">Logout</button>
         </form>

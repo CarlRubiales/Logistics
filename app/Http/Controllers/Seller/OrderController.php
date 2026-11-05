@@ -176,6 +176,8 @@ class OrderController extends Controller
     {
         $sellerId = Auth::id();
 
+        $hasPaymentMethod = \Illuminate\Support\Facades\Schema::hasColumn('orders', 'payment_method');
+
         $order = DB::table('orders as o')
             ->join('users as u', 'u.id', '=', 'o.user_id')
             ->where('o.id', $orderId)
@@ -189,7 +191,8 @@ class OrderController extends Controller
                 'u.municipality',
                 'u.barangay',
                 'u.street',
-                'u.house_number'
+                'u.house_number',
+                DB::raw($hasPaymentMethod ? 'o.payment_method' : "'cod' as payment_method")
             )
             ->firstOrFail();
 
@@ -211,9 +214,36 @@ class OrderController extends Controller
 
         $total = $items->sum(fn ($item) => $item->price * $item->quantity);
 
-        $pdf = Pdf::loadView('seller.waybill-pdf', compact('order', 'items', 'shopName', 'total'));
+        $code39 = [
+            '0' => 'nnnwwnwnn', '1' => 'wnnwnnnnw', '2' => 'nnwwnnnnw',
+            '3' => 'wnwwnnnnn', '4' => 'nnnwwnnnw', '5' => 'wnnwwnnnn',
+            '6' => 'nnwwwnnnn', '7' => 'nnnwnnwnw', '8' => 'wnnwnnwnn',
+            '9' => 'nnwwnnwnn', '*' => 'nwnnwnwnn',
+        ];
+        $barcodeValue = (string) $order->id;
+        $barcodeSequence = '*'.$barcodeValue.'*';
+        $module = 2;
+        $barcodeRuns = [10];
+        foreach (str_split($barcodeSequence) as $character) {
+            foreach (str_split($code39[$character]) as $index => $width) {
+                $barWidth = ($width === 'w' ? 3 : 1) * $module;
+                $barcodeRuns[] = [$barWidth, $index % 2 === 0];
+            }
+            $barcodeRuns[] = [$module, false];
+        }
+        $barcodeRuns[] = [10, false];
+        $barcodeRuns[0] = [10 * $module, false];
+        $barcodeRuns[count($barcodeRuns) - 1] = [10 * $module, false];
+        $barcodeCells = '';
+        foreach ($barcodeRuns as [$width, $isBar]) {
+            $background = $isBar ? '#000000' : '#FFFFFF';
+            $barcodeCells .= '<td style="width:'.$width.'px;height:44px;padding:0;border:0;background:'.$background.';"></td>';
+        }
+        $barcodeHtml = '<table cellpadding="0" cellspacing="0" style="margin:0 auto;border-collapse:collapse;border:0;"><tr>'.$barcodeCells.'</tr></table>';
 
-        return $pdf->download('waybill-order-' . $orderId . '.pdf');
+        $pdf = Pdf::loadView('seller.waybill-pdf', compact('order', 'items', 'shopName', 'total', 'barcodeHtml', 'barcodeValue'));
+
+        return $pdf->stream('waybill-order-' . $orderId . '.pdf');
     }
 
     public function notifications()

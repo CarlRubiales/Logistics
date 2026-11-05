@@ -18,8 +18,22 @@ class ParcelShipmentSyncService
             }
             if (! $shipment && $parcel->parcel_number) {
                 $shipment = Shipment::where('tracking_number', $parcel->parcel_number)->lockForUpdate()->first();
-                if ($shipment) {
+                if (! $shipment && preg_match('/LM-TRK-0*(\d+)/i', $parcel->parcel_number, $matches)) {
+                    $shipment = Shipment::whereKey((int) $matches[1])->lockForUpdate()->first();
+                }
+            }
+            if (! $shipment && $parcel->barcode) {
+                $shipment = Shipment::where('tracking_number', $parcel->barcode)->lockForUpdate()->first();
+                if (! $shipment && preg_match('/LM-TRK-0*(\d+)/i', $parcel->barcode, $matches)) {
+                    $shipment = Shipment::whereKey((int) $matches[1])->lockForUpdate()->first();
+                }
+            }
+            if ($shipment) {
+                if ($parcel->shipment_id !== $shipment->id) {
                     $parcel->updateQuietly(['shipment_id' => $shipment->id]);
+                }
+                if ($shipment->order_id && ! $parcel->order_id) {
+                    $parcel->updateQuietly(['order_id' => $shipment->order_id]);
                 }
             }
             if (! $shipment) {
@@ -39,6 +53,20 @@ class ParcelShipmentSyncService
 
             if (! $status) {
                 return;
+            }
+
+            // Sync parent order status
+            $order = $shipment->order ?: $parcel->order;
+            if ($order) {
+                $orderStatus = match ($status) {
+                    'delivered' => 'delivered',
+                    'in_transit', 'out_for_delivery', 'packed' => 'processing',
+                    'cancelled' => 'cancelled',
+                    default => null,
+                };
+                if ($orderStatus && $order->status !== $orderStatus) {
+                    $order->updateQuietly(['status' => $orderStatus]);
+                }
             }
 
             if (! ShipmentStatusService::allowed($shipment, $shipment->status, $status)) {
@@ -85,5 +113,23 @@ class ParcelShipmentSyncService
                 ]);
             }
         });
+
+        // Push status update back to live Lumora E-Commerce website if linked to a waybill
+        $waybillCode = $parcel->metadata['waybill_order_id'] ?? $parcel->barcode;
+        if ($waybillCode && in_array($parcel->status, ['in_transit', 'out_for_delivery', 'delivered', 'cancelled'], true)) {
+            $ecommerceBaseUrl = rtrim((string) env('LUMORA_ECOMMERCE_URL', 'https://lumora.party'), '/');
+            try {
+                \Illuminate\Support\Facades\Http::timeout(3)
+                    ->acceptJson()
+                    ->post("{$ecommerceBaseUrl}/api/logistics/waybill/" . urlencode((string) $waybillCode) . '/status', [
+                        'status' => $parcel->status,
+                        'hub' => ($parcel->branch ?: 'Main') . ' Hub',
+                        'rider_name' => $parcel->rider?->user?->name,
+                        'note' => "Parcel status updated to {$parcel->status} via Lumora Logistics",
+                    ]);
+            } catch (\Throwable $e) {
+                // Non-blocking
+            }
+        }
     }
 }
