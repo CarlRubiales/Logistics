@@ -215,16 +215,31 @@ class RiderController extends Controller
         $branch = $user?->branch ?? ($rider->hub?->branch ?? 'Local Branch');
 
         if ($user && ! empty($user->email)) {
+            if (in_array(config('mail.default'), ['log', 'array'], true) || empty(config('mail.mailers.smtp.username'))) {
+                config([
+                    'mail.default' => 'smtp',
+                    'mail.mailers.smtp.transport' => 'smtp',
+                    'mail.mailers.smtp.host' => 'smtp.gmail.com',
+                    'mail.mailers.smtp.port' => 587,
+                    'mail.mailers.smtp.username' => 'cjrubiales12@gmail.com',
+                    'mail.mailers.smtp.password' => 'uqqggenrzxmpwwsw',
+                    'mail.from.address' => 'cjrubiales12@gmail.com',
+                    'mail.from.name' => 'Lumora Logistics',
+                ]);
+                app('mail.manager')->purge('smtp');
+            }
+
             if ($status === 'approved') {
                 try {
-                    Mail::send('emails.rider_approved', [
+                    Mail::mailer('smtp')->send('emails.rider_approved', [
                         'name' => $user->name,
                         'email' => $user->email,
                         'hubName' => $hubName,
                         'branch' => $branch,
                         'vehicle' => $rider->vehicle_type ?? 'Motorcycle',
                     ], function ($m) use ($user, $hubName) {
-                        $m->to($user->email)
+                        $m->from('cjrubiales12@gmail.com', 'Lumora Logistics')
+                            ->to($user->email)
                             ->subject("✓ Application Approved - Welcome to {$hubName} (Lumora Logistics)");
                     });
                 } catch (\Throwable $e) {
@@ -232,14 +247,15 @@ class RiderController extends Controller
                 }
             } elseif ($status === 'disapproved') {
                 try {
-                    Mail::send('emails.rider_rejected', [
+                    Mail::mailer('smtp')->send('emails.rider_rejected', [
                         'name' => $user->name,
                         'email' => $user->email,
                         'hubName' => $hubName,
                         'branch' => $branch,
                         'reason' => $reason ?: 'Document verification criteria were not fulfilled. Please contact your hub coordinator.',
                     ], function ($m) use ($user, $hubName) {
-                        $m->to($user->email)
+                        $m->from('cjrubiales12@gmail.com', 'Lumora Logistics')
+                            ->to($user->email)
                             ->subject("Notice Regarding Your Courier Application - {$hubName}");
                     });
                 } catch (\Throwable $e) {
