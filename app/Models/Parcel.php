@@ -30,7 +30,9 @@ class Parcel extends Model
                   $q2->where(function ($q3) {
                       $q3->whereNull('branch')->orWhere('branch', '');
                   })->where('city', $branch);
-              });
+              })
+              ->orWhere('metadata->origin_branch', $branch)
+              ->orWhere('metadata->destination_branch', $branch);
         });
     }
 

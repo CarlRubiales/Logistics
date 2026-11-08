@@ -86,7 +86,9 @@ class SortingCenterController extends Controller
             ]);
         }
 
-        return view('sorting-center.index', compact('parcels', 'areas', 'riders', 'counts', 'branch', 'selectedDateStr', 'formattedDate', 'isToday'));
+        $hubs = \App\Models\Hub::where('is_active', true)->orderBy('name')->get(['id', 'name', 'branch', 'city']);
+
+        return view('sorting-center.index', compact('parcels', 'areas', 'riders', 'counts', 'branch', 'hubs', 'selectedDateStr', 'formattedDate', 'isToday'));
     }
 
     public function receive(Request $request, ParcelIntakeService $intake)
@@ -259,5 +261,138 @@ class SortingCenterController extends Controller
         });
         app(\App\Services\ParcelShipmentSyncService::class)->sync($parcel->fresh());
         return back()->with('success', 'Delivery assignment accepted.');
+    }
+
+    /**
+     * Hub-to-Hub transfer: Dispatch a parcel from the current branch hub to another destination branch hub.
+     */
+    public function transferHub(Request $request, Parcel $parcel)
+    {
+        $data = $request->validate([
+            'target_branch' => ['required', 'string', 'max:100'],
+            'assigned_rider_id' => ['nullable', 'exists:rider_profiles,id'],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $originBranch = $parcel->branch ?: ($request->user()?->getBranchName() ?: 'Origin');
+        $targetBranch = trim($data['target_branch']);
+
+        $storeId = $parcel->store_id ?: \App\Models\Store::where('is_active', true)->value('id');
+        $targetArea = \App\Services\LagunaHubProvisioner::resolveMatchingArea(
+            $storeId,
+            $targetBranch,
+            $parcel->address_line,
+            $parcel->city ?: $targetBranch,
+            $parcel->postal_code
+        );
+
+        $existingMeta = is_array($parcel->metadata) ? $parcel->metadata : [];
+        $history = $existingMeta['hub_transfers'] ?? [];
+        $history[] = [
+            'from_hub' => "{$originBranch} Hub",
+            'to_hub' => "{$targetBranch} Hub",
+            'dispatched_at' => now()->toIso8601String(),
+            'dispatched_by' => $request->user()?->name ?? 'Hub Admin',
+        ];
+
+        $newMeta = array_merge($existingMeta, [
+            'is_hub_transfer' => true,
+            'transfer_state' => 'in_transit_to_hub',
+            'origin_branch' => $originBranch,
+            'destination_branch' => $targetBranch,
+            'hub_transfers' => $history,
+        ]);
+
+        DB::transaction(function () use ($request, $parcel, $data, $originBranch, $targetBranch, $targetArea, $newMeta) {
+            $parcel->update([
+                'branch' => $targetBranch,
+                'destination_area_id' => $targetArea?->id ?? $parcel->destination_area_id,
+                'assigned_rider_id' => $data['assigned_rider_id'] ?? $parcel->assigned_rider_id,
+                'status' => 'in_transit',
+                'metadata' => $newMeta,
+            ]);
+
+            $parcel->scans()->create([
+                'user_id' => $request->user()->id,
+                'scan_type' => 'hub_transfer_dispatch',
+                'barcode' => $parcel->barcode ?: $parcel->parcel_number,
+                'note' => $data['note'] ?: "Dispatched for Hub-to-Hub transfer from {$originBranch} Hub to {$targetBranch} Hub",
+                'scanned_at' => now(),
+            ]);
+
+            if ($parcel->shipment) {
+                $parcel->shipment->trackingEvents()->create([
+                    'status' => 'in_transit',
+                    'label' => "In Transit to {$targetBranch} Hub",
+                    'description' => "Parcel departed {$originBranch} Hub and is in transit to {$targetBranch} Hub.",
+                    'location' => "{$originBranch} Hub → {$targetBranch} Hub, Laguna",
+                    'occurred_at' => now(),
+                    'source' => 'sorting_center',
+                ]);
+            }
+        });
+
+        app(\App\Services\ParcelShipmentSyncService::class)->sync($parcel->fresh());
+
+        return back()->with('success', "Parcel {$parcel->parcel_number} dispatched from {$originBranch} Hub to {$targetBranch} Hub.");
+    }
+
+    /**
+     * Hub-to-Hub arrival: Receive a transferred parcel at the destination branch hub so it can be sorted and assigned to a local rider.
+     */
+    public function receiveHubTransfer(Request $request, Parcel $parcel)
+    {
+        $receivingBranch = $request->user()?->getBranchName()
+            ?: ($parcel->metadata['destination_branch'] ?? $parcel->branch ?: 'Destination');
+        $originBranch = $parcel->metadata['origin_branch'] ?? 'Origin';
+
+        $storeId = $parcel->store_id ?: \App\Models\Store::where('is_active', true)->value('id');
+        $targetArea = \App\Services\LagunaHubProvisioner::resolveMatchingArea(
+            $storeId,
+            $receivingBranch,
+            $parcel->address_line,
+            $parcel->city ?: $receivingBranch,
+            $parcel->postal_code
+        );
+
+        $existingMeta = is_array($parcel->metadata) ? $parcel->metadata : [];
+        $newMeta = array_merge($existingMeta, [
+            'is_hub_transfer' => true,
+            'transfer_state' => 'received_at_hub',
+            'destination_branch' => $receivingBranch,
+            'received_at_hub_time' => now()->toIso8601String(),
+        ]);
+
+        DB::transaction(function () use ($request, $parcel, $originBranch, $receivingBranch, $targetArea, $newMeta) {
+            $parcel->update([
+                'branch' => $receivingBranch,
+                'destination_area_id' => $targetArea?->id ?? $parcel->destination_area_id,
+                'assigned_rider_id' => null,
+                'status' => 'scanned',
+                'scanned_at' => now(),
+                'metadata' => $newMeta,
+            ]);
+
+            $parcel->scans()->create([
+                'user_id' => $request->user()->id,
+                'scan_type' => 'hub_transfer_arrive',
+                'barcode' => $parcel->barcode ?: $parcel->parcel_number,
+                'note' => "Arrived and received at {$receivingBranch} Hub (transferred from {$originBranch} Hub)",
+                'scanned_at' => now(),
+            ]);
+
+            if ($parcel->shipment) {
+                $parcel->shipment->trackingEvents()->create([
+                    'status' => 'in_transit',
+                    'label' => "Arrived at {$receivingBranch} Hub",
+                    'description' => "Parcel arrived at {$receivingBranch} Hub from {$originBranch} Hub and is queued for local sorting & dispatch.",
+                    'location' => "{$receivingBranch} Hub, Laguna",
+                    'occurred_at' => now(),
+                    'source' => 'sorting_center',
+                ]);
+            }
+        });
+
+        return back()->with('success', "Parcel {$parcel->parcel_number} received at {$receivingBranch} Hub! Ready to sort and assign to a local rider.");
     }
 }

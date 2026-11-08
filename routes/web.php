@@ -89,6 +89,8 @@ Route::middleware(['auth', 'logistics'])->group(function () {
     Route::post('/sorting-center/{parcel}/scan', [SortingCenterController::class, 'scan'])->name('sorting-center.scan');
     Route::post('/sorting-center/{parcel}/sort', [SortingCenterController::class, 'sort'])->name('sorting-center.sort');
     Route::post('/sorting-center/{parcel}/assign', [SortingCenterController::class, 'assign'])->name('sorting-center.assign');
+    Route::post('/sorting-center/{parcel}/transfer-hub', [SortingCenterController::class, 'transferHub'])->name('sorting-center.transfer-hub');
+    Route::post('/sorting-center/{parcel}/receive-hub', [SortingCenterController::class, 'receiveHubTransfer'])->name('sorting-center.receive-hub');
     Route::get('/orders', [OrdersController::class, 'index'])->name('orders.index');
     Route::get('/orders/{order}', [OrdersController::class, 'show'])->name('orders.show');
 });

@@ -419,7 +419,13 @@ class ScannerApiController extends Controller
                 ]);
             }
 
-            $isAlreadyScanned = in_array($oldStatus, ['scanned', 'sorted', 'assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered']);
+            $isHubTransferArrival = $branch
+                && ! empty($parcel->branch)
+                && mb_strtolower(trim($parcel->branch)) !== mb_strtolower(trim($branch));
+
+            $isAlreadyScanned = ! $isHubTransferArrival
+                && ($parcel->metadata['transfer_state'] ?? '') !== 'in_transit_to_hub'
+                && in_array($oldStatus, ['scanned', 'sorted', 'assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered']);
 
             if ($isAlreadyScanned) {
                 if (! empty($branchUpdate)) {
@@ -438,9 +444,21 @@ class ScannerApiController extends Controller
             }
 
             $newStatus = 'scanned';
+            if ($isHubTransferArrival || ($parcel->metadata['transfer_state'] ?? '') === 'in_transit_to_hub') {
+                $existingMeta = is_array($parcel->metadata) ? $parcel->metadata : [];
+                $originBranch = $existingMeta['origin_branch'] ?? $parcel->branch ?: 'Origin';
+                $branchUpdate['metadata'] = array_merge($existingMeta, $branchUpdate['metadata'] ?? [], [
+                    'is_hub_transfer' => true,
+                    'transfer_state' => 'received_at_hub',
+                    'origin_branch' => $originBranch,
+                    'destination_branch' => $branch ?: $parcel->branch,
+                    'received_at_hub_time' => now()->toIso8601String(),
+                ]);
+                $branchUpdate['assigned_rider_id'] = null;
+            }
             $updateData = array_merge($branchUpdate, [
                 'status' => $newStatus,
-                'scanned_at' => $parcel->scanned_at ?? now(),
+                'scanned_at' => now(),
                 'barcode' => $parcel->barcode ?: $code,
             ]);
             $parcel->update($updateData);
@@ -1030,6 +1048,111 @@ class ScannerApiController extends Controller
             'items' => $items,
             'weight' => $shipment?->weight ? ($shipment->weight . ' kg') : '0.50 kg',
             'scanned_at' => $parcel->scanned_at?->format('M j, Y · g:i A') ?? now()->format('M j, Y · g:i A'),
+            'is_hub_transfer' => (bool) ($parcel->metadata['is_hub_transfer'] ?? false),
+            'transfer_state' => $parcel->metadata['transfer_state'] ?? null,
+            'origin_branch' => $parcel->metadata['origin_branch'] ?? null,
+            'destination_branch' => $parcel->metadata['destination_branch'] ?? null,
         ];
+    }
+
+    /**
+     * Hub-to-Hub transfer API endpoint (POST /api/v1/scanner/transfer-hub).
+     */
+    public function transferHub(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'barcode' => ['required', 'string', 'max:500'],
+            'target_branch' => ['required', 'string', 'max:100'],
+            'origin_branch' => ['nullable', 'string', 'max:100'],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $rawCode = trim($validated['barcode']);
+        $code = $this->normalizeBarcode($rawCode);
+
+        $parcel = Parcel::with(['area', 'rider.user', 'shipment', 'order.items'])
+            ->where('barcode', $code)
+            ->orWhere('barcode', $rawCode)
+            ->orWhere('parcel_number', $code)
+            ->orWhereHas('shipment', fn ($sq) => $sq->where('tracking_number', $code))
+            ->first();
+
+        if (! $parcel) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Parcel {$rawCode} not found.",
+            ], 404);
+        }
+
+        $user = $request->user();
+        if (! $user && $request->bearerToken()) {
+            $tokenRecord = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
+            $user = $tokenRecord?->tokenable;
+        }
+
+        $originBranch = $validated['origin_branch'] ?? ($user?->getBranchName() ?: ($parcel->branch ?: 'Origin'));
+        $targetBranch = trim($validated['target_branch']);
+        $storeId = $parcel->store_id ?: Store::where('is_active', true)->value('id') ?? 1;
+
+        $targetArea = \App\Services\LagunaHubProvisioner::resolveMatchingArea(
+            $storeId,
+            $targetBranch,
+            $parcel->address_line,
+            $parcel->city ?: $targetBranch,
+            $parcel->postal_code
+        );
+
+        $existingMeta = is_array($parcel->metadata) ? $parcel->metadata : [];
+        $history = $existingMeta['hub_transfers'] ?? [];
+        $history[] = [
+            'from_hub' => "{$originBranch} Hub",
+            'to_hub' => "{$targetBranch} Hub",
+            'dispatched_at' => now()->toIso8601String(),
+            'dispatched_by' => $user?->name ?? 'Scanner Operator',
+        ];
+
+        $newMeta = array_merge($existingMeta, [
+            'is_hub_transfer' => true,
+            'transfer_state' => 'in_transit_to_hub',
+            'origin_branch' => $originBranch,
+            'destination_branch' => $targetBranch,
+            'hub_transfers' => $history,
+        ]);
+
+        $parcel->update([
+            'branch' => $targetBranch,
+            'destination_area_id' => $targetArea?->id ?? $parcel->destination_area_id,
+            'status' => 'in_transit',
+            'metadata' => $newMeta,
+        ]);
+
+        ParcelScan::create([
+            'parcel_id' => $parcel->id,
+            'user_id' => $user?->id ?? 1,
+            'scan_type' => 'hub_transfer_dispatch',
+            'barcode' => $parcel->barcode ?: $code,
+            'result' => 'success',
+            'note' => $validated['note'] ?? "Dispatched for Hub-to-Hub transfer from {$originBranch} Hub to {$targetBranch} Hub",
+            'scanned_at' => now(),
+        ]);
+
+        if ($parcel->shipment) {
+            $parcel->shipment->trackingEvents()->create([
+                'status' => 'in_transit',
+                'label' => "In Transit to {$targetBranch} Hub",
+                'description' => "Parcel departed {$originBranch} Hub and is in transit to {$targetBranch} Hub.",
+                'location' => "{$originBranch} Hub → {$targetBranch} Hub, Laguna",
+                'occurred_at' => now(),
+                'source' => 'scanner_api',
+            ]);
+        }
+
+        app(ParcelShipmentSyncService::class)->sync($parcel->fresh());
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "Parcel {$parcel->parcel_number} dispatched from {$originBranch} Hub to {$targetBranch} Hub.",
+            'parcel' => $this->transformParcel($parcel->fresh(['order.items', 'shipment', 'area', 'rider.user'])),
+        ]);
     }
 }

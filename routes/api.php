@@ -27,6 +27,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/status', [ScannerApiController::class, 'status']);
         Route::post('/login', [ScannerApiController::class, 'login']);
         Route::post('/scan', [ScannerApiController::class, 'scan']);
+        Route::post('/transfer-hub', [ScannerApiController::class, 'transferHub']);
         Route::post('/batch-sync', [ScannerApiController::class, 'batchSync']);
         Route::get('/recent', [ScannerApiController::class, 'recentScans']);
         Route::get('/waybill/{barcode}', [ScannerApiController::class, 'waybillLookup']);
