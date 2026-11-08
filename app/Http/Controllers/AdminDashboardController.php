@@ -65,12 +65,7 @@ class AdminDashboardController extends Controller
             $areaIds = $areas->pluck('id');
 
             $ridersCount = RiderProfile::where('registration_status', 'approved')
-                ->where(function ($q) use ($areaIds, $branchName) {
-                    if ($areaIds->isNotEmpty()) {
-                        $q->whereHas('areas', fn ($aq) => $aq->whereIn('destination_areas.id', $areaIds));
-                    }
-                    $q->orWhereHas('user', fn ($uq) => $uq->where('branch', $branchName));
-                })
+                ->forBranch($branchName, $areaIds)
                 ->count();
 
             $counts = (clone $parcels)->select('status', DB::raw('count(*) as total'))
@@ -153,13 +148,8 @@ class AdminDashboardController extends Controller
             $areaIds = $areas->pluck('id');
 
             // Find all riders assigned to this branch
-            $riders = RiderProfile::with(['user', 'areas'])
-                ->where(function ($q) use ($areaIds, $branchName) {
-                    if ($areaIds->isNotEmpty()) {
-                        $q->whereHas('areas', fn ($aq) => $aq->whereIn('destination_areas.id', $areaIds));
-                    }
-                    $q->orWhereHas('user', fn ($uq) => $uq->where('branch', $branchName));
-                })
+            $riders = RiderProfile::with(['user', 'areas', 'hub'])
+                ->forBranch($branchName, $areaIds)
                 ->get()
                 ->map(function ($rider) use ($selectedDate) {
                     $activeParcels = $rider->parcels()
@@ -249,13 +239,8 @@ class AdminDashboardController extends Controller
             $areas = DestinationArea::where('branch', $branchName)->get();
             $areaIds = $areas->pluck('id');
 
-            $query = RiderProfile::with(['user', 'areas'])
-                ->where(function ($q) use ($areaIds, $branchName) {
-                    if ($areaIds->isNotEmpty()) {
-                        $q->whereHas('areas', fn ($aq) => $aq->whereIn('destination_areas.id', $areaIds));
-                    }
-                    $q->orWhereHas('user', fn ($uq) => $uq->where('branch', $branchName));
-                });
+            $query = RiderProfile::with(['user', 'areas', 'hub'])
+                ->forBranch($branchName, $areaIds);
 
             if ($search) {
                 $query->where(function ($q) use ($search) {

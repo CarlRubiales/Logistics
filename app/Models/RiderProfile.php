@@ -29,6 +29,28 @@ class RiderProfile extends Model
     public function parcels() { return $this->hasMany(Parcel::class, 'assigned_rider_id'); }
     public function commissions() { return $this->hasMany(CommissionTransaction::class); }
 
+    public function scopeForBranch($query, ?string $branch, $areaIds = null)
+    {
+        if (! $branch) {
+            return $query;
+        }
+
+        $areaIds = $areaIds ? collect($areaIds)->filter()->values() : DestinationArea::forBranch($branch)->pluck('id');
+        $branchLower = mb_strtolower(trim($branch));
+
+        return $query->where(function ($rq) use ($branch, $branchLower, $areaIds) {
+            if ($areaIds->isNotEmpty()) {
+                $rq->whereHas('areas', fn ($aq) => $aq->whereIn('destination_areas.id', $areaIds));
+            }
+            $rq->orWhereHas('user', fn ($uq) => $uq->whereRaw('LOWER(branch) = ?', [$branchLower]))
+               ->orWhereHas('hub', function ($hq) use ($branchLower) {
+                   $hq->whereRaw('LOWER(branch) = ?', [$branchLower])
+                      ->orWhereRaw('LOWER(city) = ?', [$branchLower])
+                      ->orWhereRaw('LOWER(name) = ?', [$branchLower . ' hub']);
+               });
+        });
+    }
+
     public function getLicenseUrlAttribute(): ?string
     {
         if (! $this->license_photo_path) return null;

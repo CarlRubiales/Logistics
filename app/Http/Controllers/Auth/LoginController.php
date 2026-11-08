@@ -52,6 +52,19 @@ class LoginController extends Controller
         }
 
         if ($authenticated && $user) {
+            if ($user->role === 'rider') {
+                $profile = $user->riderProfile;
+                $hubName = $profile?->hub?->name ?? ($user->branch ? "{$user->branch} Hub" : 'your assigned Logistics Hub');
+                if (! $profile || $profile->registration_status !== 'approved') {
+                    $msg = match ($profile?->registration_status) {
+                        'pending' => "Your rider account is awaiting approval from {$hubName}. You cannot log in until approved.",
+                        'disapproved', 'rejected' => "Your rider application was not approved by {$hubName}" . ($profile->registration_note ? ": {$profile->registration_note}" : '.'),
+                        'archived' => "Your rider account has been archived by {$hubName}.",
+                        default => "Your rider account is not yet approved by {$hubName}.",
+                    };
+                    throw ValidationException::withMessages(['email' => $msg]);
+                }
+            }
             Auth::login($user, $request->boolean('remember'));
         }
 

@@ -59,12 +59,9 @@ class SortingCenterController extends Controller
             ->get();
         $areaIds = $areas->pluck('id');
 
-        $ridersQuery = RiderProfile::with(['user', 'areas'])->where('registration_status', 'approved');
-        if ($branch && $areaIds->isNotEmpty()) {
-            $ridersQuery->where(function ($rq) use ($areaIds) {
-                $rq->whereHas('areas', fn ($aq) => $aq->whereIn('destination_areas.id', $areaIds))
-                   ->orDoesntHave('areas');
-            });
+        $ridersQuery = RiderProfile::with(['user', 'areas', 'hub'])->where('registration_status', 'approved');
+        if ($branch) {
+            $ridersQuery->forBranch($branch, $areaIds);
         }
         $riders = $ridersQuery->get();
 

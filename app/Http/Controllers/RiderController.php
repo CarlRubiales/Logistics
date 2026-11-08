@@ -134,13 +134,10 @@ class RiderController extends Controller
             ->get();
         $areaIds = $areas->pluck('id');
 
-        $query = RiderProfile::with(['user', 'areas'])->latest();
+        $query = RiderProfile::with(['user', 'areas', 'hub'])->latest();
 
-        if ($branch && $areaIds->isNotEmpty()) {
-            $query->where(function ($rq) use ($areaIds) {
-                $rq->whereHas('areas', fn ($aq) => $aq->whereIn('destination_areas.id', $areaIds))
-                   ->orDoesntHave('areas');
-            });
+        if ($branch) {
+            $query->forBranch($branch, $areaIds);
         }
 
         if ($request->filled('search')) {
@@ -168,11 +165,8 @@ class RiderController extends Controller
         $riders = $query->paginate(20)->withQueryString();
 
         $baseCount = RiderProfile::query();
-        if ($branch && $areaIds->isNotEmpty()) {
-            $baseCount->where(function ($rq) use ($areaIds) {
-                $rq->whereHas('areas', fn ($aq) => $aq->whereIn('destination_areas.id', $areaIds))
-                   ->orDoesntHave('areas');
-            });
+        if ($branch) {
+            $baseCount->forBranch($branch, $areaIds);
         }
 
         $counts = [
@@ -188,6 +182,15 @@ class RiderController extends Controller
 
     public function approve(Request $request, RiderProfile $rider)
     {
+        $adminBranch = $request->user()?->getAssignedBranch();
+        if ($adminBranch) {
+            $areaIds = DestinationArea::forBranch($adminBranch)->pluck('id');
+            $belongsToBranch = RiderProfile::whereKey($rider->id)
+                ->forBranch($adminBranch, $areaIds)
+                ->exists();
+            abort_unless($belongsToBranch, 403, "You can only manage riders assigned to {$adminBranch} Hub.");
+        }
+
         $status = $request->input('status');
         if (! in_array($status, ['approved', 'disapproved', 'pending', 'archived'])) {
             $status = $request->boolean('approved') ? 'approved' : 'disapproved';
@@ -206,6 +209,26 @@ class RiderController extends Controller
 
         if (in_array($status, ['disapproved', 'archived'])) {
             $updates['availability'] = 'offline';
+        }
+
+        // Ensure the rider's user->branch and hub_id remain strictly bound to their assigned branch
+        $resolvedBranch = $rider->user?->branch
+            ?: $rider->hub?->branch
+            ?: $rider->areas()->whereNotNull('branch')->value('branch')
+            ?: $adminBranch;
+
+        if ($resolvedBranch) {
+            if ($rider->user && empty($rider->user->branch)) {
+                $rider->user->update(['branch' => $resolvedBranch]);
+            }
+            if (empty($rider->hub_id)) {
+                $matchedHub = \App\Models\Hub::where('branch', $resolvedBranch)
+                    ->orWhere('city', $resolvedBranch)
+                    ->first();
+                if ($matchedHub) {
+                    $updates['hub_id'] = $matchedHub->id;
+                }
+            }
         }
 
         $rider->update($updates);

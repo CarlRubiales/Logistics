@@ -28,6 +28,7 @@ class RiderApiController extends Controller
 {
     /**
      * Authenticate rider and return API bearer token.
+     * Blocks unapproved (pending/disapproved/archived) riders from logging in until approved by their Logistics Hub.
      */
     public function login(Request $request): JsonResponse
     {
@@ -36,40 +37,64 @@ class RiderApiController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $user = User::where('email', $validated['email'])->first();
+        $email = strtolower(trim($validated['email']));
+        $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
 
         if (! $user) {
-            $user = User::create([
-                'name' => explode('@', $validated['email'])[0],
-                'email' => $validated['email'],
-                'password' => Hash::make($validated['password']),
-                'role' => 'rider',
-            ]);
-        } else {
-            if ($user->role !== 'rider') {
-                $user->update(['role' => 'rider']);
-            }
-            $user->update(['password' => Hash::make($validated['password'])]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No rider account found with that email address. Please create an account first.',
+            ], 401);
+        }
+
+        if (! Hash::check($validated['password'], $user->password)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Invalid email or password. Please check your credentials and try again.',
+            ], 401);
         }
 
         $profile = $user->riderProfile;
 
-        // Ensure rider profile exists and is approved
         if (! $profile) {
-            $profile = RiderProfile::create([
-                'user_id' => $user->id,
-                'registration_status' => 'approved',
-                'availability' => 'offline',
-            ]);
-        } elseif ($profile->registration_status !== 'approved') {
-            $profile->update(['registration_status' => 'approved']);
-        }
-
-        if ($profile->registration_status === 'disapproved' || $profile->registration_status === 'rejected') {
-            $reasonMsg = $profile->registration_note ? ": {$profile->registration_note}" : '. Please check your email for the notice.';
             return response()->json([
                 'status' => 'error',
-                'message' => 'Your rider registration was not approved' . $reasonMsg,
+                'message' => 'This account does not have a registered rider profile.',
+            ], 403);
+        }
+
+        $hubName = $profile->hub?->name ?? ($user->branch ? "{$user->branch} Hub" : 'your assigned Logistics Hub');
+
+        if ($profile->registration_status === 'pending') {
+            return response()->json([
+                'status' => 'error',
+                'registration_status' => 'pending',
+                'message' => "Your rider account is still pending approval by {$hubName}. You will receive a Gmail notification once approved.",
+            ], 403);
+        }
+
+        if (in_array($profile->registration_status, ['disapproved', 'rejected'], true)) {
+            $reasonMsg = $profile->registration_note ? ": {$profile->registration_note}" : '. Please check your Gmail for the notice.';
+            return response()->json([
+                'status' => 'error',
+                'registration_status' => 'disapproved',
+                'message' => "Your rider application was not approved by {$hubName}" . $reasonMsg,
+            ], 403);
+        }
+
+        if ($profile->registration_status === 'archived') {
+            return response()->json([
+                'status' => 'error',
+                'registration_status' => 'archived',
+                'message' => "Your rider account has been archived by {$hubName}. Please contact your hub administrator.",
+            ], 403);
+        }
+
+        if ($profile->registration_status !== 'approved') {
+            return response()->json([
+                'status' => 'error',
+                'registration_status' => $profile->registration_status,
+                'message' => "Your rider account is not yet approved by {$hubName}.",
             ], 403);
         }
 
