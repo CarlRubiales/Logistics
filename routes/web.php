@@ -79,6 +79,8 @@ Route::middleware(['auth', 'logistics'])->group(function () {
     Route::delete('/areas/{area}', [AreasController::class, 'destroy'])->name('areas.destroy');
     Route::get('/riders', [RiderController::class, 'index'])->name('riders.index');
     Route::post('/riders/{rider}/approval', [RiderController::class, 'approve'])->name('riders.approval');
+    Route::patch('/riders/{rider}/archive', [RiderController::class, 'archive'])->name('riders.archive');
+    Route::delete('/riders/{rider}', [RiderController::class, 'destroy'])->name('riders.destroy');
     Route::post('/riders/{rider}/areas', [RiderController::class, 'assignArea'])->name('riders.areas');
     Route::delete('/riders/{rider}/areas/{area}', [RiderController::class, 'removeArea'])->name('riders.areas.destroy');
     Route::get('/riders/{rider}/documents/{type}', [RiderController::class, 'document'])->name('riders.documents');

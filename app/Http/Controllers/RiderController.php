@@ -12,6 +12,7 @@ use App\Models\RiderAreaAssignment;
 use App\Models\RiderProfile;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -127,6 +128,8 @@ class RiderController extends Controller
 
         if ($request->filled('status')) {
             $query->where('registration_status', $request->string('status'));
+        } else {
+            $query->where('registration_status', '!=', 'archived');
         }
 
         if ($request->filled('area_id')) {
@@ -147,10 +150,11 @@ class RiderController extends Controller
         }
 
         $counts = [
-            'total' => (clone $baseCount)->count(),
+            'total' => (clone $baseCount)->where('registration_status', '!=', 'archived')->count(),
             'approved' => (clone $baseCount)->where('registration_status', 'approved')->count(),
             'online' => (clone $baseCount)->where('registration_status', 'approved')->whereIn('availability', ['online', 'available'])->count(),
             'pending' => (clone $baseCount)->where('registration_status', 'pending')->count(),
+            'archived' => (clone $baseCount)->where('registration_status', 'archived')->count(),
         ];
 
         return view('riders.index', compact('riders', 'areas', 'counts', 'branch'));
@@ -159,18 +163,26 @@ class RiderController extends Controller
     public function approve(Request $request, RiderProfile $rider)
     {
         $status = $request->input('status');
-        if (! in_array($status, ['approved', 'disapproved', 'pending'])) {
+        if (! in_array($status, ['approved', 'disapproved', 'pending', 'archived'])) {
             $status = $request->boolean('approved') ? 'approved' : 'disapproved';
         }
 
         $reason = trim($request->input('reason') ?? $request->input('rejection_reason') ?? $request->input('note') ?? '');
 
-        $rider->update([
+        $updates = [
             'registration_status' => $status,
             'approved_at' => $status === 'approved' ? now() : null,
             'approved_by' => $status === 'approved' ? $request->user()?->id : null,
-            'registration_note' => $status === 'disapproved' ? ($reason ?: 'Document requirements not met.') : null,
-        ]);
+            'registration_note' => $status === 'disapproved'
+                ? ($reason ?: 'Document requirements not met.')
+                : ($status === 'archived' ? ($reason ?: 'Archived by administrator.') : null),
+        ];
+
+        if (in_array($status, ['disapproved', 'archived'])) {
+            $updates['availability'] = 'offline';
+        }
+
+        $rider->update($updates);
 
         $user = $rider->user;
         $hubName = $rider->hub?->name ?? ($user?->branch ? "{$user->branch} Hub" : 'Lumora Logistics Hub');
@@ -210,11 +222,49 @@ class RiderController extends Controller
             }
         }
 
-        $actionText = $status === 'approved'
-            ? 'approved and notified via Gmail'
-            : ($status === 'disapproved' ? 'rejected and notified with reason via Gmail' : 'status updated');
+        $actionText = match ($status) {
+            'approved' => 'approved and notified via Gmail',
+            'disapproved' => 'rejected and notified with reason via Gmail',
+            'archived' => 'archived',
+            default => 'status updated',
+        };
 
         return back()->with('success', "Rider {$rider->user->name} has been {$actionText}.");
+    }
+
+    public function archive(RiderProfile $rider)
+    {
+        $name = $rider->user?->name ?? 'Rider';
+        $isArchived = $rider->registration_status === 'archived';
+
+        $rider->update([
+            'registration_status' => $isArchived ? 'approved' : 'archived',
+            'availability' => 'offline',
+            'registration_note' => $isArchived ? null : 'Archived by administrator.',
+        ]);
+
+        return back()->with('success', $isArchived
+            ? "Rider {$name} has been restored from archive."
+            : "Rider {$name} has been archived.");
+    }
+
+    public function destroy(RiderProfile $rider)
+    {
+        $name = $rider->user?->name ?? 'Rider';
+        $user = $rider->user;
+
+        DB::transaction(function () use ($rider, $user) {
+            DB::table('parcels')
+                ->where('assigned_rider_id', $rider->id)
+                ->update(['assigned_rider_id' => null]);
+
+            $rider->delete();
+            if ($user && $user->role === 'rider') {
+                $user->delete();
+            }
+        });
+
+        return back()->with('success', "Rider {$name} has been permanently deleted.");
     }
 
     public function assignArea(Request $request, RiderProfile $rider)

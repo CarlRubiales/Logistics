@@ -82,10 +82,11 @@
                         <input name="search" value="{{ request('search') }}" placeholder="Search name, email, phone..." style="min-width: 200px; height: 36px; padding: 0 10px; font-size: 12px; border: 1px solid #EBDDD8; border-radius: 8px; background: #FAF6F0;">
                         
                         <select name="status" style="height: 36px; padding: 0 8px; font-size: 12px; border: 1px solid #EBDDD8; border-radius: 8px; background: #FAF6F0;">
-                            <option value="">All Statuses</option>
+                            <option value="">Active Statuses</option>
                             <option value="approved" @selected(request('status') === 'approved')>Approved</option>
                             <option value="pending" @selected(request('status') === 'pending')>Pending</option>
                             <option value="disapproved" @selected(request('status') === 'disapproved')>Disapproved</option>
+                            <option value="archived" @selected(request('status') === 'archived')>Archived ({{ $counts['archived'] ?? 0 }})</option>
                         </select>
 
                         <select name="area_id" style="height: 36px; padding: 0 8px; font-size: 12px; border: 1px solid #EBDDD8; border-radius: 8px; background: #FAF6F0;">
@@ -170,6 +171,8 @@
                                             <span class="status-chip in-transit" style="font-size: 10px; margin-bottom: 4px;"><b></b>Approved</span>
                                         @elseif($rider->registration_status === 'pending')
                                             <span class="status-chip pending" style="font-size: 10px; margin-bottom: 4px;"><b></b>Pending Approval</span>
+                                        @elseif($rider->registration_status === 'archived')
+                                            <span class="status-chip packed" style="font-size: 10px; margin-bottom: 4px;"><b></b>Archived</span>
                                         @else
                                             <span class="status-chip exception" style="font-size: 10px; margin-bottom: 4px;"><b></b>Disapproved</span>
                                             @if($rider->registration_note)
@@ -266,10 +269,30 @@
                                                     @csrf
                                                     <input type="hidden" name="status" value="approved">
                                                     <button type="submit" class="primary-button" style="padding: 4px 10px; font-size: 11px; font-weight: 800; background: #2E7D32; border: none; color: #FFF; border-radius: 6px; cursor: pointer;">
-                                                        ✓ Re-approve
+                                                        ✓ {{ $rider->registration_status === 'archived' ? 'Restore' : 'Re-approve' }}
                                                     </button>
                                                 </form>
                                             @endif
+
+                                            <!-- Archive / Unarchive button -->
+                                            @if($rider->registration_status !== 'archived')
+                                                <form method="POST" action="{{ route('riders.archive', $rider) }}" style="display: inline;" onsubmit="return confirm('Archive rider {{ addslashes($rider->user->name) }}?');">
+                                                    @csrf
+                                                    @method('PATCH')
+                                                    <button type="submit" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #6E5D57; border-color: #EBDDD8; background: #FAF6F0; cursor: pointer;" title="Archive rider">
+                                                        Archive
+                                                    </button>
+                                                </form>
+                                            @endif
+
+                                            <!-- Delete button -->
+                                            <form method="POST" action="{{ route('riders.destroy', $rider) }}" style="display: inline;" onsubmit="return confirm('Permanently delete rider {{ addslashes($rider->user->name) }}? This action cannot be undone.');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #A52222; border-color: rgba(165, 34, 34, 0.35); background: #FFF; cursor: pointer;" title="Delete rider permanently">
+                                                    Delete
+                                                </button>
+                                            </form>
                                         </div>
                                     </td>
                                 </tr>

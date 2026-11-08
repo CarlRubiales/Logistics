@@ -268,6 +268,8 @@ class AdminDashboardController extends Controller
 
             if ($status) {
                 $query->where('registration_status', $status);
+            } else {
+                $query->where('registration_status', '!=', 'archived');
             }
 
             $riders = $query->latest()->get();
@@ -297,6 +299,8 @@ class AdminDashboardController extends Controller
         }
         if ($status) {
             $unassignedQuery->where('registration_status', $status);
+        } else {
+            $unassignedQuery->where('registration_status', '!=', 'archived');
         }
 
         $unassignedRiders = $unassignedQuery->latest()->get();
