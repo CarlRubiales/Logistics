@@ -156,6 +156,18 @@ class SortingCenterController extends Controller
             }
         }
 
+        if (empty($data['postal_code'])) {
+            $data['postal_code'] = \App\Services\LagunaHubProvisioner::postalCodeForBranch($destinationBranch ?: $branch);
+        }
+
+        if ($branch && $destinationBranch && strcasecmp(trim($branch), trim($destinationBranch)) !== 0) {
+            $data['metadata'] = array_merge($data['metadata'] ?? [], [
+                'is_hub_transfer' => true,
+                'origin_branch' => $branch,
+                'destination_branch' => $destinationBranch,
+            ]);
+        }
+
         try {
             $parcel = $intake->receive($data, $request->user()->id);
         } catch (QueryException $exception) {

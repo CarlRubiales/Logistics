@@ -266,15 +266,16 @@ class ScannerApiController extends Controller
         }
 
         $branch = $user?->getBranchName() ?: ($validated['branch'] ?? null);
+        if ($branch) {
+            $resolvedScannerHub = \App\Services\LagunaHubProvisioner::resolveHubFromAddress($branch, null, $branch);
+            if ($resolvedScannerHub?->branch) {
+                $branch = $resolvedScannerHub->branch;
+            }
+        }
         if (! $branch && ! empty($validated['operator'])) {
-            if (stripos($validated['operator'], 'pila') !== false) {
-                $branch = 'Pila';
-            } elseif (stripos($validated['operator'], 'cruz') !== false) {
-                $branch = 'Santa Cruz';
-            } elseif (stripos($validated['operator'], 'victoria') !== false) {
-                $branch = 'Victoria';
-            } elseif (stripos($validated['operator'], 'banos') !== false) {
-                $branch = 'Los Banos';
+            $resolvedOpHub = \App\Services\LagunaHubProvisioner::resolveHubFromAddress($validated['operator'], null, $validated['operator']);
+            if ($resolvedOpHub?->branch) {
+                $branch = $resolvedOpHub->branch;
             }
         }
 
@@ -601,7 +602,7 @@ class ScannerApiController extends Controller
         $recipientName = $waybill['recipient_name'] ?? $validated['recipient_name'] ?? 'Intake Package';
         $recipientPhone = $this->normalizePhone($waybill['recipient_phone'] ?? $validated['recipient_phone'] ?? '09170000000');
         $addressLine = $waybill['address_line'] ?? $validated['address_line'] ?? "Delivery destination, {$rawCity}, {$province}";
-        $postalCode = $waybill['postal_code'] ?? $validated['postal_code'] ?? ($branch === 'Pila' ? '4010' : '4009');
+        $postalCode = $waybill['postal_code'] ?? $validated['postal_code'] ?? \App\Services\LagunaHubProvisioner::postalCodeForBranch($rawCity ?: $branch);
 
         $destinationBranch = \App\Services\LagunaHubProvisioner::resolveDestinationBranch(
             $rawCity,

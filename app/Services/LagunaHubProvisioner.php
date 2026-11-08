@@ -831,6 +831,26 @@ class LagunaHubProvisioner
     }
 
     /**
+     * Get the official 4-digit postal code for any of the 30 Laguna municipalities/cities.
+     */
+    public static function postalCodeForBranch(?string $branch): string
+    {
+        if (! $branch) {
+            return '4009';
+        }
+        $norm = self::normalizePlaceText($branch, true);
+        foreach (self::municipalities() as $item) {
+            $candidates = array_merge([$item['branch'], $item['slug']], $item['aliases'] ?? []);
+            foreach ($candidates as $c) {
+                if ($norm === self::normalizePlaceText($c, true)) {
+                    return $item['postal_code'];
+                }
+            }
+        }
+        return '4009';
+    }
+
+    /**
      * Format the Logistics Linehaul Truck details for a Hub-to-Hub transfer route.
      */
     public static function formatLinehaulTruck(string $originBranch, string $destinationBranch): array

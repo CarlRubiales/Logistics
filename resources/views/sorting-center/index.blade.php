@@ -31,8 +31,15 @@
                         <label>Barcode<input name="barcode" value="{{ old('barcode') }}" placeholder="Scan or type barcode"></label>
                         <label>Recipient name<input name="recipient_name" value="{{ old('recipient_name') }}" required></label>
                         <label>Phone<input name="recipient_phone" type="tel" value="{{ old('recipient_phone') }}" placeholder="09171234567" required></label>
-                        <label class="full-span">Delivery address<textarea name="address_line" required>{{ old('address_line') }}</textarea></label>
-                        <label>City / municipality<input name="city" value="{{ old('city', auth()->user()->getBranchName()) }}" placeholder="{{ auth()->user()->getBranchName() ?? 'Santa Cruz' }}" required></label>
+                        <label class="full-span">Delivery address<textarea name="address_line" placeholder="House/Unit, Street, Barangay, Municipality/City" required>{{ old('address_line') }}</textarea></label>
+                        <label>Destination city / municipality
+                            <input name="city" list="laguna-hubs-list" value="{{ old('city', auth()->user()->getBranchName()) }}" placeholder="Select or type any Laguna city/municipality" required>
+                            <datalist id="laguna-hubs-list">
+                                @foreach($hubs as $h)
+                                    <option value="{{ $h->branch ?: $h->city }}">{{ $h->name }} ({{ $h->branch ?: $h->city }}, Laguna)</option>
+                                @endforeach
+                            </datalist>
+                        </label>
                         <label>Province<input name="province" value="{{ old('province', 'Laguna') }}" required></label>
                         <label>Postal code<input name="postal_code" value="{{ old('postal_code') }}"></label>
                         <label>Area override<select name="destination_area_id"><option value="">Determine after scan</option>@foreach($areas as $area)<option value="{{ $area->id }}" @selected(old('destination_area_id') == $area->id)>{{ $area->name }} ({{ $area->province ?: 'Laguna' }})</option>@endforeach</select></label>
