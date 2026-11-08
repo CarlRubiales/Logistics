@@ -109,9 +109,9 @@ class RiderApiController extends Controller
     }
 
     /**
-     * Return list of active hubs for rider registration dropdown.
+     * Return list of active hubs (and optionally delivery areas / barangays) for rider registration & branch operations.
      */
-    public function hubs(): JsonResponse
+    public function hubs(\Illuminate\Http\Request $request): JsonResponse
     {
         \App\Services\LagunaHubProvisioner::ensureProvisioned();
 
@@ -119,7 +119,18 @@ class RiderApiController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'branch', 'address', 'city']);
 
-        return response()->json(['status' => 'success', 'hubs' => $hubs]);
+        $response = ['status' => 'success', 'hubs' => $hubs];
+
+        if ($request->filled('branch')) {
+            $branch = $request->string('branch')->toString();
+            $response['areas'] = DestinationArea::where('is_active', true)
+                ->forBranch($branch)
+                ->orderByRaw("CASE WHEN code LIKE 'SCN-%' THEN 0 ELSE 1 END")
+                ->orderBy('name')
+                ->get(['id', 'name', 'branch', 'province', 'code', 'cities', 'postal_codes', 'coverage_rules']);
+        }
+
+        return response()->json($response);
     }
 
     /**

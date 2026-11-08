@@ -12,6 +12,8 @@ class AreasController extends Controller
 {
     public function index(Request $request)
     {
+        \App\Services\LagunaHubProvisioner::ensureProvisioned();
+
         if ($request->user()?->isMasterAdmin()) {
             return redirect()->route('admin.branches');
         }
@@ -21,6 +23,7 @@ class AreasController extends Controller
         $areas = DestinationArea::withCount(['parcels', 'riders'])
             ->where('store_id', $storeId)
             ->forBranch($branch)
+            ->orderByRaw("CASE WHEN code LIKE 'SCN-%' THEN 0 ELSE 1 END")
             ->orderBy('name')
             ->get();
         return view('areas.index', compact('areas', 'branch'));

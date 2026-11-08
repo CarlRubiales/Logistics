@@ -19,6 +19,8 @@ class SortingCenterController extends Controller
 {
     public function index(Request $request)
     {
+        \App\Services\LagunaHubProvisioner::ensureProvisioned();
+
         if ($request->user()?->isMasterAdmin()) {
             return redirect()->route('admin.dashboard');
         }
@@ -50,7 +52,11 @@ class SortingCenterController extends Controller
         }
 
         $parcels = $query->paginate(15)->withQueryString();
-        $areas = DestinationArea::where('is_active', true)->forBranch($branch)->orderBy('name')->get();
+        $areas = DestinationArea::where('is_active', true)
+            ->forBranch($branch)
+            ->orderByRaw("CASE WHEN code LIKE 'SCN-%' THEN 0 ELSE 1 END")
+            ->orderBy('name')
+            ->get();
         $areaIds = $areas->pluck('id');
 
         $ridersQuery = RiderProfile::with(['user', 'areas'])->where('registration_status', 'approved');
@@ -105,6 +111,19 @@ class SortingCenterController extends Controller
             $data['branch'] = $branch;
         }
 
+        if (empty($data['destination_area_id'])) {
+            $matchedArea = \App\Services\LagunaHubProvisioner::resolveMatchingArea(
+                $storeId,
+                $branch ?: ($data['city'] ?? null),
+                $data['address_line'] ?? null,
+                $data['city'] ?? null,
+                $data['postal_code'] ?? null
+            );
+            if ($matchedArea) {
+                $data['destination_area_id'] = $matchedArea->id;
+            }
+        }
+
         if (! empty($data['barcode'])) {
             $data['barcode'] = trim($data['barcode'], "*# \t\n\r\0\x0B");
             $wb = app(\App\Http\Controllers\Api\ScannerApiController::class)->resolveWaybillData($data['barcode']);
@@ -144,14 +163,13 @@ class SortingCenterController extends Controller
     public function scan(Request $request, Parcel $parcel)
     {
         $data = $request->validate(['barcode' => ['nullable', 'string', 'max:100', Rule::unique('parcels', 'barcode')->ignore($parcel->id)], 'note' => ['nullable', 'string', 'max:500']]);
-        $area = $parcel->area ?: DestinationArea::where('store_id', $parcel->store_id)->where('is_active', true)->get()->first(function ($candidate) use ($parcel) {
-            $cities = collect($candidate->cities ?? [])->map(fn ($city) => mb_strtolower(trim($city)));
-            $postalCodes = collect($candidate->postal_codes ?? [])->map(fn ($code) => trim($code));
-            $matchCity = $parcel->city && $cities->contains(mb_strtolower(trim($parcel->city)));
-            $matchPostal = $parcel->postal_code && $postalCodes->contains(trim($parcel->postal_code));
-            $matchProvince = $candidate->province && $parcel->province && mb_strtolower(trim($candidate->province)) === mb_strtolower(trim($parcel->province));
-            return $matchCity || $matchPostal || ($cities->isEmpty() && $postalCodes->isEmpty() && $matchProvince);
-        });
+        $area = $parcel->area ?: \App\Services\LagunaHubProvisioner::resolveMatchingArea(
+            $parcel->store_id,
+            $parcel->branch ?: $request->user()?->getBranchName(),
+            $parcel->address_line,
+            $parcel->city,
+            $parcel->postal_code
+        );
         DB::transaction(function () use ($request, $parcel, $data, $area) {
         $parcel->update(['status' => 'scanned', 'scanned_at' => now(), 'barcode' => ($data['barcode'] ?? null) ?: $parcel->barcode, 'destination_area_id' => $parcel->destination_area_id ?: $area?->id]);
         $parcel->scans()->create(['user_id' => $request->user()->id, 'scan_type' => 'scan', 'barcode' => ($data['barcode'] ?? null) ?: $parcel->barcode, 'note' => $data['note'] ?? null, 'scanned_at' => now()]);

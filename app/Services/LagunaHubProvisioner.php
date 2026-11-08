@@ -7,58 +7,449 @@ use App\Models\Hub;
 use App\Models\Store;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 
 class LagunaHubProvisioner
 {
     /**
-     * All 30 municipalities and cities in the Province of Laguna.
+     * All 30 municipalities and cities in the Province of Laguna, including all 681 official barangays.
      *
-     * @return array<int, array{branch: string, slug: string, email: string, password: string, postal_code: string, aliases?: array<int, string>, extra_emails?: array<int, string>, extra_passwords?: array<int, string>}>
+     * @return array<int, array{branch: string, slug: string, email: string, password: string, postal_code: string, barangays: array<int, string>, aliases?: array<int, string>, extra_emails?: array<int, string>, extra_passwords?: array<int, string>}>
      */
     public static function municipalities(): array
     {
         return [
-            ['branch' => 'Alaminos', 'slug' => 'alaminos', 'email' => 'alaminos@gmail.com', 'password' => 'alaminos1234', 'postal_code' => '4001'],
-            ['branch' => 'Bay', 'slug' => 'bay', 'email' => 'bay@gmail.com', 'password' => 'bay1234', 'postal_code' => '4033'],
-            ['branch' => 'Binan', 'slug' => 'binan', 'email' => 'binan@gmail.com', 'password' => 'binan1234', 'postal_code' => '4024', 'aliases' => ['biñan'], 'extra_emails' => ['biñan@gmail.com'], 'extra_passwords' => ['biñan1234']],
-            ['branch' => 'Cabuyao', 'slug' => 'cabuyao', 'email' => 'cabuyao@gmail.com', 'password' => 'cabuyao1234', 'postal_code' => '4025'],
-            ['branch' => 'Calamba', 'slug' => 'calamba', 'email' => 'calamba@gmail.com', 'password' => 'calamba1234', 'postal_code' => '4027'],
-            ['branch' => 'Calauan', 'slug' => 'calauan', 'email' => 'calauan@gmail.com', 'password' => 'calauan1234', 'postal_code' => '4012'],
-            ['branch' => 'Cavinti', 'slug' => 'cavinti', 'email' => 'cavinti@gmail.com', 'password' => 'cavinti1234', 'postal_code' => '4013'],
-            ['branch' => 'Famy', 'slug' => 'famy', 'email' => 'famy@gmail.com', 'password' => 'famy1234', 'postal_code' => '4021'],
-            ['branch' => 'Kalayaan', 'slug' => 'kalayaan', 'email' => 'kalayaan@gmail.com', 'password' => 'kalayaan1234', 'postal_code' => '4015'],
-            ['branch' => 'Liliw', 'slug' => 'liliw', 'email' => 'liliw@gmail.com', 'password' => 'liliw1234', 'postal_code' => '4004'],
-            ['branch' => 'Los Banos', 'slug' => 'losbanos', 'email' => 'losbanos@gmail.com', 'password' => 'losbanos1234', 'postal_code' => '4030', 'aliases' => ['los banos', 'los baños', 'losbaños'], 'extra_emails' => ['los banos@gmail.com', 'losbaños@gmail.com', 'los baños@gmail.com'], 'extra_passwords' => ['los banos1234', 'losbaños1234', 'los baños1234']],
-            ['branch' => 'Luisiana', 'slug' => 'luisiana', 'email' => 'luisiana@gmail.com', 'password' => 'luisiana1234', 'postal_code' => '4032'],
-            ['branch' => 'Lumban', 'slug' => 'lumban', 'email' => 'lumban@gmail.com', 'password' => 'lumban1234', 'postal_code' => '4014'],
-            ['branch' => 'Mabitac', 'slug' => 'mabitac', 'email' => 'mabitac@gmail.com', 'password' => 'mabitac1234', 'postal_code' => '4020'],
-            ['branch' => 'Magdalena', 'slug' => 'magdalena', 'email' => 'magdalena@gmail.com', 'password' => 'magdalena1234', 'postal_code' => '4007'],
-            ['branch' => 'Majayjay', 'slug' => 'majayjay', 'email' => 'majayjay@gmail.com', 'password' => 'majayjay1234', 'postal_code' => '4005'],
-            ['branch' => 'Nagcarlan', 'slug' => 'nagcarlan', 'email' => 'nagcarlan@gmail.com', 'password' => 'nagcarlan1234', 'postal_code' => '4002'],
-            ['branch' => 'Paete', 'slug' => 'paete', 'email' => 'paete@gmail.com', 'password' => 'paete1234', 'postal_code' => '4016'],
-            ['branch' => 'Pagsanjan', 'slug' => 'pagsanjan', 'email' => 'pagsanjan@gmail.com', 'password' => 'pagsanjan1234', 'postal_code' => '4008'],
-            ['branch' => 'Pakil', 'slug' => 'pakil', 'email' => 'pakil@gmail.com', 'password' => 'pakil1234', 'postal_code' => '4017'],
-            ['branch' => 'Pangil', 'slug' => 'pangil', 'email' => 'pangil@gmail.com', 'password' => 'pangil1234', 'postal_code' => '4018'],
-            ['branch' => 'Pila', 'slug' => 'pila', 'email' => 'pila@gmail.com', 'password' => 'pila1234', 'postal_code' => '4010', 'extra_passwords' => ['pila123']],
-            ['branch' => 'Rizal', 'slug' => 'rizal', 'email' => 'rizal@gmail.com', 'password' => 'rizal1234', 'postal_code' => '4003'],
-            ['branch' => 'San Pablo', 'slug' => 'sanpablo', 'email' => 'sanpablo@gmail.com', 'password' => 'sanpablo1234', 'postal_code' => '4000', 'aliases' => ['san pablo'], 'extra_emails' => ['san pablo@gmail.com'], 'extra_passwords' => ['san pablo1234']],
-            ['branch' => 'San Pedro', 'slug' => 'sanpedro', 'email' => 'sanpedro@gmail.com', 'password' => 'sanpedro1234', 'postal_code' => '4023', 'aliases' => ['san pedro'], 'extra_emails' => ['san pedro@gmail.com'], 'extra_passwords' => ['san pedro1234']],
-            ['branch' => 'Santa Cruz', 'slug' => 'santacruz', 'email' => 'santacruz@gmail.com', 'password' => 'santacruz1234', 'postal_code' => '4009', 'aliases' => ['santa cruz', 'sta cruz', 'stacruz'], 'extra_emails' => ['stacruz@gmail.com', 'santa cruz@gmail.com', 'sta cruz@gmail.com'], 'extra_passwords' => ['stacruz1234', 'santa cruz1234', 'sta cruz1234']],
-            ['branch' => 'Santa Maria', 'slug' => 'santamaria', 'email' => 'santamaria@gmail.com', 'password' => 'santamaria1234', 'postal_code' => '4022', 'aliases' => ['santa maria', 'sta maria', 'stamaria'], 'extra_emails' => ['stamaria@gmail.com', 'santa maria@gmail.com', 'sta maria@gmail.com'], 'extra_passwords' => ['stamaria1234', 'santa maria1234', 'sta maria1234']],
-            ['branch' => 'Santa Rosa', 'slug' => 'santarosa', 'email' => 'santarosa@gmail.com', 'password' => 'santarosa1234', 'postal_code' => '4026', 'aliases' => ['santa rosa', 'sta rosa', 'starosa'], 'extra_emails' => ['starosa@gmail.com', 'santa rosa@gmail.com', 'sta rosa@gmail.com'], 'extra_passwords' => ['starosa1234', 'santa rosa1234', 'sta rosa1234']],
-            ['branch' => 'Siniloan', 'slug' => 'siniloan', 'email' => 'siniloan@gmail.com', 'password' => 'siniloan1234', 'postal_code' => '4019'],
-            ['branch' => 'Victoria', 'slug' => 'victoria', 'email' => 'victoria@gmail.com', 'password' => 'victoria1234', 'postal_code' => '4011'],
+            [
+                'branch' => 'Alaminos',
+                'slug' => 'alaminos',
+                'email' => 'alaminos@gmail.com',
+                'password' => 'alaminos1234',
+                'postal_code' => '4001',
+                'barangays' => [
+                    'Barangay I (Poblacion)', 'Barangay II (Poblacion)', 'Barangay III (Poblacion)', 'Barangay IV (Poblacion)',
+                    'Del Carmen', 'Palma', 'San Agustin', 'San Andres', 'San Benito', 'San Gregorio', 'San Ildefonso',
+                    'San Juan', 'San Miguel', 'San Roque', 'Santa Rosa',
+                ],
+            ],
+            [
+                'branch' => 'Bay',
+                'slug' => 'bay',
+                'email' => 'bay@gmail.com',
+                'password' => 'bay1234',
+                'postal_code' => '4033',
+                'barangays' => [
+                    'Bitin', 'Calo', 'Dila', 'Maitim', 'Masaya', 'Paciano Rizal', 'Puypuy',
+                    'San Antonio', 'San Isidro', 'San Nicolas (Poblacion)', 'San Agustin (Poblacion)',
+                    'Santa Cruz', 'Santo Domingo', 'Tagumpay', 'Tranca',
+                ],
+            ],
+            [
+                'branch' => 'Binan',
+                'slug' => 'binan',
+                'email' => 'binan@gmail.com',
+                'password' => 'binan1234',
+                'postal_code' => '4024',
+                'aliases' => ['biñan'],
+                'extra_emails' => ['biñan@gmail.com'],
+                'extra_passwords' => ['biñan1234'],
+                'barangays' => [
+                    'Biñan (Poblacion)', 'Bungahan', 'Canlalay', 'Casile', 'De La Paz', 'Ganado',
+                    'Langkiwa', 'Loma', 'Malaban', 'Malamig', 'Mampalasan', 'Platero', 'Poblacion',
+                    'San Antonio', 'San Francisco (Halang)', 'San Jose', 'San Vicente', 'Santo Domingo',
+                    'Santo Niño', 'Soro-soro', 'Timbao', 'Tubigan', 'Zapote', 'Santo Tomas (Calabuso)',
+                ],
+            ],
+            [
+                'branch' => 'Cabuyao',
+                'slug' => 'cabuyao',
+                'email' => 'cabuyao@gmail.com',
+                'password' => 'cabuyao1234',
+                'postal_code' => '4025',
+                'barangays' => [
+                    'Baclaran', 'Banay-Banay', 'Banlic', 'Bigaa', 'Butong', 'Casile', 'Diezmo', 'Gulod',
+                    'Mamatid', 'Marinig', 'Niugan', 'Pittland', 'Pulo', 'Sala', 'San Isidro',
+                    'Barangay Uno (Poblacion)', 'Barangay Dos (Poblacion)', 'Barangay Tres (Poblacion)',
+                ],
+            ],
+            [
+                'branch' => 'Calamba',
+                'slug' => 'calamba',
+                'email' => 'calamba@gmail.com',
+                'password' => 'calamba1234',
+                'postal_code' => '4027',
+                'barangays' => [
+                    'Bagong Kalsada', 'Banadero', 'Banlic', 'Barandal', 'Barangay 1 (Poblacion)', 'Barangay 2 (Poblacion)',
+                    'Barangay 3 (Poblacion)', 'Barangay 4 (Poblacion)', 'Barangay 5 (Poblacion)', 'Barangay 6 (Poblacion)',
+                    'Barangay 7 (Poblacion)', 'Batino', 'Bubuyan', 'Bucal', 'Bunggo', 'Burol', 'Camaligan', 'Canlubang',
+                    'Halang', 'Hornalan', 'Kay-Anlog', 'La Mesa', 'Laguerta', 'Lawa', 'Lecheria', 'Lingga', 'Looc',
+                    'Mabato', 'Majada Labas', 'Makiling', 'Mapagong', 'Masili', 'Maunong', 'Mayapa', 'Milagrosa (Tulo)',
+                    'Paciano Rizal', 'Palingon', 'Palo-Alto', 'Pansol', 'Parian', 'Prinza', 'Punta', 'Puting Lupa',
+                    'Real', 'Saimsim', 'Sampiruhan', 'San Cristobal', 'San Jose', 'San Juan', 'Sirang Lupa', 'Sucol',
+                    'Turbina', 'Ulango', 'Uwisan',
+                ],
+            ],
+            [
+                'branch' => 'Calauan',
+                'slug' => 'calauan',
+                'email' => 'calauan@gmail.com',
+                'password' => 'calauan1234',
+                'postal_code' => '4012',
+                'barangays' => [
+                    'Balayhangin', 'Bangyas', 'Dayap', 'Hanggan', 'Imok', 'Kanluran (Poblacion)', 'Lamot 1', 'Lamot 2',
+                    'Limao', 'Mabacan', 'Masiit', 'Paliparan', 'Perez', 'Prinza', 'San Isidro', 'Santo Tomas',
+                    'Silangan (Poblacion)',
+                ],
+            ],
+            [
+                'branch' => 'Cavinti',
+                'slug' => 'cavinti',
+                'email' => 'cavinti@gmail.com',
+                'password' => 'cavinti1234',
+                'postal_code' => '4013',
+                'barangays' => [
+                    'Anglas', 'Bangco', 'Bukal', 'Bulajo', 'Cansuso', 'Duhat', 'Inao-Awan', 'Kanluran Talaongan',
+                    'Labayo', 'Layasin', 'Layug', 'Mahipon', 'Paowin', 'Poblacion', 'Silangan Talaongan', 'Sisilmin',
+                    'Sumucab', 'Tibatib', 'Udia',
+                ],
+            ],
+            [
+                'branch' => 'Famy',
+                'slug' => 'famy',
+                'email' => 'famy@gmail.com',
+                'password' => 'famy1234',
+                'postal_code' => '4021',
+                'barangays' => [
+                    'Asana (Poblacion)', 'Bacong-Sigsigan', 'Bagong Pag-Asa (Poblacion)', 'Balitoc', 'Banaba (Poblacion)',
+                    'Batuhan', 'Bulihan', 'Caballero (Poblacion)', 'Calumpang (Poblacion)', 'Cuebang Bato',
+                    'Damayan (Poblacion)', 'Kapatalan', 'Kataypuanan', 'Liyang', 'Maate', 'Magdalo (Poblacion)',
+                    'Mayatba', 'Minayutan', 'Salangbato', 'Tunhac',
+                ],
+            ],
+            [
+                'branch' => 'Kalayaan',
+                'slug' => 'kalayaan',
+                'email' => 'kalayaan@gmail.com',
+                'password' => 'kalayaan1234',
+                'postal_code' => '4015',
+                'barangays' => [
+                    'Longos', 'San Antonio', 'San Juan (Poblacion)',
+                ],
+            ],
+            [
+                'branch' => 'Liliw',
+                'slug' => 'liliw',
+                'email' => 'liliw@gmail.com',
+                'password' => 'liliw1234',
+                'postal_code' => '4004',
+                'barangays' => [
+                    'Bagong Anyo (Poblacion)', 'Bayate', 'Bongkol', 'Bubukal', 'Cabuyao', 'Calumpang', 'Culoy',
+                    'Dagatan', 'Daniw (Danliw)', 'Dita', 'Ibabang Palina', 'Ibabang San Roque', 'Ibabang Sungi',
+                    'Ibabang Taykin', 'Ilayang Palina', 'Ilayang San Roque', 'Ilayang Sungi', 'Ilayang Taykin',
+                    'Kanlurang Bukal', 'Laguan', 'Luquin', 'Malabo-Kalantukan', 'Masikap (Poblacion)', 'Maslun (Poblacion)',
+                    'Mojon', 'Novaliches', 'Oples', 'Pag-Asa (Poblacion)', 'Palayan', 'Rizal (Poblacion)', 'San Isidro',
+                    'Silangang Bukal', 'Tuy-Baanan',
+                ],
+            ],
+            [
+                'branch' => 'Los Banos',
+                'slug' => 'losbanos',
+                'email' => 'losbanos@gmail.com',
+                'password' => 'losbanos1234',
+                'postal_code' => '4030',
+                'aliases' => ['los banos', 'los baños', 'losbaños'],
+                'extra_emails' => ['los banos@gmail.com', 'losbaños@gmail.com', 'los baños@gmail.com'],
+                'extra_passwords' => ['los banos1234', 'losbaños1234', 'los baños1234'],
+                'barangays' => [
+                    'Anos', 'Bagong Silang', 'Bambang', 'Batong Malake', 'Baybayin (Poblacion)', 'Bayog',
+                    'Lalakay', 'Maahas', 'Malinta', 'Mayondon', 'Putho-Tuntungin', 'San Antonio',
+                    'Tadlac', 'Timugan (Poblacion)',
+                ],
+            ],
+            [
+                'branch' => 'Luisiana',
+                'slug' => 'luisiana',
+                'email' => 'luisiana@gmail.com',
+                'password' => 'luisiana1234',
+                'postal_code' => '4032',
+                'barangays' => [
+                    'De La Paz', 'Barangay Zone I (Poblacion)', 'Barangay Zone II (Poblacion)', 'Barangay Zone III (Poblacion)',
+                    'Barangay Zone IV (Poblacion)', 'Barangay Zone V (Poblacion)', 'Barangay Zone VI (Poblacion)',
+                    'Barangay Zone VII (Poblacion)', 'Barangay Zone VIII (Poblacion)', 'San Antonio', 'San Buenaventura',
+                    'San Diego', 'San Isidro', 'San Jose', 'San Juan', 'San Luis', 'San Pablo', 'San Pedro',
+                    'San Rafael', 'San Roque', 'San Salvador', 'Santo Domingo', 'Santo Tomas',
+                ],
+            ],
+            [
+                'branch' => 'Lumban',
+                'slug' => 'lumban',
+                'email' => 'lumban@gmail.com',
+                'password' => 'lumban1234',
+                'postal_code' => '4014',
+                'barangays' => [
+                    'Bagong Silang', 'Balimbingan (Poblacion)', 'Balubad', 'Caliraya', 'Concepcion', 'Lewin',
+                    'Maracta (Poblacion)', 'Maytalang I', 'Maytalang II', 'Primera Parang (Poblacion)',
+                    'Primera Pulo (Poblacion)', 'Salac (Poblacion)', 'Santo Niño (Poblacion)',
+                    'Segunda Parang (Poblacion)', 'Segunda Pulo (Poblacion)', 'Wawa',
+                ],
+            ],
+            [
+                'branch' => 'Mabitac',
+                'slug' => 'mabitac',
+                'email' => 'mabitac@gmail.com',
+                'password' => 'mabitac1234',
+                'postal_code' => '4020',
+                'barangays' => [
+                    'Amuyong', 'Lambac (Poblacion)', 'Lucong', 'Matalatala', 'Nanguma', 'Numero', 'Paagahan',
+                    'Bayanihan (Poblacion)', 'Libis ng Nayon (Poblacion)', 'Maligaya (Poblacion)', 'Masikap (Poblacion)',
+                    'Pag-Asa (Poblacion)', 'Sinagtala (Poblacion)', 'San Antonio', 'San Miguel',
+                ],
+            ],
+            [
+                'branch' => 'Magdalena',
+                'slug' => 'magdalena',
+                'email' => 'magdalena@gmail.com',
+                'password' => 'magdalena1234',
+                'postal_code' => '4007',
+                'barangays' => [
+                    'Alipit', 'Baanan', 'Balanac', 'Bucal', 'Buenavista', 'Bungkol', 'Buo', 'Burlungan', 'Cigaras',
+                    'Halayhayin', 'Ibabang Atingay', 'Ibabang Butnong', 'Ilayang Atingay', 'Ilayang Butnong',
+                    'Ilog', 'Malaking Ambling', 'Malinao', 'Maravilla', 'Munting Ambling', 'Poblacion', 'Sabang',
+                    'Salasad', 'Tanawan', 'Tipunan',
+                ],
+            ],
+            [
+                'branch' => 'Majayjay',
+                'slug' => 'majayjay',
+                'email' => 'majayjay@gmail.com',
+                'password' => 'majayjay1234',
+                'postal_code' => '4005',
+                'barangays' => [
+                    'Amonoy', 'Bakia', 'Balanac', 'Balayong', 'Banilad', 'Banti', 'Bitaoy', 'Botocan', 'Bukal',
+                    'Burgos', 'Burol', 'Coralao', 'Gagalot', 'Ibabang Banga', 'Ibabang Bayucain', 'Ilayang Banga',
+                    'Ilayang Bayucain', 'Isabang', 'Malinao', 'May-It', 'Munting Kawayan', 'Olla', 'Oobi',
+                    'Origuel (Poblacion)', 'Panalaban', 'Pangil', 'Panglan', 'Piit', 'Pook', 'Rizal',
+                    'San Francisco (Poblacion)', 'San Isidro', 'San Miguel (Poblacion)', 'San Roque',
+                    'Santa Catalina (Poblacion)', 'Suba', 'Talortor', 'Tanawan', 'Taytay', 'Villa Nogales',
+                ],
+            ],
+            [
+                'branch' => 'Nagcarlan',
+                'slug' => 'nagcarlan',
+                'email' => 'nagcarlan@gmail.com',
+                'password' => 'nagcarlan1234',
+                'postal_code' => '4002',
+                'barangays' => [
+                    'Abo', 'Alibungbungan', 'Alumbrado', 'Balayong', 'Balimbing', 'Balinacon', 'Bambang', 'Banago',
+                    'Banca-banca', 'Bangcuro', 'Banilad', 'Bayaquitos', 'Buboy', 'Buenavista', 'Buhanginan', 'Bukal',
+                    'Bunga', 'Cabuyew', 'Calumpang', 'Kanluran Kabubuhayan', 'Kanluran Lazaan', 'Labangan',
+                    'Lagulo', 'Lawaguin', 'Maiit', 'Malaya', 'Malinao', 'Manaol', 'Maravilla', 'Nagcalbang',
+                    'Poblacion I (Poblacion)', 'Poblacion II (Poblacion)', 'Poblacion III (Poblacion)', 'Oples',
+                    'Palayan', 'Palina', 'Sabang', 'San Francisco', 'Sibulan', 'Silangan Kabubuhayan',
+                    'Silangan Lazaan', 'Silangan Ilaya', 'Silangan Napapatid', 'Sinipian', 'Santa Lucia',
+                    'Sulsuguin', 'Talahib', 'Talangan', 'Taytay', 'Tipacan', 'Wakat', 'Yukos',
+                ],
+            ],
+            [
+                'branch' => 'Paete',
+                'slug' => 'paete',
+                'email' => 'paete@gmail.com',
+                'password' => 'paete1234',
+                'postal_code' => '4016',
+                'barangays' => [
+                    'Barangay 1 - Ibaba del Sur', 'Barangay 2 - Maytoong', 'Barangay 3 - Ermita',
+                    'Barangay 4 - Quinale', 'Barangay 5 - Ilaya del Sur', 'Barangay 6 - Ilaya del Norte',
+                    'Barangay 7 - Bagumbayan', 'Barangay 8 - Bangkusay', 'Barangay 9 - Ibaba del Norte',
+                ],
+            ],
+            [
+                'branch' => 'Pagsanjan',
+                'slug' => 'pagsanjan',
+                'email' => 'pagsanjan@gmail.com',
+                'password' => 'pagsanjan1234',
+                'postal_code' => '4008',
+                'barangays' => [
+                    'Anibong', 'Biñan', 'Buboy', 'Cabanbanan', 'Calusiche', 'Dingin', 'Lambac', 'Layugan',
+                    'Magdapio', 'Maulawin', 'Pinagsanjan', 'Barangay I (Poblacion)', 'Barangay II (Poblacion)',
+                    'Sabang', 'Sampaloc', 'San Isidro',
+                ],
+            ],
+            [
+                'branch' => 'Pakil',
+                'slug' => 'pakil',
+                'email' => 'pakil@gmail.com',
+                'password' => 'pakil1234',
+                'postal_code' => '4017',
+                'barangays' => [
+                    'Baño (Poblacion)', 'Banilan', 'Burgos (Poblacion)', 'Casa Real', 'Casinsin',
+                    'Dorado', 'Gonzales (Poblacion)', 'Kabulusan', 'Matikiw', 'Rizal (Poblacion)',
+                    'Saray', 'Taft (Poblacion)', 'Tavera (Poblacion)',
+                ],
+            ],
+            [
+                'branch' => 'Pangil',
+                'slug' => 'pangil',
+                'email' => 'pangil@gmail.com',
+                'password' => 'pangil1234',
+                'postal_code' => '4018',
+                'barangays' => [
+                    'Balian', 'Dambo', 'Galalan', 'Isla (Poblacion)', 'Mabato-Azufre',
+                    'Natividad (Poblacion)', 'San Jose (Poblacion)', 'Sulib',
+                ],
+            ],
+            [
+                'branch' => 'Pila',
+                'slug' => 'pila',
+                'email' => 'pila@gmail.com',
+                'password' => 'pila1234',
+                'postal_code' => '4010',
+                'extra_passwords' => ['pila123'],
+                'barangays' => [
+                    'Aplaya', 'Bagong Pook', 'Bukal', 'Bulilan Norte (Poblacion)', 'Bulilan Sur (Poblacion)',
+                    'Concepcion', 'Labuin', 'Linga', 'Masico', 'Mojon', 'Pansol', 'Pinagbayanan',
+                    'San Antonio', 'San Miguel', 'Santa Clara Norte (Poblacion)', 'Santa Clara Sur (Poblacion)',
+                    'Tubuan',
+                ],
+            ],
+            [
+                'branch' => 'Rizal',
+                'slug' => 'rizal',
+                'email' => 'rizal@gmail.com',
+                'password' => 'rizal1234',
+                'postal_code' => '4003',
+                'barangays' => [
+                    'Antipolo', 'Entablado', 'Laguan', 'Pauli 1', 'Pauli 2', 'East Poblacion',
+                    'West Poblacion', 'Pook', 'Tala', 'Talaga', 'Tuy',
+                ],
+            ],
+            [
+                'branch' => 'San Pablo',
+                'slug' => 'sanpablo',
+                'email' => 'sanpablo@gmail.com',
+                'password' => 'sanpablo1234',
+                'postal_code' => '4000',
+                'aliases' => ['san pablo'],
+                'extra_emails' => ['san pablo@gmail.com'],
+                'extra_passwords' => ['san pablo1234'],
+                'barangays' => [
+                    'I-A (Sambat)', 'I-B (City+Riverside)', 'I-C (Bagong Bayan)', 'II-A (Triangulo)', 'II-B (Guadalupe)',
+                    'II-C (Unson)', 'II-D (Bulante)', 'II-E (San Anton)', 'II-F (Villa Rey)', 'III-A (Hermanos Belen)',
+                    'III-B', 'III-C (Labak/De Roma)', 'III-D (Villongco)', 'III-E', 'III-F (Balagtas)',
+                    'IV-A', 'IV-B', 'IV-C', 'V-A', 'V-B', 'V-C', 'V-D', 'VI-A (Mavenida)', 'VI-B',
+                    'VI-C (Bagong Pook)', 'VI-D (Lparkers)', 'VI-E (YMCA)', 'VII-A (P.Alcantara)', 'VII-B',
+                    'VII-C', 'VII-D', 'VII-E', 'Atisan', 'Bagong Bayan II-A', 'Bagong Pook VI-C',
+                    'Bautista', 'Concepcion', 'Del Remedio', 'Dolores', 'San Antonio 1', 'San Antonio 2',
+                    'San Bartolome', 'San Buenaventura', 'San Crispin', 'San Cristobal', 'San Diego',
+                    'San Francisco', 'San Gabriel', 'San Gregorio', 'San Ignacio', 'San Isidro',
+                    'San Joaquin', 'San Jose', 'San Juan', 'San Lorenzo', 'San Lucas 1', 'San Lucas 2',
+                    'San Marcos', 'San Mateo', 'San Miguel', 'San Nicolas', 'San Pedro', 'San Rafael',
+                    'San Roque', 'San Vicente', 'Santa Ana', 'Santa Catalina', 'Santa Cruz',
+                    'Santa Elena', 'Santa Filomena', 'Santa Isabel', 'Santa Maria', 'Santa Maria Magdalena',
+                    'Santa Monica', 'Santa Veronica', 'Santiago I', 'Santiago II', 'Santisimo Rosario',
+                    'Santo Angel', 'Santo Cristo', 'Santo Niño', 'Soledad',
+                ],
+            ],
+            [
+                'branch' => 'San Pedro',
+                'slug' => 'sanpedro',
+                'email' => 'sanpedro@gmail.com',
+                'password' => 'sanpedro1234',
+                'postal_code' => '4023',
+                'aliases' => ['san pedro'],
+                'extra_emails' => ['san pedro@gmail.com'],
+                'extra_passwords' => ['san pedro1234'],
+                'barangays' => [
+                    'Bagong Silang', 'Calendola', 'Chrysanthemum', 'Cuyab', 'Estrella', 'Fatima', 'G.S.I.S.',
+                    'Landayan', 'Langgam', 'Laram', 'Magsaysay', 'Maharlika', 'Narra', 'Nueva', 'Pacita 1',
+                    'Pacita 2', 'Poblacion', 'Riverside', 'Rosario', 'Sampaguita Village', 'San Antonio',
+                    'San Lorenzo Ruiz', 'San Roque', 'San Vicente', 'Santo Niño', 'United Bayanihan',
+                    'United Better Living',
+                ],
+            ],
+            [
+                'branch' => 'Santa Cruz',
+                'slug' => 'santacruz',
+                'email' => 'santacruz@gmail.com',
+                'password' => 'santacruz1234',
+                'postal_code' => '4009',
+                'aliases' => ['santa cruz', 'sta cruz', 'stacruz'],
+                'extra_emails' => ['stacruz@gmail.com', 'santa cruz@gmail.com', 'sta cruz@gmail.com'],
+                'extra_passwords' => ['stacruz1234', 'santa cruz1234', 'sta cruz1234'],
+                'barangays' => [
+                    'Alipit', 'Bagumbayan', 'Bubukal', 'Calios', 'Duhat', 'Gatid', 'Jasaan', 'Labuin',
+                    'Malinao', 'Oogong', 'Pagsawitan', 'Palasan', 'Patimbao', 'Barangay I (Poblacion)',
+                    'Barangay II (Poblacion)', 'Barangay III (Poblacion)', 'Barangay IV (Poblacion)',
+                    'Barangay V (Poblacion)', 'San Jose', 'San Juan', 'San Pablo Norte', 'San Pablo Sur',
+                    'Santisima Cruz', 'Santo Angel Central', 'Santo Angel Norte', 'Santo Angel Sur',
+                ],
+            ],
+            [
+                'branch' => 'Santa Maria',
+                'slug' => 'santamaria',
+                'email' => 'santamaria@gmail.com',
+                'password' => 'santamaria1234',
+                'postal_code' => '4022',
+                'aliases' => ['santa maria', 'sta maria', 'stamaria'],
+                'extra_emails' => ['stamaria@gmail.com', 'santa maria@gmail.com', 'sta maria@gmail.com'],
+                'extra_passwords' => ['stamaria1234', 'santa maria1234', 'sta maria1234'],
+                'barangays' => [
+                    'Adia', 'Bagong Pook', 'Bagumbayan', 'Bubukal', 'Cabooan', 'Calangay', 'Cambuja',
+                    'Coralan', 'Cueva', 'Inayapan', 'Jose Laurel, Sr.', 'Jose Rizal', 'Kayhakat', 'Macasipac',
+                    'Masinao', 'Mataling-Ting', 'Pao-o', 'Parang ng Buho', 'Barangay I (Poblacion)',
+                    'Barangay II (Poblacion)', 'Barangay III (Poblacion)', 'Barangay IV (Poblacion)',
+                    'Santiago', 'Talangka', 'Tungkod',
+                ],
+            ],
+            [
+                'branch' => 'Santa Rosa',
+                'slug' => 'santarosa',
+                'email' => 'santarosa@gmail.com',
+                'password' => 'santarosa1234',
+                'postal_code' => '4026',
+                'aliases' => ['santa rosa', 'sta rosa', 'starosa'],
+                'extra_emails' => ['starosa@gmail.com', 'santa rosa@gmail.com', 'sta rosa@gmail.com'],
+                'extra_passwords' => ['starosa1234', 'santa rosa1234', 'sta rosa1234'],
+                'barangays' => [
+                    'Aplaya', 'Balibago', 'Caingin', 'Dila', 'Dita', 'Don Jose', 'Ibaba',
+                    'Kanluran (Poblacion)', 'Labas', 'Macabling', 'Malitlit', 'Malusak (Poblacion)',
+                    'Market Area (Poblacion)', 'Pooc (Pook)', 'Pulong Santa Cruz', 'Santo Domingo',
+                    'Sinalhan', 'Tagapo',
+                ],
+            ],
+            [
+                'branch' => 'Siniloan',
+                'slug' => 'siniloan',
+                'email' => 'siniloan@gmail.com',
+                'password' => 'siniloan1234',
+                'postal_code' => '4019',
+                'barangays' => [
+                    'Acevida', 'Bagong Pag-Asa (Poblacion)', 'Bagumbarangay (Poblacion)', 'Buhay',
+                    'G. Redor (Poblacion)', 'Gen. Luna', 'Halayhayin', 'Kapatalan', 'Laguio', 'Liyang',
+                    'Llavac', 'Macatad', 'Magsaysay', 'Mayatba', 'Mendiola', 'P. Burgos', 'Pandeno',
+                    'Salubungan', 'Wawa', 'J. Rizal (Poblacion)',
+                ],
+            ],
+            [
+                'branch' => 'Victoria',
+                'slug' => 'victoria',
+                'email' => 'victoria@gmail.com',
+                'password' => 'victoria1234',
+                'postal_code' => '4011',
+                'barangays' => [
+                    'Banca-banca', 'Daniw', 'Masapang', 'Nanhaya (Poblacion)', 'Pagalangan',
+                    'San Benito', 'San Felix', 'San Francisco', 'San Roque (Poblacion)',
+                ],
+            ],
         ];
     }
 
     /**
-     * Ensure all 30 Laguna hubs, destination areas, and branch admin accounts exist in the database.
+     * Ensure all 30 Laguna hubs, branch admin accounts, and all 681 barangay delivery areas exist in the database.
      */
     public static function ensureProvisioned(bool $force = false): void
     {
-        $cacheKey = 'laguna_30_hubs_provisioned_v1';
+        $cacheKey = 'laguna_30_hubs_and_barangays_v2';
         if (! $force && Cache::has($cacheKey)) {
             return;
         }
@@ -85,12 +476,16 @@ class LagunaHubProvisioner
                 $storeId = $store->id;
             }
 
+            $now = now();
+            $areaUpsertRows = [];
+
             foreach (self::municipalities() as $item) {
                 $branch = $item['branch'];
                 $slug = $item['slug'];
                 $email = $item['email'];
                 $password = $item['password'];
                 $postalCode = $item['postal_code'];
+                $barangays = $item['barangays'] ?? [];
                 $upperName = strtoupper($branch);
                 $code = 'SCN-' . strtoupper($slug);
 
@@ -160,30 +555,73 @@ class LagunaHubProvisioner
                     }
                 }
 
-                // 3. Provision DestinationArea Record
+                // 3. Provision Main Hub DestinationArea + All Barangays of the Municipality
                 if ($hasAreasTable && $storeId) {
-                    $area = DestinationArea::where('branch', $branch)
-                        ->orWhere('code', $code)
-                        ->first();
+                    $area = DestinationArea::where('code', $code)->first();
+
+                    $hubCities = array_values(array_unique(array_merge([$branch], $barangays)));
+                    $hubCoverage = 'All ' . count($barangays) . " barangays of {$branch}, Laguna";
 
                     if (! $area) {
-                        DestinationArea::create([
+                        $areaUpsertRows[] = [
                             'store_id' => $storeId,
                             'name' => $code,
                             'branch' => $branch,
                             'province' => 'Laguna',
                             'code' => $code,
-                            'cities' => [$branch],
-                            'postal_codes' => [$postalCode],
+                            'cities' => json_encode($hubCities),
+                            'postal_codes' => json_encode([$postalCode]),
+                            'coverage_rules' => $hubCoverage,
                             'is_active' => true,
-                        ]);
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ];
                     } else {
                         $area->update([
                             'branch' => $branch,
                             'province' => 'Laguna',
+                            'cities' => $hubCities,
+                            'postal_codes' => [$postalCode],
+                            'coverage_rules' => $area->coverage_rules ?: $hubCoverage,
                             'is_active' => true,
                         ]);
                     }
+
+                    foreach ($barangays as $idx => $brgy) {
+                        $brgyCode = 'BRGY-' . strtoupper($slug) . '-' . str_pad((string) ($idx + 1), 2, '0', STR_PAD_LEFT);
+                        $cleanBrgy = trim((string) preg_replace('/\s*\(.*?\)\s*/', '', $brgy));
+                        $brgyCities = array_values(array_unique(array_filter([
+                            $brgy,
+                            $cleanBrgy,
+                            "Brgy. {$cleanBrgy}",
+                            "Barangay {$cleanBrgy}",
+                            $branch,
+                        ])));
+
+                        $areaUpsertRows[] = [
+                            'store_id' => $storeId,
+                            'name' => "Brgy. {$brgy}",
+                            'branch' => $branch,
+                            'province' => 'Laguna',
+                            'code' => $brgyCode,
+                            'cities' => json_encode($brgyCities),
+                            'postal_codes' => json_encode([$postalCode]),
+                            'coverage_rules' => "Barangay {$brgy}, {$branch}, Laguna ({$postalCode})",
+                            'is_active' => true,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ];
+                    }
+                }
+            }
+
+            if ($hasAreasTable && ! empty($areaUpsertRows)) {
+                foreach (array_chunk($areaUpsertRows, 150) as $chunk) {
+                    DB::table('destination_areas')->upsert(
+                        $chunk,
+                        ['store_id', 'code'],
+                        ['name', 'branch', 'province', 'cities', 'postal_codes', 'coverage_rules', 'is_active', 'updated_at']
+                    );
                 }
             }
 
@@ -191,6 +629,65 @@ class LagunaHubProvisioner
         } catch (\Throwable $e) {
             // Non-blocking if DB is migrating
         }
+    }
+
+    /**
+     * Resolve the best matching DestinationArea (preferring specific Barangay area when matched in address_line or city)
+     * for a given branch, address, city, and postal code.
+     */
+    public static function resolveMatchingArea(?int $storeId, ?string $branch, ?string $addressLine, ?string $city, ?string $postalCode = null): ?DestinationArea
+    {
+        self::ensureProvisioned();
+
+        $query = DestinationArea::where('is_active', true);
+        if ($storeId) {
+            $query->where('store_id', $storeId);
+        }
+        if ($branch) {
+            $query->forBranch($branch);
+        } elseif ($city) {
+            $query->forBranch($city);
+        }
+
+        $candidates = $query->get();
+        if ($candidates->isEmpty() && $storeId) {
+            $candidates = DestinationArea::where('store_id', $storeId)->where('is_active', true)->get();
+        }
+
+        $haystack = mb_strtolower(trim(($addressLine ?? '') . ' ' . ($city ?? '')));
+
+        // 1. First pass: look for a specific Barangay area (code starting with BRGY-) whose barangay name appears in the address/city
+        if ($haystack !== '') {
+            $barangayMatch = $candidates->first(function (DestinationArea $candidate) use ($haystack, $branch, $city) {
+                if (! str_starts_with((string) $candidate->code, 'BRGY-')) {
+                    return false;
+                }
+                $branchLower = mb_strtolower(trim((string) ($branch ?: $city)));
+                foreach ($candidate->cities ?? [] as $keyword) {
+                    $kw = mb_strtolower(trim((string) $keyword));
+                    if ($kw === '' || $kw === $branchLower) {
+                        continue;
+                    }
+                    if (str_contains($haystack, $kw)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+
+            if ($barangayMatch) {
+                return $barangayMatch;
+            }
+        }
+
+        // 2. Second pass: match Hub area (SCN-*) or any active area for the branch/city/postal code
+        return $candidates->first(function (DestinationArea $candidate) use ($city, $postalCode) {
+            $cities = collect($candidate->cities ?? [])->map(fn ($c) => mb_strtolower(trim((string) $c)));
+            $postalCodes = collect($candidate->postal_codes ?? [])->map(fn ($p) => trim((string) $p));
+            $matchCity = $city && $cities->contains(mb_strtolower(trim($city)));
+            $matchPostal = $postalCode && $postalCodes->contains(trim($postalCode));
+            return $matchCity || $matchPostal;
+        }) ?? $candidates->first();
     }
 
     /**

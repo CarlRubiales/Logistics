@@ -507,13 +507,13 @@ class ScannerApiController extends Controller
             'metadata' => $metadata,
         ], $userId);
 
-        $area = null;
-        if ($branch) {
-            $area = DestinationArea::where('branch', $branch)->where('is_active', true)->first();
-        }
-        if (! $area) {
-            $area = DestinationArea::where('store_id', $storeId)->where('is_active', true)->first();
-        }
+        $area = \App\Services\LagunaHubProvisioner::resolveMatchingArea(
+            $storeId,
+            $branch ?: $city,
+            $addressLine,
+            $city,
+            $postalCode
+        );
 
         $newParcel->update([
             'status' => 'scanned',

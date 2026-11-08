@@ -91,12 +91,18 @@ class RiderController extends Controller
 
     public function index(Request $request)
     {
+        \App\Services\LagunaHubProvisioner::ensureProvisioned();
+
         if ($request->user()?->isMasterAdmin()) {
             return redirect()->route('admin.riders');
         }
 
         $branch = $request->user()?->getBranchName();
-        $areas = DestinationArea::where('is_active', true)->forBranch($branch)->orderBy('name')->get();
+        $areas = DestinationArea::where('is_active', true)
+            ->forBranch($branch)
+            ->orderByRaw("CASE WHEN code LIKE 'SCN-%' THEN 0 ELSE 1 END")
+            ->orderBy('name')
+            ->get();
         $areaIds = $areas->pluck('id');
 
         $query = RiderProfile::with(['user', 'areas'])->latest();
