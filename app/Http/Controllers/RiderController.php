@@ -182,7 +182,9 @@ class RiderController extends Controller
 
     public function approve(Request $request, RiderProfile $rider)
     {
-        $adminBranch = $request->user()?->getAssignedBranch();
+        $authUser = $request->user();
+        $adminBranch = ($authUser && ! $authUser->isMasterAdmin()) ? $authUser->getBranchName() : null;
+
         if ($adminBranch) {
             $areaIds = DestinationArea::forBranch($adminBranch)->pluck('id');
             $belongsToBranch = RiderProfile::whereKey($rider->id)
@@ -196,14 +198,14 @@ class RiderController extends Controller
             $status = $request->boolean('approved') ? 'approved' : 'disapproved';
         }
 
-        $reason = trim($request->input('reason') ?? $request->input('rejection_reason') ?? $request->input('note') ?? '');
+        $reason = trim((string) ($request->input('reason') ?? $request->input('rejection_reason') ?? $request->input('note') ?? ''));
 
         $updates = [
             'registration_status' => $status,
             'approved_at' => $status === 'approved' ? now() : null,
-            'approved_by' => $status === 'approved' ? $request->user()?->id : null,
+            'approved_by' => $status === 'approved' ? $authUser?->id : null,
             'registration_note' => $status === 'disapproved'
-                ? ($reason ?: 'Document requirements not met.')
+                ? ($reason ?: 'Suspended or disapproved by hub administrator.')
                 : ($status === 'archived' ? ($reason ?: 'Archived by administrator.') : null),
         ];
 
@@ -211,24 +213,27 @@ class RiderController extends Controller
             $updates['availability'] = 'offline';
         }
 
-        // Ensure the rider's user->branch and hub_id remain strictly bound to their assigned branch
-        $resolvedBranch = $rider->user?->branch
-            ?: $rider->hub?->branch
-            ?: $rider->areas()->whereNotNull('branch')->value('branch')
-            ?: $adminBranch;
+        try {
+            $resolvedBranch = $rider->user?->branch
+                ?: $rider->hub?->branch
+                ?: $rider->areas->whereNotNull('branch')->first()?->branch
+                ?: $adminBranch;
 
-        if ($resolvedBranch) {
-            if ($rider->user && empty($rider->user->branch)) {
-                $rider->user->update(['branch' => $resolvedBranch]);
-            }
-            if (empty($rider->hub_id)) {
-                $matchedHub = \App\Models\Hub::where('branch', $resolvedBranch)
-                    ->orWhere('city', $resolvedBranch)
-                    ->first();
-                if ($matchedHub) {
-                    $updates['hub_id'] = $matchedHub->id;
+            if ($resolvedBranch) {
+                if ($rider->user && empty($rider->user->branch)) {
+                    $rider->user->update(['branch' => $resolvedBranch]);
+                }
+                if (empty($rider->hub_id)) {
+                    $matchedHub = \App\Models\Hub::where('branch', $resolvedBranch)
+                        ->orWhere('city', $resolvedBranch)
+                        ->first();
+                    if ($matchedHub) {
+                        $updates['hub_id'] = $matchedHub->id;
+                    }
                 }
             }
+        } catch (\Throwable $e) {
+            Log::warning("Could not sync rider branch on approval: " . $e->getMessage());
         }
 
         $rider->update($updates);
@@ -238,18 +243,22 @@ class RiderController extends Controller
         $branch = $user?->branch ?? ($rider->hub?->branch ?? 'Local Branch');
 
         if ($user && ! empty($user->email)) {
-            if (in_array(config('mail.default'), ['log', 'array'], true) || empty(config('mail.mailers.smtp.username'))) {
-                config([
-                    'mail.default' => 'smtp',
-                    'mail.mailers.smtp.transport' => 'smtp',
-                    'mail.mailers.smtp.host' => 'smtp.gmail.com',
-                    'mail.mailers.smtp.port' => 587,
-                    'mail.mailers.smtp.username' => 'cjrubiales12@gmail.com',
-                    'mail.mailers.smtp.password' => 'uqqggenrzxmpwwsw',
-                    'mail.from.address' => 'cjrubiales12@gmail.com',
-                    'mail.from.name' => 'Lumora Logistics',
-                ]);
-                app('mail.manager')->purge('smtp');
+            try {
+                if (in_array(config('mail.default'), ['log', 'array'], true) || empty(config('mail.mailers.smtp.username'))) {
+                    config([
+                        'mail.default' => 'smtp',
+                        'mail.mailers.smtp.transport' => 'smtp',
+                        'mail.mailers.smtp.host' => 'smtp.gmail.com',
+                        'mail.mailers.smtp.port' => 587,
+                        'mail.mailers.smtp.username' => 'cjrubiales12@gmail.com',
+                        'mail.mailers.smtp.password' => 'uqqggenrzxmpwwsw',
+                        'mail.from.address' => 'cjrubiales12@gmail.com',
+                        'mail.from.name' => 'Lumora Logistics',
+                    ]);
+                    app('mail.manager')->purge('smtp');
+                }
+            } catch (\Throwable $e) {
+                Log::warning("Could not purge smtp mailer: " . $e->getMessage());
             }
 
             if ($status === 'approved') {
@@ -279,7 +288,7 @@ class RiderController extends Controller
                     ], function ($m) use ($user, $hubName) {
                         $m->from('cjrubiales12@gmail.com', 'Lumora Logistics')
                             ->to($user->email)
-                            ->subject("Notice Regarding Your Courier Application - {$hubName}");
+                            ->subject("Notice Regarding Your Courier Account - {$hubName}");
                     });
                 } catch (\Throwable $e) {
                     Log::error("Failed to send rejection email to {$user->email}: " . $e->getMessage());
@@ -289,12 +298,14 @@ class RiderController extends Controller
 
         $actionText = match ($status) {
             'approved' => 'approved and notified via Gmail',
-            'disapproved' => 'rejected and notified with reason via Gmail',
+            'disapproved' => 'suspended / disapproved and notified with reason via Gmail',
             'archived' => 'archived',
             default => 'status updated',
         };
 
-        return back()->with('success', "Rider {$rider->user->name} has been {$actionText}.");
+        $riderName = $rider->user?->name ?? 'Rider';
+
+        return back()->with('success', "Rider {$riderName} has been {$actionText}.");
     }
 
     public function archive(RiderProfile $rider)

@@ -65,6 +65,11 @@ class User extends Authenticatable
         return $hubs->first()?->branch ?: 'Pila';
     }
 
+    public function getAssignedBranch(): ?string
+    {
+        return $this->isMasterAdmin() ? null : $this->getBranchName();
+    }
+
     public function isMasterAdmin(): bool
     {
         return $this->role === 'super_admin' || ($this->role === 'admin' && empty($this->branch) && strcasecmp($this->name, 'pila') !== 0 && stripos($this->name, 'santa cruz') === false);
