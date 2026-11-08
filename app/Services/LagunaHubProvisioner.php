@@ -774,4 +774,81 @@ class LagunaHubProvisioner
 
         return null;
     }
+
+    /**
+     * Resolve the matching Hub (and canonical branch name) from a rider's municipality/city, barangay, or street address.
+     */
+    public static function resolveHubFromAddress(?string $municipality, ?string $barangay = null, ?string $address = null): ?Hub
+    {
+        self::ensureProvisioned();
+
+        $normalize = static function (?string $val): string {
+            if (! $val) {
+                return '';
+            }
+            $s = mb_strtolower(trim($val));
+            $s = preg_replace('/\b(city of|municipality of|city|municipality|province of|laguna|brgy\.?|barangay)\b/u', ' ', $s);
+            $s = str_replace(['ñ', '.', ',', '-', '_'], ['n', ' ', ' ', ' ', ' '], $s);
+            return trim((string) preg_replace('/\s+/', ' ', $s));
+        };
+
+        $normMuni = $normalize($municipality);
+        $normBrgy = $normalize($barangay);
+        $normAddr = $normalize(($address ?? '') . ' ' . ($barangay ?? '') . ' ' . ($municipality ?? ''));
+
+        $matchedBranch = null;
+
+        // 1. Direct Municipality / City match
+        if ($normMuni !== '') {
+            foreach (self::municipalities() as $item) {
+                $candidates = array_merge([$item['branch'], $item['slug']], $item['aliases'] ?? []);
+                foreach ($candidates as $c) {
+                    $nc = $normalize($c);
+                    $ncCompact = str_replace(' ', '', $nc);
+                    $muniCompact = str_replace(' ', '', $normMuni);
+                    if ($nc !== '' && ($normMuni === $nc || $muniCompact === $ncCompact || str_contains($normMuni, $nc) || str_contains($nc, $normMuni))) {
+                        $matchedBranch = $item['branch'];
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        // 2. Match municipality/city name inside full address string
+        if (! $matchedBranch && $normAddr !== '') {
+            foreach (self::municipalities() as $item) {
+                $candidates = array_merge([$item['branch']], $item['aliases'] ?? []);
+                foreach ($candidates as $c) {
+                    $nc = $normalize($c);
+                    if ($nc !== '' && preg_match('/\b' . preg_quote($nc, '/') . '\b/u', $normAddr)) {
+                        $matchedBranch = $item['branch'];
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        // 3. Match barangay name against municipality barangay list
+        if (! $matchedBranch && ($normBrgy !== '' || $normAddr !== '')) {
+            $searchBrgy = $normBrgy !== '' ? $normBrgy : $normAddr;
+            foreach (self::municipalities() as $item) {
+                foreach ($item['barangays'] ?? [] as $brgy) {
+                    $cleanBrgy = $normalize((string) preg_replace('/\s*\(.*?\)\s*/', '', $brgy));
+                    if ($cleanBrgy !== '' && ($searchBrgy === $cleanBrgy || preg_match('/\b' . preg_quote($cleanBrgy, '/') . '\b/u', $searchBrgy))) {
+                        $matchedBranch = $item['branch'];
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        if (! $matchedBranch) {
+            return null;
+        }
+
+        return Hub::where('branch', $matchedBranch)
+            ->orWhere('city', $matchedBranch)
+            ->orWhere('name', "{$matchedBranch} Hub")
+            ->first();
+    }
 }

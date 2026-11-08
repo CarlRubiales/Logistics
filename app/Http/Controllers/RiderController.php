@@ -30,6 +30,9 @@ class RiderController extends Controller
             'email' => ['required', 'email', 'unique:users,email'],
             'password' => ['required', 'min:8', 'confirmed'],
             'phone' => ['required', 'string', 'max:40'],
+            'address' => ['nullable', 'string', 'max:500'],
+            'municipality' => ['nullable', 'string', 'max:120'],
+            'barangay' => ['nullable', 'string', 'max:150'],
             'vehicle_type' => ['required', 'string', Rule::in(['Motorcycle', 'Tricycle', 'motorcycle', 'tricycle'])],
             'license_number' => ['nullable', 'string', 'max:80'],
             'drivers_license' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,webp', 'max:10240'],
@@ -51,26 +54,51 @@ class RiderController extends Controller
             $orCrPath = $request->file('or_cr')->store('rider_documents', 'public');
         }
 
+        \App\Services\LagunaHubProvisioner::ensureProvisioned();
+        $hub = \App\Services\LagunaHubProvisioner::resolveHubFromAddress(
+            $data['municipality'] ?? null,
+            $data['barangay'] ?? null,
+            $data['address'] ?? null
+        );
+        $branchName = $hub?->branch;
+
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
             'role' => 'rider',
+            'branch' => $branchName,
         ]);
 
         $profile = RiderProfile::create([
             'user_id' => $user->id,
+            'hub_id' => $hub?->id,
             'phone' => $data['phone'],
             'vehicle_type' => $vehicleType,
             'license_number' => $data['license_number'] ?? null,
             'license_photo_path' => $licensePath,
             'or_cr_photo_path' => $orCrPath,
-            'registration_status' => 'approved',
-            'approved_at' => now(),
+            'registration_status' => 'pending',
             'availability' => 'offline',
         ]);
 
-        return redirect()->route('login')->with('status', 'Registration complete. You may now log in to access your rider portal.');
+        if ($branchName) {
+            $storeId = \App\Models\Store::where('is_active', true)->value('id');
+            $matchedArea = \App\Services\LagunaHubProvisioner::resolveMatchingArea(
+                $storeId,
+                $branchName,
+                ($data['barangay'] ?? '') . ' ' . ($data['address'] ?? ''),
+                $data['municipality'] ?? $branchName
+            );
+            if ($matchedArea) {
+                RiderAreaAssignment::updateOrCreate(
+                    ['rider_profile_id' => $profile->id, 'destination_area_id' => $matchedArea->id],
+                    ['is_active' => true, 'is_primary' => true]
+                );
+            }
+        }
+
+        return redirect()->route('login')->with('status', 'Registration complete and assigned to ' . ($hub ? $hub->name : 'your local Hub') . '. Please wait for hub approval.');
     }
 
     public function document(RiderProfile $rider, string $type)
@@ -128,8 +156,6 @@ class RiderController extends Controller
 
         if ($request->filled('status')) {
             $query->where('registration_status', $request->string('status'));
-        } else {
-            $query->where('registration_status', '!=', 'archived');
         }
 
         if ($request->filled('area_id')) {
@@ -150,7 +176,7 @@ class RiderController extends Controller
         }
 
         $counts = [
-            'total' => (clone $baseCount)->where('registration_status', '!=', 'archived')->count(),
+            'total' => (clone $baseCount)->count(),
             'approved' => (clone $baseCount)->where('registration_status', 'approved')->count(),
             'online' => (clone $baseCount)->where('registration_status', 'approved')->whereIn('availability', ['online', 'available'])->count(),
             'pending' => (clone $baseCount)->where('registration_status', 'pending')->count(),

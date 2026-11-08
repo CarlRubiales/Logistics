@@ -42,6 +42,10 @@
                     <option value="Tricycle" @selected(old('vehicle_type') === 'Tricycle')>Tricycle</option>
                 </select>
             </label>
+            <label class="full-span">Complete Home Address (Barangay, Municipality/City, Province) *
+                <input name="address" value="{{ old('address') }}" placeholder="e.g. Brgy. Aplaya, Pila, Laguna" required>
+                <small style="color:#8A7B7E;font-size:11px;margin-top:3px;display:block;">Your assigned hub/branch is automatically matched from your barangay and municipality.</small>
+            </label>
             <label class="full-span">License plate number
                 <input name="license_number" value="{{ old('license_number') }}" placeholder="e.g. ABC 1234">
             </label>

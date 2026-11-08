@@ -252,7 +252,13 @@ class RiderApiController extends Controller
             'vehicle_type' => ['nullable', 'string', 'max:80'],
             'license_number' => ['nullable', 'string', 'max:80'],
             'otp' => ['nullable', 'string'],
-            'hub_id' => ['nullable', 'integer', 'exists:hubs,id'],
+            'hub_id' => ['nullable', 'integer'],
+            'province' => ['nullable', 'string', 'max:120'],
+            'municipality' => ['nullable', 'string', 'max:120'],
+            'city' => ['nullable', 'string', 'max:120'],
+            'barangay' => ['nullable', 'string', 'max:150'],
+            'street' => ['nullable', 'string', 'max:500'],
+            'address' => ['nullable', 'string', 'max:500'],
         ]);
 
         $email = strtolower(trim($validated['email']));
@@ -317,9 +323,15 @@ class RiderApiController extends Controller
             }
         }
 
-        // Resolve hub and associated branch for automated assignment
-        $hub = null;
-        if (! empty($validated['hub_id'])) {
+        // Resolve hub and associated branch automatically from rider's address (or explicit hub_id)
+        \App\Services\LagunaHubProvisioner::ensureProvisioned();
+
+        $inputMuni = $validated['municipality'] ?? $validated['city'] ?? null;
+        $inputBrgy = $validated['barangay'] ?? null;
+        $inputAddress = trim(($validated['street'] ?? '') . ' ' . ($validated['address'] ?? '') . ' ' . ($inputBrgy ?? '') . ' ' . ($inputMuni ?? ''));
+
+        $hub = \App\Services\LagunaHubProvisioner::resolveHubFromAddress($inputMuni, $inputBrgy, $inputAddress);
+        if (! $hub && ! empty($validated['hub_id'])) {
             $hub = Hub::find($validated['hub_id']);
         }
 
@@ -358,11 +370,20 @@ class RiderApiController extends Controller
             'availability' => 'offline',
         ]);
 
-        // Automate area assignment based on chosen hub / branch
+        // Automate area assignment based on rider's barangay and chosen hub / branch
         $assignedAreas = [];
         if ($branchName) {
+            $storeId = \App\Models\Store::where('is_active', true)->value('id');
+            $specificBrgyArea = \App\Services\LagunaHubProvisioner::resolveMatchingArea(
+                $storeId,
+                $branchName,
+                $inputBrgy ?: $inputAddress,
+                $inputMuni ?: $branchName
+            );
+
             $matchedAreas = DestinationArea::where('branch', $branchName)
                 ->where('is_active', true)
+                ->orderBy('name')
                 ->get();
 
             if ($matchedAreas->isEmpty()) {
@@ -372,18 +393,31 @@ class RiderApiController extends Controller
                     ->get();
             }
 
-            foreach ($matchedAreas as $index => $area) {
+            if ($specificBrgyArea) {
                 RiderAreaAssignment::updateOrCreate(
                     [
                         'rider_profile_id' => $profile->id,
-                        'destination_area_id' => $area->id,
+                        'destination_area_id' => $specificBrgyArea->id,
                     ],
                     [
                         'is_active' => true,
-                        'is_primary' => ($index === 0),
+                        'is_primary' => true,
                     ]
                 );
-                $assignedAreas[] = $area->name;
+                $assignedAreas[] = $specificBrgyArea->name;
+            } elseif ($matchedAreas->isNotEmpty()) {
+                $firstArea = $matchedAreas->first();
+                RiderAreaAssignment::updateOrCreate(
+                    [
+                        'rider_profile_id' => $profile->id,
+                        'destination_area_id' => $firstArea->id,
+                    ],
+                    [
+                        'is_active' => true,
+                        'is_primary' => true,
+                    ]
+                );
+                $assignedAreas[] = $firstArea->name;
             }
         }
 

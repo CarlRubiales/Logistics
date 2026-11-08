@@ -214,7 +214,7 @@
                     value="{{ $search }}"
                 >
                 <select name="status" class="filter-input-clean">
-                    <option value="">Active Statuses</option>
+                    <option value="">All Statuses</option>
                     <option value="approved" @selected($status === 'approved')>Approved</option>
                     <option value="pending" @selected($status === 'pending')>Pending Approval</option>
                     <option value="disapproved" @selected($status === 'disapproved')>Disapproved</option>
@@ -355,22 +355,26 @@
                                             </td>
 
                                             <td>
-                                                <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                                                    <form method="POST" action="{{ route('riders.archive', $rider) }}" style="display: inline;" onsubmit="return confirm('{{ $rider->registration_status === 'archived' ? 'Restore' : 'Archive' }} rider {{ addslashes($rider->user->name) }}?');">
-                                                        @csrf
-                                                        @method('PATCH')
-                                                        <button type="submit" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #6E5D57; border-color: #EBDDD8; background: #FAF6F0; cursor: pointer;">
-                                                            {{ $rider->registration_status === 'archived' ? 'Restore' : 'Archive' }}
-                                                        </button>
-                                                    </form>
-                                                    <form method="POST" action="{{ route('riders.destroy', $rider) }}" style="display: inline;" onsubmit="return confirm('Permanently delete rider {{ addslashes($rider->user->name) }}? This action cannot be undone.');">
-                                                        @csrf
-                                                        @method('DELETE')
-                                                        <button type="submit" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #A52222; border-color: rgba(165, 34, 34, 0.35); background: #FFF; cursor: pointer;">
-                                                            Delete
-                                                        </button>
-                                                    </form>
-                                                </div>
+                                                @if($rider->registration_status !== 'approved')
+                                                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                                                        <form method="POST" action="{{ route('riders.archive', $rider) }}" style="display: inline;" onsubmit="return confirm('{{ $rider->registration_status === 'archived' ? 'Restore' : 'Archive' }} rider {{ addslashes($rider->user->name) }}?');">
+                                                            @csrf
+                                                            @method('PATCH')
+                                                            <button type="submit" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #6E5D57; border-color: #EBDDD8; background: #FAF6F0; cursor: pointer;">
+                                                                {{ $rider->registration_status === 'archived' ? 'Restore' : 'Archive' }}
+                                                            </button>
+                                                        </form>
+                                                        <form method="POST" action="{{ route('riders.destroy', $rider) }}" style="display: inline;" onsubmit="return confirm('Permanently delete rider {{ addslashes($rider->user->name) }}? This action cannot be undone.');">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #A52222; border-color: rgba(165, 34, 34, 0.35); background: #FFF; cursor: pointer;">
+                                                                Delete
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                @else
+                                                    <span style="font-size: 11px; color: #8A7B7E;">—</span>
+                                                @endif
                                             </td>
                                         </tr>
                                     @endforeach
@@ -453,22 +457,24 @@
                                                     Assign
                                                 </button>
                                             </form>
-                                            <div style="display: flex; gap: 6px; margin-top: 6px;">
-                                                <form method="POST" action="{{ route('riders.archive', $rider) }}" style="display: inline;" onsubmit="return confirm('{{ $rider->registration_status === 'archived' ? 'Restore' : 'Archive' }} rider {{ addslashes($rider->user->name) }}?');">
-                                                    @csrf
-                                                    @method('PATCH')
-                                                    <button type="submit" class="secondary-button" style="padding: 3px 8px; font-size: 10.5px; font-weight: 700; color: #6E5D57; border-color: #EBDDD8; background: #FAF6F0; cursor: pointer;">
-                                                        {{ $rider->registration_status === 'archived' ? 'Restore' : 'Archive' }}
-                                                    </button>
-                                                </form>
-                                                <form method="POST" action="{{ route('riders.destroy', $rider) }}" style="display: inline;" onsubmit="return confirm('Permanently delete rider {{ addslashes($rider->user->name) }}? This action cannot be undone.');">
-                                                    @csrf
-                                                    @method('DELETE')
-                                                    <button type="submit" class="secondary-button" style="padding: 3px 8px; font-size: 10.5px; font-weight: 700; color: #A52222; border-color: rgba(165, 34, 34, 0.35); background: #FFF; cursor: pointer;">
-                                                        Delete
-                                                    </button>
-                                                </form>
-                                            </div>
+                                            @if($rider->registration_status !== 'approved')
+                                                <div style="display: flex; gap: 6px; margin-top: 6px;">
+                                                    <form method="POST" action="{{ route('riders.archive', $rider) }}" style="display: inline;" onsubmit="return confirm('{{ $rider->registration_status === 'archived' ? 'Restore' : 'Archive' }} rider {{ addslashes($rider->user->name) }}?');">
+                                                        @csrf
+                                                        @method('PATCH')
+                                                        <button type="submit" class="secondary-button" style="padding: 3px 8px; font-size: 10.5px; font-weight: 700; color: #6E5D57; border-color: #EBDDD8; background: #FAF6F0; cursor: pointer;">
+                                                            {{ $rider->registration_status === 'archived' ? 'Restore' : 'Archive' }}
+                                                        </button>
+                                                    </form>
+                                                    <form method="POST" action="{{ route('riders.destroy', $rider) }}" style="display: inline;" onsubmit="return confirm('Permanently delete rider {{ addslashes($rider->user->name) }}? This action cannot be undone.');">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit" class="secondary-button" style="padding: 3px 8px; font-size: 10.5px; font-weight: 700; color: #A52222; border-color: rgba(165, 34, 34, 0.35); background: #FFF; cursor: pointer;">
+                                                            Delete
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            @endif
                                         </td>
                                     </tr>
                                 @endforeach

@@ -82,7 +82,7 @@
                         <input name="search" value="{{ request('search') }}" placeholder="Search name, email, phone..." style="min-width: 200px; height: 36px; padding: 0 10px; font-size: 12px; border: 1px solid #EBDDD8; border-radius: 8px; background: #FAF6F0;">
                         
                         <select name="status" style="height: 36px; padding: 0 8px; font-size: 12px; border: 1px solid #EBDDD8; border-radius: 8px; background: #FAF6F0;">
-                            <option value="">Active Statuses</option>
+                            <option value="">All Statuses</option>
                             <option value="approved" @selected(request('status') === 'approved')>Approved</option>
                             <option value="pending" @selected(request('status') === 'pending')>Pending</option>
                             <option value="disapproved" @selected(request('status') === 'disapproved')>Disapproved</option>
@@ -274,25 +274,26 @@
                                                 </form>
                                             @endif
 
-                                            <!-- Archive / Unarchive button -->
-                                            @if($rider->registration_status !== 'archived')
-                                                <form method="POST" action="{{ route('riders.archive', $rider) }}" style="display: inline;" onsubmit="return confirm('Archive rider {{ addslashes($rider->user->name) }}?');">
+                                            <!-- Archive and Delete buttons ONLY shown for riders who are NOT approved -->
+                                            @if($rider->registration_status !== 'approved')
+                                                @if($rider->registration_status !== 'archived')
+                                                    <form method="POST" action="{{ route('riders.archive', $rider) }}" style="display: inline;" onsubmit="return confirm('Archive rider {{ addslashes($rider->user->name) }}?');">
+                                                        @csrf
+                                                        @method('PATCH')
+                                                        <button type="submit" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #6E5D57; border-color: #EBDDD8; background: #FAF6F0; cursor: pointer;" title="Archive rider">
+                                                            Archive
+                                                        </button>
+                                                    </form>
+                                                @endif
+
+                                                <form method="POST" action="{{ route('riders.destroy', $rider) }}" style="display: inline;" onsubmit="return confirm('Permanently delete rider {{ addslashes($rider->user->name) }}? This action cannot be undone.');">
                                                     @csrf
-                                                    @method('PATCH')
-                                                    <button type="submit" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #6E5D57; border-color: #EBDDD8; background: #FAF6F0; cursor: pointer;" title="Archive rider">
-                                                        Archive
+                                                    @method('DELETE')
+                                                    <button type="submit" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #A52222; border-color: rgba(165, 34, 34, 0.35); background: #FFF; cursor: pointer;" title="Delete rider permanently">
+                                                        Delete
                                                     </button>
                                                 </form>
                                             @endif
-
-                                            <!-- Delete button -->
-                                            <form method="POST" action="{{ route('riders.destroy', $rider) }}" style="display: inline;" onsubmit="return confirm('Permanently delete rider {{ addslashes($rider->user->name) }}? This action cannot be undone.');">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" class="secondary-button" style="padding: 4px 9px; font-size: 11px; font-weight: 700; color: #A52222; border-color: rgba(165, 34, 34, 0.35); background: #FFF; cursor: pointer;" title="Delete rider permanently">
-                                                    Delete
-                                                </button>
-                                            </form>
                                         </div>
                                     </td>
                                 </tr>
