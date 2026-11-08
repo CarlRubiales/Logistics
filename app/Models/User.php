@@ -32,6 +32,11 @@ class User extends Authenticatable
             return $this->branch;
         }
         $nameOrEmail = strtolower(($this->name ?? '') . ' ' . ($this->email ?? ''));
+        foreach (\App\Services\LagunaHubProvisioner::municipalities() as $muni) {
+            if (str_contains($nameOrEmail, $muni['slug']) || str_contains($nameOrEmail, strtolower($muni['branch']))) {
+                return $muni['branch'];
+            }
+        }
         if (str_contains($nameOrEmail, 'pila')) {
             return 'Pila';
         }

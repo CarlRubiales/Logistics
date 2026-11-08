@@ -24,6 +24,7 @@ class AdminDashboardController extends Controller
     public function index(Request $request): View
     {
         abort_unless($request->user()->isMasterAdmin(), 403, 'Access denied. Master Logistics Administrator privileges required.');
+        \App\Services\LagunaHubProvisioner::ensureProvisioned();
 
         // Timezone: Philippine Time (Asia/Manila, UTC+8)
         $tz = 'Asia/Manila';
@@ -119,6 +120,7 @@ class AdminDashboardController extends Controller
     public function branches(Request $request): View
     {
         abort_unless($request->user()->isMasterAdmin(), 403, 'Access denied. Master Administrator privileges required.');
+        \App\Services\LagunaHubProvisioner::ensureProvisioned();
 
         $tz = 'Asia/Manila';
         $todayPht = Carbon::now($tz)->toDateString();
@@ -310,6 +312,7 @@ class AdminDashboardController extends Controller
     public function accounts(Request $request): View
     {
         abort_unless($request->user()->isMasterAdmin(), 403, 'Access denied. Master Administrator privileges required.');
+        \App\Services\LagunaHubProvisioner::ensureProvisioned();
 
         $branchAccounts = User::whereIn('role', ['super_admin', 'admin', 'operations_manager', 'warehouse_staff', 'support'])
             ->orderByRaw("FIELD(role, 'super_admin', 'admin', 'operations_manager', 'warehouse_staff', 'support')")

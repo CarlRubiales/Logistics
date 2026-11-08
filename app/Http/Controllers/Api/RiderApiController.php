@@ -113,6 +113,8 @@ class RiderApiController extends Controller
      */
     public function hubs(): JsonResponse
     {
+        \App\Services\LagunaHubProvisioner::ensureProvisioned();
+
         $hubs = Hub::where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name', 'branch', 'address', 'city']);
