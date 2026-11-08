@@ -796,6 +796,63 @@ class LagunaHubProvisioner
     }
 
     /**
+     * Determine the customer's true destination hub/branch from the parcel's city, address_line, and area.
+     */
+    public static function resolveDestinationBranch(?string $city, ?string $addressLine, ?DestinationArea $area = null, ?string $scanningBranch = null): ?string
+    {
+        self::ensureProvisioned();
+
+        $hubFromAddress = $addressLine ? self::resolveHubFromAddress(null, null, $addressLine) : null;
+        $hubFromCity = $city ? self::resolveHubFromAddress($city, null, null) : null;
+
+        // If the address line explicitly names another Laguna municipality (e.g. "Pila") while city defaulted to the scanning hub (e.g. "Majayjay")
+        if (
+            $hubFromAddress?->branch
+            && $scanningBranch
+            && strcasecmp(trim($hubFromAddress->branch), trim($scanningBranch)) !== 0
+            && (! $hubFromCity?->branch || strcasecmp(trim($hubFromCity->branch), trim($scanningBranch)) === 0)
+        ) {
+            return $hubFromAddress->branch;
+        }
+
+        if ($hubFromCity?->branch) {
+            return $hubFromCity->branch;
+        }
+
+        if ($hubFromAddress?->branch) {
+            return $hubFromAddress->branch;
+        }
+
+        if ($area?->branch) {
+            return $area->branch;
+        }
+
+        return $city ?: $scanningBranch;
+    }
+
+    /**
+     * Format the Logistics Linehaul Truck details for a Hub-to-Hub transfer route.
+     */
+    public static function formatLinehaulTruck(string $originBranch, string $destinationBranch): array
+    {
+        $originClean = trim($originBranch) ?: 'Origin';
+        $destClean = trim($destinationBranch) ?: 'Destination';
+        $originCode = strtoupper(substr((string) preg_replace('/[^A-Za-z]/', '', $originClean), 0, 3)) ?: 'HUB';
+        $destCode = strtoupper(substr((string) preg_replace('/[^A-Za-z]/', '', $destClean), 0, 3)) ?: 'DST';
+        $truckCode = "TRK-{$originCode}-{$destCode}";
+        $truckName = "{$originClean} Hub Linehaul Truck";
+
+        return [
+            'code' => $truckCode,
+            'name' => $truckName,
+            'display' => "{$truckName} ({$truckCode})",
+            'route' => "{$originClean} Hub → {$destClean} Hub",
+            'origin_branch' => $originClean,
+            'destination_branch' => $destClean,
+        ];
+    }
+
+    /**
      * Match an incoming login email & password against any Laguna municipality hub,
      * supporting spaces, ñ, and Sta./Santa variations, and return the authenticated User if valid.
      */

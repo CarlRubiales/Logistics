@@ -311,15 +311,29 @@ class ScannerApiController extends Controller
             $effectiveCity = $waybill['city'] ?? $parcel->city ?: $branch;
             $effectivePostal = $waybill['postal_code'] ?? $parcel->postal_code;
 
+            $destinationBranch = \App\Services\LagunaHubProvisioner::resolveDestinationBranch(
+                $effectiveCity,
+                $effectiveAddress,
+                $parcel->area,
+                $branch
+            );
+
             $area = \App\Services\LagunaHubProvisioner::resolveMatchingArea(
                 $parcel->store_id ?? $storeId,
-                $branch ?: $effectiveCity,
+                $destinationBranch ?: ($branch ?: $effectiveCity),
                 $effectiveAddress,
-                $effectiveCity,
+                $destinationBranch ?: $effectiveCity,
                 $effectivePostal
             ) ?: $parcel->area;
 
-            if ($branch) {
+            if ($area?->branch && ! $destinationBranch) {
+                $destinationBranch = $area->branch;
+            }
+
+            if ($destinationBranch) {
+                $branchUpdate['branch'] = $destinationBranch;
+                $branchUpdate['city'] = $destinationBranch;
+            } elseif ($branch) {
                 $branchUpdate['branch'] = $branch;
                 if (empty($parcel->city)) {
                     $branchUpdate['city'] = $effectiveCity;
@@ -415,16 +429,27 @@ class ScannerApiController extends Controller
                 ]);
             }
 
-            $isHubTransferArrival = $branch
-                && ! empty($parcel->branch)
-                && mb_strtolower(trim($parcel->branch)) !== mb_strtolower(trim($branch));
+            $needsLinehaulToAnotherHub = $branch
+                && $destinationBranch
+                && strcasecmp(trim($branch), trim($destinationBranch)) !== 0;
 
-            $pendingRiderAutoAssign = in_array($oldStatus, ['scanned', 'sorted'], true)
+            $isHubTransferArrival = $branch
+                && $destinationBranch
+                && strcasecmp(trim($branch), trim($destinationBranch)) === 0
+                && (($parcel->metadata['transfer_state'] ?? '') === 'in_transit_to_hub'
+                    || (! empty($parcel->branch) && strcasecmp(trim($parcel->branch), trim($branch)) !== 0));
+
+            $pendingRiderAutoAssign = ! $needsLinehaulToAnotherHub
+                && in_array($oldStatus, ['scanned', 'sorted'], true)
                 && empty($parcel->assigned_rider_id)
-                && \App\Services\LagunaHubProvisioner::resolveRiderForArea($area, $branch ?: $parcel->branch) !== null;
+                && \App\Services\LagunaHubProvisioner::resolveRiderForArea($area, $destinationBranch ?: $branch) !== null;
+
+            $pendingLinehaulDispatch = $needsLinehaulToAnotherHub
+                && ($parcel->metadata['transfer_state'] ?? '') !== 'in_transit_to_hub';
 
             $isAlreadyScanned = ! $isHubTransferArrival
                 && ! $pendingRiderAutoAssign
+                && ! $pendingLinehaulDispatch
                 && ($parcel->metadata['transfer_state'] ?? '') !== 'in_transit_to_hub'
                 && in_array($oldStatus, ['scanned', 'sorted', 'assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered']);
 
@@ -444,6 +469,74 @@ class ScannerApiController extends Controller
                 ]);
             }
 
+            if ($needsLinehaulToAnotherHub) {
+                $truck = \App\Services\LagunaHubProvisioner::formatLinehaulTruck($branch, $destinationBranch);
+                $existingMeta = is_array($parcel->metadata) ? $parcel->metadata : [];
+                $history = $existingMeta['hub_transfers'] ?? [];
+                $history[] = [
+                    'from_hub' => "{$branch} Hub",
+                    'to_hub' => "{$destinationBranch} Hub",
+                    'truck' => $truck['display'],
+                    'dispatched_at' => now()->toIso8601String(),
+                    'dispatched_by' => $operatorName,
+                ];
+
+                $branchUpdate['metadata'] = array_merge($existingMeta, $branchUpdate['metadata'] ?? [], [
+                    'is_hub_transfer' => true,
+                    'transfer_state' => 'in_transit_to_hub',
+                    'origin_branch' => $branch,
+                    'destination_branch' => $destinationBranch,
+                    'linehaul_truck' => $truck['display'],
+                    'linehaul_truck_code' => $truck['code'],
+                    'linehaul_route' => $truck['route'],
+                    'hub_transfers' => $history,
+                ]);
+                $branchUpdate['assigned_rider_id'] = null;
+                $newStatus = 'in_transit';
+
+                $updateData = array_merge($branchUpdate, [
+                    'status' => $newStatus,
+                    'scanned_at' => now(),
+                    'barcode' => $parcel->barcode ?: $code,
+                ]);
+                $parcel->update($updateData);
+
+                ParcelScan::create([
+                    'parcel_id' => $parcel->id,
+                    'user_id' => $userId,
+                    'scan_type' => 'hub_transfer_dispatch',
+                    'barcode' => $code,
+                    'result' => 'success',
+                    'note' => "Scanned at {$branch} Hub by {$operatorName} and automatically assigned to {$truck['display']} for Hub-to-Hub delivery to {$destinationBranch} Hub.",
+                    'scanned_at' => now(),
+                ]);
+
+                if ($parcel->shipment) {
+                    $parcel->shipment->trackingEvents()->create([
+                        'status' => 'in_transit',
+                        'label' => "In Transit on {$truck['name']} to {$destinationBranch} Hub",
+                        'description' => "Parcel scanned at {$branch} Hub and automatically loaded onto {$truck['display']} bound for {$destinationBranch} Hub.",
+                        'location' => "{$branch} Hub → {$destinationBranch} Hub, Laguna",
+                        'occurred_at' => now(),
+                        'source' => 'scanner_api',
+                    ]);
+                }
+
+                app(ParcelShipmentSyncService::class)->sync($parcel->fresh());
+                $this->notifyRemoteWaybillStatus($code, $newStatus, $branch, $operatorName);
+                $this->mirrorScanToCloudLogistics($request, $code, $branch, $operatorName, $waybill);
+
+                return response()->json([
+                    'status' => 'success',
+                    'result_type' => 'linehaul_dispatched',
+                    'is_already_scanned' => false,
+                    'message' => "Parcel {$parcel->parcel_number} is for {$destinationBranch} Hub" . ($area ? " ({$area->name})" : '') . "! Automatically assigned to 🚚 {$truck['display']} to deliver to {$destinationBranch} Hub.",
+                    'parcel' => $this->transformParcel($parcel->fresh(['order.items', 'shipment', 'area', 'rider.user'])),
+                    'stage' => $newStatus,
+                    'ready_for_sorting' => false,
+                ]);
+            }
+
             $newStatus = 'scanned';
             if ($isHubTransferArrival || ($parcel->metadata['transfer_state'] ?? '') === 'in_transit_to_hub') {
                 $existingMeta = is_array($parcel->metadata) ? $parcel->metadata : [];
@@ -452,14 +545,14 @@ class ScannerApiController extends Controller
                     'is_hub_transfer' => true,
                     'transfer_state' => 'received_at_hub',
                     'origin_branch' => $originBranch,
-                    'destination_branch' => $branch ?: $parcel->branch,
+                    'destination_branch' => $destinationBranch ?: ($branch ?: $parcel->branch),
                     'received_at_hub_time' => now()->toIso8601String(),
                 ]);
                 $branchUpdate['assigned_rider_id'] = null;
             }
 
-            // Auto-assign to the approved rider who covers the parcel's Barangay delivery area
-            $autoRider = \App\Services\LagunaHubProvisioner::resolveRiderForArea($area, $branch ?: $parcel->branch);
+            // Auto-assign to the approved rider who covers the parcel's Barangay delivery area in the destination hub
+            $autoRider = \App\Services\LagunaHubProvisioner::resolveRiderForArea($area, $destinationBranch ?: ($branch ?: $parcel->branch));
             if ($autoRider && $area) {
                 $newStatus = 'assigned';
                 $branchUpdate['assigned_rider_id'] = $autoRider->id;
@@ -503,12 +596,20 @@ class ScannerApiController extends Controller
         }
 
         // 2. If parcel does NOT exist yet, auto-register as new intake parcel using Waybill details (or fallback)
-        $city = $waybill['city'] ?? $validated['city'] ?? $branch ?? 'Santa Cruz';
+        $rawCity = $waybill['city'] ?? $validated['city'] ?? $branch ?? 'Santa Cruz';
         $province = $waybill['province'] ?? $validated['province'] ?? 'Laguna';
         $recipientName = $waybill['recipient_name'] ?? $validated['recipient_name'] ?? 'Intake Package';
         $recipientPhone = $this->normalizePhone($waybill['recipient_phone'] ?? $validated['recipient_phone'] ?? '09170000000');
-        $addressLine = $waybill['address_line'] ?? $validated['address_line'] ?? "Delivery destination, {$city}, {$province}";
+        $addressLine = $waybill['address_line'] ?? $validated['address_line'] ?? "Delivery destination, {$rawCity}, {$province}";
         $postalCode = $waybill['postal_code'] ?? $validated['postal_code'] ?? ($branch === 'Pila' ? '4010' : '4009');
+
+        $destinationBranch = \App\Services\LagunaHubProvisioner::resolveDestinationBranch(
+            $rawCity,
+            $addressLine,
+            null,
+            $branch
+        ) ?: $rawCity;
+        $city = $destinationBranch;
 
         $metadata = [
             'source' => $waybill ? 'lumora_waybill' : 'scanner_intake',
@@ -541,13 +642,84 @@ class ScannerApiController extends Controller
 
         $area = \App\Services\LagunaHubProvisioner::resolveMatchingArea(
             $storeId,
-            $branch ?: $city,
+            $destinationBranch ?: ($branch ?: $city),
             $addressLine,
-            $city,
+            $destinationBranch ?: $city,
             $postalCode
         );
 
-        $autoRider = \App\Services\LagunaHubProvisioner::resolveRiderForArea($area, $branch ?: $city);
+        $needsLinehaulToAnotherHub = $branch
+            && $destinationBranch
+            && strcasecmp(trim($branch), trim($destinationBranch)) !== 0;
+
+        if ($needsLinehaulToAnotherHub) {
+            $truck = \App\Services\LagunaHubProvisioner::formatLinehaulTruck($branch, $destinationBranch);
+            $metadata = array_merge($metadata, [
+                'is_hub_transfer' => true,
+                'transfer_state' => 'in_transit_to_hub',
+                'origin_branch' => $branch,
+                'destination_branch' => $destinationBranch,
+                'linehaul_truck' => $truck['display'],
+                'linehaul_truck_code' => $truck['code'],
+                'linehaul_route' => $truck['route'],
+                'hub_transfers' => [
+                    [
+                        'from_hub' => "{$branch} Hub",
+                        'to_hub' => "{$destinationBranch} Hub",
+                        'truck' => $truck['display'],
+                        'dispatched_at' => now()->toIso8601String(),
+                        'dispatched_by' => $operatorName,
+                    ],
+                ],
+            ]);
+
+            $newParcel->update([
+                'status' => 'in_transit',
+                'scanned_at' => now(),
+                'assigned_rider_id' => null,
+                'branch' => $destinationBranch,
+                'city' => $destinationBranch,
+                'destination_area_id' => $area?->id,
+                'metadata' => $metadata,
+            ]);
+
+            ParcelScan::create([
+                'parcel_id' => $newParcel->id,
+                'user_id' => $userId,
+                'scan_type' => 'hub_transfer_dispatch',
+                'barcode' => $code,
+                'result' => 'success',
+                'note' => ($waybill ? "Waybill Order #{$waybill['order_id']} ({$recipientName}) " : "New intake ")
+                    . "scanned at {$branch} Hub by {$operatorName} and automatically assigned to {$truck['display']} for Hub-to-Hub delivery to {$destinationBranch} Hub.",
+                'scanned_at' => now(),
+            ]);
+
+            if ($newParcel->shipment) {
+                $newParcel->shipment->trackingEvents()->create([
+                    'status' => 'in_transit',
+                    'label' => "In Transit on {$truck['name']} to {$destinationBranch} Hub",
+                    'description' => "Parcel scanned at {$branch} Hub and automatically loaded onto {$truck['display']} bound for {$destinationBranch} Hub.",
+                    'location' => "{$branch} Hub → {$destinationBranch} Hub, Laguna",
+                    'occurred_at' => now(),
+                    'source' => 'scanner_api',
+                ]);
+            }
+
+            app(ParcelShipmentSyncService::class)->sync($newParcel->fresh());
+            $this->notifyRemoteWaybillStatus($code, 'in_transit', $branch, $operatorName);
+            $this->mirrorScanToCloudLogistics($request, $code, $branch, $operatorName, $waybill);
+
+            return response()->json([
+                'status' => 'success',
+                'result_type' => 'linehaul_dispatched',
+                'message' => "Parcel {$newParcel->parcel_number} is for {$destinationBranch} Hub" . ($area ? " ({$area->name})" : '') . "! Automatically assigned to 🚚 {$truck['display']} to deliver to {$destinationBranch} Hub.",
+                'parcel' => $this->transformParcel($newParcel->fresh(['order.items', 'area', 'rider.user', 'shipment'])),
+                'stage' => 'in_transit',
+                'ready_for_sorting' => false,
+            ]);
+        }
+
+        $autoRider = \App\Services\LagunaHubProvisioner::resolveRiderForArea($area, $destinationBranch ?: ($branch ?: $city));
         $initialStatus = ($autoRider && $area) ? 'assigned' : 'scanned';
 
         $newParcel->update([
@@ -556,8 +728,8 @@ class ScannerApiController extends Controller
             'sorted_at' => ($autoRider && $area) ? now() : null,
             'assigned_at' => ($autoRider && $area) ? now() : null,
             'assigned_rider_id' => $autoRider?->id,
-            'branch' => $branch ?: $city,
-            'city' => $city,
+            'branch' => $destinationBranch ?: ($branch ?: $city),
+            'city' => $destinationBranch ?: $city,
             'destination_area_id' => $area?->id,
             'metadata' => $metadata,
         ]);
@@ -1058,7 +1230,11 @@ class ScannerApiController extends Controller
             'sort_bin' => $parcel->sort_bin ?: 'Pending Sorting',
             'area_name' => $parcel->area?->name ?: ($branchName . ' Hub Zone'),
             'area_province' => $parcel->area?->province ?: $parcel->province,
-            'assigned_rider' => $parcel->rider?->user?->name ?: 'Not Assigned',
+            'assigned_rider' => $parcel->rider?->user?->name
+                ?: (($parcel->metadata['transfer_state'] ?? '') === 'in_transit_to_hub'
+                    ? ('🚚 ' . ($parcel->metadata['linehaul_truck'] ?? (($parcel->metadata['origin_branch'] ?? 'Origin') . ' Hub Linehaul Truck')))
+                    : 'Not Assigned'),
+            'linehaul_truck' => $parcel->metadata['linehaul_truck'] ?? null,
             'branch' => $branchName,
             'hub_name' => $branchName . ' Hub',
             'shop_name' => $parcel->metadata['shop_name'] ?? 'Lumora Marketplace',
@@ -1126,11 +1302,13 @@ class ScannerApiController extends Controller
             $parcel->postal_code
         );
 
+        $truck = \App\Services\LagunaHubProvisioner::formatLinehaulTruck($originBranch, $targetBranch);
         $existingMeta = is_array($parcel->metadata) ? $parcel->metadata : [];
         $history = $existingMeta['hub_transfers'] ?? [];
         $history[] = [
             'from_hub' => "{$originBranch} Hub",
             'to_hub' => "{$targetBranch} Hub",
+            'truck' => $truck['display'],
             'dispatched_at' => now()->toIso8601String(),
             'dispatched_by' => $user?->name ?? 'Scanner Operator',
         ];
@@ -1140,12 +1318,17 @@ class ScannerApiController extends Controller
             'transfer_state' => 'in_transit_to_hub',
             'origin_branch' => $originBranch,
             'destination_branch' => $targetBranch,
+            'linehaul_truck' => $truck['display'],
+            'linehaul_truck_code' => $truck['code'],
+            'linehaul_route' => $truck['route'],
             'hub_transfers' => $history,
         ]);
 
         $parcel->update([
             'branch' => $targetBranch,
+            'city' => $targetBranch,
             'destination_area_id' => $targetArea?->id ?? $parcel->destination_area_id,
+            'assigned_rider_id' => null,
             'status' => 'in_transit',
             'metadata' => $newMeta,
         ]);
@@ -1156,15 +1339,15 @@ class ScannerApiController extends Controller
             'scan_type' => 'hub_transfer_dispatch',
             'barcode' => $parcel->barcode ?: $code,
             'result' => 'success',
-            'note' => $validated['note'] ?? "Dispatched for Hub-to-Hub transfer from {$originBranch} Hub to {$targetBranch} Hub",
+            'note' => $validated['note'] ?? "Dispatched on {$truck['display']} from {$originBranch} Hub to {$targetBranch} Hub",
             'scanned_at' => now(),
         ]);
 
         if ($parcel->shipment) {
             $parcel->shipment->trackingEvents()->create([
                 'status' => 'in_transit',
-                'label' => "In Transit to {$targetBranch} Hub",
-                'description' => "Parcel departed {$originBranch} Hub and is in transit to {$targetBranch} Hub.",
+                'label' => "In Transit on {$truck['name']} to {$targetBranch} Hub",
+                'description' => "Parcel departed {$originBranch} Hub on {$truck['display']} and is in transit to {$targetBranch} Hub.",
                 'location' => "{$originBranch} Hub → {$targetBranch} Hub, Laguna",
                 'occurred_at' => now(),
                 'source' => 'scanner_api',
