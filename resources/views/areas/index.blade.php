@@ -174,6 +174,13 @@
                                                     {{ $area->is_active ? 'Pause' : 'Activate' }}
                                                 </button>
                                             </form>
+                                            <form method="POST" action="{{ route('areas.destroy', $area) }}" style="display:inline;" onsubmit="return confirm('Delete delivery area {{ addslashes($area->name) }}?');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button class="text-button" type="submit" style="color: #A52222; font-weight: 600;">
+                                                    Delete
+                                                </button>
+                                            </form>
                                         </div>
                                     </td>
                                 </tr>

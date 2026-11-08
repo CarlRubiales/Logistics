@@ -445,11 +445,12 @@ class LagunaHubProvisioner
     }
 
     /**
-     * Ensure all 30 Laguna hubs, branch admin accounts, and all 681 barangay delivery areas exist in the database.
+     * Ensure all 30 Laguna hubs, branch admin accounts, and all 681 barangay delivery areas exist in the database,
+     * and remove legacy non-barangay test areas (SCN-*, SCS-*, BBN-*, BBS-*, Area A/B).
      */
     public static function ensureProvisioned(bool $force = false): void
     {
-        $cacheKey = 'laguna_30_hubs_and_barangays_v2';
+        $cacheKey = 'laguna_30_hubs_and_barangays_v3';
         if (! $force && Cache::has($cacheKey)) {
             return;
         }
@@ -555,38 +556,8 @@ class LagunaHubProvisioner
                     }
                 }
 
-                // 3. Provision Main Hub DestinationArea + All Barangays of the Municipality
+                // 3. Provision All Barangays of the Municipality as Delivery Areas
                 if ($hasAreasTable && $storeId) {
-                    $area = DestinationArea::where('code', $code)->first();
-
-                    $hubCities = array_values(array_unique(array_merge([$branch], $barangays)));
-                    $hubCoverage = 'All ' . count($barangays) . " barangays of {$branch}, Laguna";
-
-                    if (! $area) {
-                        $areaUpsertRows[] = [
-                            'store_id' => $storeId,
-                            'name' => $code,
-                            'branch' => $branch,
-                            'province' => 'Laguna',
-                            'code' => $code,
-                            'cities' => json_encode($hubCities),
-                            'postal_codes' => json_encode([$postalCode]),
-                            'coverage_rules' => $hubCoverage,
-                            'is_active' => true,
-                            'created_at' => $now,
-                            'updated_at' => $now,
-                        ];
-                    } else {
-                        $area->update([
-                            'branch' => $branch,
-                            'province' => 'Laguna',
-                            'cities' => $hubCities,
-                            'postal_codes' => [$postalCode],
-                            'coverage_rules' => $area->coverage_rules ?: $hubCoverage,
-                            'is_active' => true,
-                        ]);
-                    }
-
                     foreach ($barangays as $idx => $brgy) {
                         $brgyCode = 'BRGY-' . strtoupper($slug) . '-' . str_pad((string) ($idx + 1), 2, '0', STR_PAD_LEFT);
                         $cleanBrgy = trim((string) preg_replace('/\s*\(.*?\)\s*/', '', $brgy));
@@ -622,6 +593,48 @@ class LagunaHubProvisioner
                         ['store_id', 'code'],
                         ['name', 'branch', 'province', 'cities', 'postal_codes', 'coverage_rules', 'is_active', 'updated_at']
                     );
+                }
+
+                // Clean up legacy non-barangay delivery areas (SCN-*, SCS-*, BBN-*, BBS-*, Area A/B)
+                $legacyAreas = DestinationArea::where(function ($q) {
+                    $q->where('code', 'like', 'SCN-%')
+                      ->orWhere('code', 'like', 'LAG%')
+                      ->orWhere('name', 'like', 'SCN-%')
+                      ->orWhere('name', 'like', 'SCS-%')
+                      ->orWhere('name', 'like', 'BBN-%')
+                      ->orWhere('name', 'like', 'BBS-%')
+                      ->orWhere('name', 'like', 'Area %');
+                })->where('code', 'not like', 'BRGY-%')->get();
+
+                foreach ($legacyAreas as $legacy) {
+                    $replacement = DestinationArea::where('branch', $legacy->branch ?: 'Pila')
+                        ->where('code', 'like', 'BRGY-%')
+                        ->orderBy('name')
+                        ->first();
+
+                    if ($replacement) {
+                        DB::table('parcels')
+                            ->where('destination_area_id', $legacy->id)
+                            ->update(['destination_area_id' => $replacement->id]);
+
+                        $existingRiderIds = DB::table('rider_area_assignments')
+                            ->where('destination_area_id', $replacement->id)
+                            ->pluck('rider_profile_id')
+                            ->all();
+
+                        if (! empty($existingRiderIds)) {
+                            DB::table('rider_area_assignments')
+                                ->where('destination_area_id', $legacy->id)
+                                ->whereIn('rider_profile_id', $existingRiderIds)
+                                ->delete();
+                        }
+
+                        DB::table('rider_area_assignments')
+                            ->where('destination_area_id', $legacy->id)
+                            ->update(['destination_area_id' => $replacement->id]);
+                    }
+
+                    $legacy->delete();
                 }
             }
 

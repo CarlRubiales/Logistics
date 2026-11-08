@@ -88,4 +88,24 @@ class AreasController extends Controller
         $status = $area->is_active ? 'activated' : 'paused';
         return back()->with('success', "Destination area '{$area->name}' {$status}.");
     }
+
+    public function destroy(DestinationArea $area)
+    {
+        $name = $area->name;
+        $replacement = DestinationArea::where('branch', $area->branch)
+            ->where('id', '!=', $area->id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->first();
+
+        if ($replacement) {
+            DB::table('parcels')
+                ->where('destination_area_id', $area->id)
+                ->update(['destination_area_id' => $replacement->id]);
+        }
+
+        $area->delete();
+
+        return back()->with('success', "Delivery area '{$name}' deleted successfully.");
+    }
 }

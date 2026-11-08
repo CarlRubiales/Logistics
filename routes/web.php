@@ -76,6 +76,7 @@ Route::middleware(['auth', 'logistics'])->group(function () {
     Route::post('/areas', [AreasController::class, 'store'])->name('areas.store');
     Route::put('/areas/{area}', [AreasController::class, 'update'])->name('areas.update');
     Route::patch('/areas/{area}/toggle', [AreasController::class, 'toggle'])->name('areas.toggle');
+    Route::delete('/areas/{area}', [AreasController::class, 'destroy'])->name('areas.destroy');
     Route::get('/riders', [RiderController::class, 'index'])->name('riders.index');
     Route::post('/riders/{rider}/approval', [RiderController::class, 'approve'])->name('riders.approval');
     Route::post('/riders/{rider}/areas', [RiderController::class, 'assignArea'])->name('riders.areas');
