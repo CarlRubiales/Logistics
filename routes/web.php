@@ -59,7 +59,10 @@ Route::middleware(['auth', 'logistics'])->group(function () {
     Route::post('/inventory', [InventoryController::class, 'store'])->name('inventory.store');
     Route::patch('/inventory/{inventoryItem}', [InventoryController::class, 'update'])->name('inventory.update');
     Route::get('/exceptions', [ExceptionsController::class, 'index'])->name('exceptions.index');
+    Route::get('/returns', [ExceptionsController::class, 'index'])->name('returns.index');
     Route::post('/exceptions/{shipment}/resolve', [ExceptionsController::class, 'resolve'])->name('exceptions.resolve');
+    Route::post('/exceptions/parcels/{parcel}/resolve', [ExceptionsController::class, 'resolveParcel'])->name('exceptions.resolve-parcel');
+    Route::get('/returns/media/{parcel}/{type}', [ExceptionsController::class, 'media'])->name('returns.media');
     Route::get('/locations', [LocationsController::class, 'index'])->name('locations.index');
     Route::post('/locations', [LocationsController::class, 'store'])->name('locations.store');
     Route::patch('/locations/{location}/toggle', [LocationsController::class, 'toggle'])->name('locations.toggle');

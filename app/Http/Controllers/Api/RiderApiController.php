@@ -755,19 +755,11 @@ class RiderApiController extends Controller
         if ($request->filled('longitude')) {
             $metadata['longitude'] = (float) $request->input('longitude');
         }
-        if ($request->filled('failureReason') || $request->filled('failure_reason')) {
-            $metadata['failure_reason'] = $request->input('failureReason') ?? $request->input('failure_reason');
-        }
-        if ($request->filled('failureNotes') || $request->filled('failure_notes')) {
-            $metadata['failure_notes'] = $request->input('failureNotes') ?? $request->input('failure_notes');
-        }
-        if ($request->filled('proofUrl') || $request->filled('proof_url')) {
-            $metadata['proof_url'] = $request->input('proofUrl') ?? $request->input('proof_url');
-        }
         if ($request->filled('codAmount') || $request->filled('cod_amount')) {
             $metadata['cod_amount'] = (float) ($request->input('codAmount') ?? $request->input('cod_amount'));
             $metadata['is_cod'] = true;
         }
+        $metadata = $this->extractAndStoreReturnMedia($request, $parcel, $metadata, $dbStatus);
         $metadata['last_updated_at'] = $request->input('timestamp', now()->toIso8601String());
 
         $parcel->update([
@@ -1049,19 +1041,11 @@ class RiderApiController extends Controller
         if ($request->filled('longitude')) {
             $metadata['longitude'] = (float) $request->input('longitude');
         }
-        if ($request->filled('failureReason') || $request->filled('failure_reason')) {
-            $metadata['failure_reason'] = $request->input('failureReason') ?? $request->input('failure_reason');
-        }
-        if ($request->filled('failureNotes') || $request->filled('failure_notes')) {
-            $metadata['failure_notes'] = $request->input('failureNotes') ?? $request->input('failure_notes');
-        }
-        if ($request->filled('proofUrl') || $request->filled('proof_url')) {
-            $metadata['proof_url'] = $request->input('proofUrl') ?? $request->input('proof_url');
-        }
         if ($request->filled('codAmount') || $request->filled('cod_amount')) {
             $metadata['cod_amount'] = (float) ($request->input('codAmount') ?? $request->input('cod_amount'));
             $metadata['is_cod'] = true;
         }
+        $metadata = $this->extractAndStoreReturnMedia($request, $parcel, $metadata, $dbStatus);
         $metadata['last_updated_at'] = $request->input('timestamp', now()->toIso8601String());
 
         $riderName = $user?->name ?? ($parcel->rider?->user?->name ?? 'Courier');
@@ -1283,7 +1267,7 @@ class RiderApiController extends Controller
             'picked_up_from_hub', 'pickedup', 'picked_up', 'pickup', 'picked', 'rider_received', 'sorted' => 'rider_received',
             'out_for_delivery', 'outfordelivery', 'arrived', 'arrived_at_stop' => 'out_for_delivery',
             'delivered', 'delivery', 'completed' => 'delivered',
-            'delivery_failed', 'failed', 'exception', 'rescheduled' => 'exception',
+            'delivery_failed', 'failed', 'exception', 'rescheduled', 'return_refund', 'return/refund', 'return_and_refund' => 'exception',
             'returning_to_hub', 'returning', 'in_transit', 'intransit' => 'in_transit',
             'returned_to_hub', 'returned', 'hub_returned' => 'exception',
             default => 'in_transit',
@@ -1436,9 +1420,22 @@ class RiderApiController extends Controller
             'items_summary' => $metadata['items_summary'] ?? null,
             'order_number' => $metadata['waybill_order_number'] ?? null,
             'stop_order' => (int) ($metadata['stop_order'] ?? 1),
-            'failure_reason' => $metadata['failure_reason'] ?? null,
-            'failure_notes' => $metadata['failure_notes'] ?? null,
-            'pod_photo_path' => $metadata['proof_url'] ?? null,
+            'failure_reason' => $metadata['failure_reason'] ?? ($metadata['return_reason'] ?? null),
+            'failure_notes' => $metadata['failure_notes'] ?? ($metadata['return_notes'] ?? null),
+            'return_reason' => $metadata['return_reason'] ?? ($metadata['failure_reason'] ?? null),
+            'return_notes' => $metadata['return_notes'] ?? ($metadata['failure_notes'] ?? null),
+            'pod_photo_path' => ! empty($metadata['return_photo_path']) || ! empty($metadata['return_photo_data'])
+                ? url("/returns/media/{$p->id}/photo")
+                : ($metadata['proof_url'] ?? null),
+            'pod_video_path' => ! empty($metadata['return_video_path']) || ! empty($metadata['return_video_data'])
+                ? url("/returns/media/{$p->id}/video")
+                : ($metadata['proof_video_url'] ?? null),
+            'return_photo_url' => ! empty($metadata['return_photo_path']) || ! empty($metadata['return_photo_data'])
+                ? url("/returns/media/{$p->id}/photo")
+                : null,
+            'return_video_url' => ! empty($metadata['return_video_path']) || ! empty($metadata['return_video_data'])
+                ? url("/returns/media/{$p->id}/video")
+                : null,
             'rider_id' => $p->assigned_rider_id,
             'sort_bin' => $p->sort_bin ?? '',
             'updated_at' => $p->updated_at?->toIso8601String(),
@@ -1607,6 +1604,132 @@ class RiderApiController extends Controller
                 }
             }
         }
+    }
+
+    /**
+     * Extract Return/Refund reason, notes, photo, and video from rider status update request
+     * and persist both to public storage and parcel metadata.
+     */
+    private function extractAndStoreReturnMedia(Request $request, Parcel $parcel, array $metadata, string $dbStatus): array
+    {
+        $reason = $request->input('failureReason')
+            ?? $request->input('failure_reason')
+            ?? $request->input('returnReason')
+            ?? $request->input('return_reason');
+
+        $notes = $request->input('failureNotes')
+            ?? $request->input('failure_notes')
+            ?? $request->input('returnNotes')
+            ?? $request->input('return_notes');
+
+        if ($reason !== null && trim((string) $reason) !== '') {
+            $metadata['failure_reason'] = trim((string) $reason);
+            $metadata['return_reason'] = trim((string) $reason);
+        }
+        if ($notes !== null && trim((string) $notes) !== '') {
+            $metadata['failure_notes'] = trim((string) $notes);
+            $metadata['return_notes'] = trim((string) $notes);
+        }
+
+        if ($dbStatus === 'exception' || $request->boolean('isReturnRefund') || $request->boolean('is_return_refund')) {
+            $metadata['is_return_refund'] = true;
+            $metadata['return_reported_at'] = now()->toIso8601String();
+        }
+
+        if ($request->filled('proofUrl') || $request->filled('proof_url')) {
+            $metadata['proof_url'] = $request->input('proofUrl') ?? $request->input('proof_url');
+        }
+        if ($request->filled('proofVideoUrl') || $request->filled('proof_video_url')) {
+            $metadata['proof_video_url'] = $request->input('proofVideoUrl') ?? $request->input('proof_video_url');
+        }
+
+        // 1. Handle Photo (Multipart file OR Base64 data URI)
+        if ($request->hasFile('return_photo') || $request->hasFile('proof_photo')) {
+            $file = $request->file('return_photo') ?? $request->file('proof_photo');
+            if ($file && $file->isValid()) {
+                $path = $file->store('return_media', 'public');
+                $metadata['return_photo_path'] = $path;
+                $mime = $file->getMimeType() ?: 'image/jpeg';
+                $rawBytes = @file_get_contents($file->getRealPath());
+                if ($rawBytes !== false && strlen($rawBytes) <= 4 * 1024 * 1024) {
+                    $metadata['return_photo_data'] = "data:{$mime};base64," . base64_encode($rawBytes);
+                }
+            }
+        } else {
+            $photoBase64 = $request->input('proofPhotoBase64')
+                ?? $request->input('proof_photo_base64')
+                ?? $request->input('return_photo_base64')
+                ?? ((is_string($metadata['proof_url'] ?? null) && str_starts_with($metadata['proof_url'], 'data:image')) ? $metadata['proof_url'] : null);
+
+            if (is_string($photoBase64) && trim($photoBase64) !== '') {
+                $cleanPhoto = trim($photoBase64);
+                $mime = 'image/jpeg';
+                $ext = 'jpg';
+                $rawB64 = $cleanPhoto;
+                if (preg_match('/^data:(image\/([a-zA-Z0-9+.-]+));base64,(.*)$/s', $cleanPhoto, $m)) {
+                    $mime = $m[1];
+                    $ext = strtolower($m[2]) === 'png' ? 'png' : 'jpg';
+                    $rawB64 = $m[3];
+                }
+                $decoded = base64_decode($rawB64, true);
+                if ($decoded !== false && strlen($decoded) > 0) {
+                    $filename = 'return_media/parcel_' . $parcel->id . '_photo_' . time() . '.' . $ext;
+                    try {
+                        \Illuminate\Support\Facades\Storage::disk('public')->put($filename, $decoded);
+                        $metadata['return_photo_path'] = $filename;
+                    } catch (\Throwable $e) {
+                    }
+                    if (strlen($decoded) <= 4 * 1024 * 1024) {
+                        $metadata['return_photo_data'] = "data:{$mime};base64," . base64_encode($decoded);
+                    }
+                }
+            }
+        }
+
+        // 2. Handle Video (Multipart file OR Base64 data URI)
+        if ($request->hasFile('return_video') || $request->hasFile('proof_video')) {
+            $vFile = $request->file('return_video') ?? $request->file('proof_video');
+            if ($vFile && $vFile->isValid()) {
+                $vPath = $vFile->store('return_media', 'public');
+                $metadata['return_video_path'] = $vPath;
+                $vMime = $vFile->getMimeType() ?: 'video/mp4';
+                $rawVBytes = @file_get_contents($vFile->getRealPath());
+                if ($rawVBytes !== false && strlen($rawVBytes) <= 10 * 1024 * 1024) {
+                    $metadata['return_video_data'] = "data:{$vMime};base64," . base64_encode($rawVBytes);
+                }
+            }
+        } else {
+            $videoBase64 = $request->input('proofVideoBase64')
+                ?? $request->input('proof_video_base64')
+                ?? $request->input('return_video_base64')
+                ?? ((is_string($metadata['proof_video_url'] ?? null) && str_starts_with($metadata['proof_video_url'], 'data:video')) ? $metadata['proof_video_url'] : null);
+
+            if (is_string($videoBase64) && trim($videoBase64) !== '') {
+                $cleanVideo = trim($videoBase64);
+                $vMime = 'video/mp4';
+                $vExt = 'mp4';
+                $rawVB64 = $cleanVideo;
+                if (preg_match('/^data:(video\/([a-zA-Z0-9+.-]+));base64,(.*)$/s', $cleanVideo, $vm)) {
+                    $vMime = $vm[1];
+                    $vExt = strtolower($vm[2]) === 'webm' ? 'webm' : (strtolower($vm[2]) === 'quicktime' ? 'mov' : 'mp4');
+                    $rawVB64 = $vm[3];
+                }
+                $decodedV = base64_decode($rawVB64, true);
+                if ($decodedV !== false && strlen($decodedV) > 0) {
+                    $vFilename = 'return_media/parcel_' . $parcel->id . '_video_' . time() . '.' . $vExt;
+                    try {
+                        \Illuminate\Support\Facades\Storage::disk('public')->put($vFilename, $decodedV);
+                        $metadata['return_video_path'] = $vFilename;
+                    } catch (\Throwable $e) {
+                    }
+                    if (strlen($decodedV) <= 10 * 1024 * 1024) {
+                        $metadata['return_video_data'] = "data:{$vMime};base64," . base64_encode($decodedV);
+                    }
+                }
+            }
+        }
+
+        return $metadata;
     }
 
     /**

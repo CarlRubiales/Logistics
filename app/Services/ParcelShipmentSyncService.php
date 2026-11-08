@@ -75,10 +75,23 @@ class ParcelShipmentSyncService
 
             $riderName = $parcel->rider?->user?->name;
             $location = implode(', ', array_filter([$parcel->city, $parcel->province]));
+            $returnReason = $parcel->metadata['return_reason'] ?? $parcel->metadata['failure_reason'] ?? null;
+            $returnNotes = $parcel->metadata['return_notes'] ?? $parcel->metadata['failure_notes'] ?? null;
+
+            if ($status === 'exception') {
+                $shipment->updateQuietly([
+                    'exception_type' => $returnReason ?: ($shipment->exception_type ?: 'Return / Refund'),
+                    'exception_note' => $returnNotes ?: ($returnReason ? "Return/Refund Reason: {$returnReason}" : ($shipment->exception_note ?: 'Submitted for Return / Refund by courier.')),
+                ]);
+            }
+
             $description = match ($status) {
                 'out_for_delivery' => $riderName ? "Parcel is out for delivery with courier {$riderName}." : 'Parcel is out for final delivery.',
                 'delivered' => $riderName ? "Parcel was successfully delivered by courier {$riderName}." : 'Parcel has been delivered.',
                 'in_transit' => $riderName ? "Package picked up by courier {$riderName} and is in transit." : 'Parcel is in transit.',
+                'exception' => $returnReason
+                    ? "Return/Refund reported by " . ($riderName ?: 'courier') . ": {$returnReason}" . ($returnNotes ? " ({$returnNotes})" : '')
+                    : ShipmentStatusService::description($status),
                 default => ShipmentStatusService::description($status),
             };
 
