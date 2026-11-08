@@ -161,28 +161,116 @@ class SortingCenterController extends Controller
     }
     public function scan(Request $request, Parcel $parcel)
     {
-        $data = $request->validate(['barcode' => ['nullable', 'string', 'max:100', Rule::unique('parcels', 'barcode')->ignore($parcel->id)], 'note' => ['nullable', 'string', 'max:500']]);
-        $area = $parcel->area ?: \App\Services\LagunaHubProvisioner::resolveMatchingArea(
+        $data = $request->validate([
+            'barcode' => ['nullable', 'string', 'max:100', Rule::unique('parcels', 'barcode')->ignore($parcel->id)],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $branch = $parcel->branch ?: $request->user()?->getBranchName();
+        $resolvedArea = \App\Services\LagunaHubProvisioner::resolveMatchingArea(
             $parcel->store_id,
-            $parcel->branch ?: $request->user()?->getBranchName(),
+            $branch,
             $parcel->address_line,
             $parcel->city,
             $parcel->postal_code
         );
-        DB::transaction(function () use ($request, $parcel, $data, $area) {
-        $parcel->update(['status' => 'scanned', 'scanned_at' => now(), 'barcode' => ($data['barcode'] ?? null) ?: $parcel->barcode, 'destination_area_id' => $parcel->destination_area_id ?: $area?->id]);
-        $parcel->scans()->create(['user_id' => $request->user()->id, 'scan_type' => 'scan', 'barcode' => ($data['barcode'] ?? null) ?: $parcel->barcode, 'note' => $data['note'] ?? null, 'scanned_at' => now()]);
+        $area = $resolvedArea ?: $parcel->area;
+        $autoRider = \App\Services\LagunaHubProvisioner::resolveRiderForArea($area, $branch);
+
+        DB::transaction(function () use ($request, $parcel, $data, $area, $autoRider) {
+            $newBarcode = ($data['barcode'] ?? null) ?: $parcel->barcode;
+
+            if ($autoRider && $area) {
+                $parcel->update([
+                    'status' => 'assigned',
+                    'scanned_at' => now(),
+                    'sorted_at' => $parcel->sorted_at ?: now(),
+                    'assigned_at' => now(),
+                    'barcode' => $newBarcode,
+                    'destination_area_id' => $area->id,
+                    'assigned_rider_id' => $autoRider->id,
+                ]);
+                $parcel->scans()->create([
+                    'user_id' => $request->user()->id,
+                    'scan_type' => 'scan',
+                    'barcode' => $newBarcode,
+                    'note' => ($data['note'] ? $data['note'] . ' · ' : '') . "Auto-assigned to {$autoRider->user->name} ({$area->name})",
+                    'scanned_at' => now(),
+                ]);
+            } else {
+                $parcel->update([
+                    'status' => 'scanned',
+                    'scanned_at' => now(),
+                    'barcode' => $newBarcode,
+                    'destination_area_id' => $area?->id ?: $parcel->destination_area_id,
+                ]);
+                $parcel->scans()->create([
+                    'user_id' => $request->user()->id,
+                    'scan_type' => 'scan',
+                    'barcode' => $newBarcode,
+                    'note' => $data['note'] ?? null,
+                    'scanned_at' => now(),
+                ]);
+            }
         });
-        return back()->with('success', "Parcel {$parcel->parcel_number} scanned.");
+
+        app(\App\Services\ParcelShipmentSyncService::class)->sync($parcel->fresh());
+
+        if ($autoRider && $area) {
+            return back()->with('success', "Parcel {$parcel->parcel_number} scanned, matched to {$area->name}, and automatically assigned to {$autoRider->user->name}!");
+        }
+
+        return back()->with('success', "Parcel {$parcel->parcel_number} scanned" . ($area ? " ({$area->name})." : "."));
     }
 
     public function sort(Request $request, Parcel $parcel)
     {
-        $data = $request->validate(['destination_area_id' => ['required', 'exists:destination_areas,id'], 'sort_bin' => ['nullable', 'string', 'max:50']]);
-        DB::transaction(function () use ($request, $parcel, $data) {
-        $parcel->update(['destination_area_id' => $data['destination_area_id'], 'sort_bin' => $data['sort_bin'] ?? null, 'status' => 'sorted', 'sorted_at' => now()]);
-        $parcel->scans()->create(['user_id' => $request->user()->id, 'scan_type' => 'sort', 'note' => 'Sorted to bin '.(($data['sort_bin'] ?? null) ?: 'unassigned'), 'scanned_at' => now()]);
+        $data = $request->validate([
+            'destination_area_id' => ['required', 'exists:destination_areas,id'],
+            'sort_bin' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        $area = DestinationArea::find($data['destination_area_id']);
+        $branch = $area?->branch ?: ($parcel->branch ?: $request->user()?->getBranchName());
+        $autoRider = \App\Services\LagunaHubProvisioner::resolveRiderForArea($area, $branch);
+
+        DB::transaction(function () use ($request, $parcel, $data, $area, $autoRider) {
+            if ($autoRider) {
+                $parcel->update([
+                    'destination_area_id' => $data['destination_area_id'],
+                    'sort_bin' => $data['sort_bin'] ?? null,
+                    'assigned_rider_id' => $autoRider->id,
+                    'status' => 'assigned',
+                    'sorted_at' => now(),
+                    'assigned_at' => now(),
+                ]);
+                $parcel->scans()->create([
+                    'user_id' => $request->user()->id,
+                    'scan_type' => 'sort',
+                    'note' => 'Sorted to ' . ($area?->name ?? 'area') . ' and auto-assigned to ' . $autoRider->user->name,
+                    'scanned_at' => now(),
+                ]);
+            } else {
+                $parcel->update([
+                    'destination_area_id' => $data['destination_area_id'],
+                    'sort_bin' => $data['sort_bin'] ?? null,
+                    'status' => 'sorted',
+                    'sorted_at' => now(),
+                ]);
+                $parcel->scans()->create([
+                    'user_id' => $request->user()->id,
+                    'scan_type' => 'sort',
+                    'note' => 'Sorted to bin ' . (($data['sort_bin'] ?? null) ?: 'unassigned'),
+                    'scanned_at' => now(),
+                ]);
+            }
         });
+
+        if ($autoRider) {
+            app(\App\Services\ParcelShipmentSyncService::class)->sync($parcel->fresh());
+            return back()->with('success', "Parcel {$parcel->parcel_number} sorted to {$area?->name} and automatically assigned to {$autoRider->user->name}!");
+        }
+
         return back()->with('success', "Parcel {$parcel->parcel_number} sorted.");
     }
 
@@ -360,35 +448,63 @@ class SortingCenterController extends Controller
             'received_at_hub_time' => now()->toIso8601String(),
         ]);
 
-        DB::transaction(function () use ($request, $parcel, $originBranch, $receivingBranch, $targetArea, $newMeta) {
-            $parcel->update([
-                'branch' => $receivingBranch,
-                'destination_area_id' => $targetArea?->id ?? $parcel->destination_area_id,
-                'assigned_rider_id' => null,
-                'status' => 'scanned',
-                'scanned_at' => now(),
-                'metadata' => $newMeta,
-            ]);
+        $autoRider = \App\Services\LagunaHubProvisioner::resolveRiderForArea($targetArea, $receivingBranch);
 
-            $parcel->scans()->create([
-                'user_id' => $request->user()->id,
-                'scan_type' => 'hub_transfer_arrive',
-                'barcode' => $parcel->barcode ?: $parcel->parcel_number,
-                'note' => "Arrived and received at {$receivingBranch} Hub (transferred from {$originBranch} Hub)",
-                'scanned_at' => now(),
-            ]);
+        DB::transaction(function () use ($request, $parcel, $originBranch, $receivingBranch, $targetArea, $newMeta, $autoRider) {
+            if ($autoRider && $targetArea) {
+                $parcel->update([
+                    'branch' => $receivingBranch,
+                    'destination_area_id' => $targetArea->id,
+                    'assigned_rider_id' => $autoRider->id,
+                    'status' => 'assigned',
+                    'scanned_at' => now(),
+                    'sorted_at' => now(),
+                    'assigned_at' => now(),
+                    'metadata' => $newMeta,
+                ]);
+                $parcel->scans()->create([
+                    'user_id' => $request->user()->id,
+                    'scan_type' => 'hub_transfer_arrive',
+                    'barcode' => $parcel->barcode ?: $parcel->parcel_number,
+                    'note' => "Arrived at {$receivingBranch} Hub (from {$originBranch} Hub) and auto-assigned to {$autoRider->user->name} ({$targetArea->name})",
+                    'scanned_at' => now(),
+                ]);
+            } else {
+                $parcel->update([
+                    'branch' => $receivingBranch,
+                    'destination_area_id' => $targetArea?->id ?? $parcel->destination_area_id,
+                    'assigned_rider_id' => null,
+                    'status' => 'scanned',
+                    'scanned_at' => now(),
+                    'metadata' => $newMeta,
+                ]);
+                $parcel->scans()->create([
+                    'user_id' => $request->user()->id,
+                    'scan_type' => 'hub_transfer_arrive',
+                    'barcode' => $parcel->barcode ?: $parcel->parcel_number,
+                    'note' => "Arrived and received at {$receivingBranch} Hub (transferred from {$originBranch} Hub)",
+                    'scanned_at' => now(),
+                ]);
+            }
 
             if ($parcel->shipment) {
                 $parcel->shipment->trackingEvents()->create([
                     'status' => 'in_transit',
                     'label' => "Arrived at {$receivingBranch} Hub",
-                    'description' => "Parcel arrived at {$receivingBranch} Hub from {$originBranch} Hub and is queued for local sorting & dispatch.",
+                    'description' => $autoRider
+                        ? "Parcel arrived at {$receivingBranch} Hub and was automatically assigned to courier {$autoRider->user->name} ({$targetArea?->name})."
+                        : "Parcel arrived at {$receivingBranch} Hub from {$originBranch} Hub and is queued for local sorting & dispatch.",
                     'location' => "{$receivingBranch} Hub, Laguna",
                     'occurred_at' => now(),
                     'source' => 'sorting_center',
                 ]);
             }
         });
+
+        if ($autoRider && $targetArea) {
+            app(\App\Services\ParcelShipmentSyncService::class)->sync($parcel->fresh());
+            return back()->with('success', "Parcel {$parcel->parcel_number} received at {$receivingBranch} Hub, matched to {$targetArea->name}, and automatically assigned to {$autoRider->user->name}!");
+        }
 
         return back()->with('success', "Parcel {$parcel->parcel_number} received at {$receivingBranch} Hub! Ready to sort and assign to a local rider.");
     }

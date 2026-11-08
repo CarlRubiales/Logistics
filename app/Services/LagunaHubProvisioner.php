@@ -645,6 +645,30 @@ class LagunaHubProvisioner
     }
 
     /**
+     * Normalize barangay / address strings so variations like
+     * "Brgy Sta Clara Norte", "Sta. Clara Norte (Poblacion)", and "Barangay Santa Clara Norte"
+     * match reliably.
+     */
+    public static function normalizePlaceText(?string $value, bool $stripBarangayPrefix = true): string
+    {
+        if (! $value) {
+            return '';
+        }
+        $s = mb_strtolower(trim($value));
+        $s = str_replace('ñ', 'n', $s);
+        // Strip parenthetical annotations like (Poblacion) or (Halang)
+        $s = (string) preg_replace('/\s*\(.*?\)\s*/u', ' ', $s);
+        if ($stripBarangayPrefix) {
+            $s = (string) preg_replace('/\b(brgy\.?|barangay)\b/u', ' ', $s);
+        }
+        // Normalize Santa/Sta and Santo/Sto
+        $s = (string) preg_replace('/\bsanta\b/u', 'sta', $s);
+        $s = (string) preg_replace('/\bsanto\b/u', 'sto', $s);
+        $s = str_replace(['.', ',', '-', '_', '/'], ' ', $s);
+        return trim((string) preg_replace('/\s+/', ' ', $s));
+    }
+
+    /**
      * Resolve the best matching DestinationArea (preferring specific Barangay area when matched in address_line or city)
      * for a given branch, address, city, and postal code.
      */
@@ -656,44 +680,57 @@ class LagunaHubProvisioner
         if ($storeId) {
             $query->where('store_id', $storeId);
         }
-        if ($branch) {
-            $query->forBranch($branch);
-        } elseif ($city) {
-            $query->forBranch($city);
+
+        // If the city specifies a known Laguna municipality, prefer that municipality's areas
+        $resolvedHub = self::resolveHubFromAddress($city, null, $addressLine);
+        $effectiveBranch = $resolvedHub?->branch ?: ($branch ?: $city);
+
+        if ($effectiveBranch) {
+            $query->forBranch($effectiveBranch);
         }
 
         $candidates = $query->get();
+        if ($candidates->isEmpty() && $branch) {
+            $candidates = DestinationArea::where('is_active', true)->forBranch($branch)->get();
+        }
         if ($candidates->isEmpty() && $storeId) {
             $candidates = DestinationArea::where('store_id', $storeId)->where('is_active', true)->get();
         }
 
-        $haystack = mb_strtolower(trim(($addressLine ?? '') . ' ' . ($city ?? '')));
+        $rawHaystack = mb_strtolower(trim(($addressLine ?? '') . ' ' . ($city ?? '')));
+        $normHaystack = self::normalizePlaceText(($addressLine ?? '') . ' ' . ($city ?? ''), true);
+        $branchNorm = self::normalizePlaceText((string) ($effectiveBranch ?: $branch ?: $city), true);
 
-        // 1. First pass: look for a specific Barangay area (code starting with BRGY-) whose barangay name appears in the address/city
-        if ($haystack !== '') {
-            $barangayMatch = $candidates->first(function (DestinationArea $candidate) use ($haystack, $branch, $city) {
-                if (! str_starts_with((string) $candidate->code, 'BRGY-')) {
-                    return false;
-                }
-                $branchLower = mb_strtolower(trim((string) ($branch ?: $city)));
-                foreach ($candidate->cities ?? [] as $keyword) {
-                    $kw = mb_strtolower(trim((string) $keyword));
-                    if ($kw === '' || $kw === $branchLower) {
+        // 1. First pass: look for a specific Barangay area whose barangay name appears in the address/city
+        if ($normHaystack !== '') {
+            $bestMatch = null;
+            $bestLength = 0;
+
+            foreach ($candidates as $candidate) {
+                $keywords = array_merge([$candidate->name], is_array($candidate->cities) ? $candidate->cities : []);
+                foreach ($keywords as $keyword) {
+                    $normKw = self::normalizePlaceText((string) $keyword, true);
+                    if ($normKw === '' || $normKw === $branchNorm || strlen($normKw) < 3) {
                         continue;
                     }
-                    if (str_contains($haystack, $kw)) {
-                        return true;
+
+                    $matched = preg_match('/\b' . preg_quote($normKw, '/') . '\b/u', $normHaystack)
+                        || str_contains($normHaystack, $normKw)
+                        || str_contains($rawHaystack, mb_strtolower(trim((string) $keyword)));
+
+                    if ($matched && strlen($normKw) > $bestLength) {
+                        $bestMatch = $candidate;
+                        $bestLength = strlen($normKw);
                     }
                 }
-                return false;
-            });
+            }
 
-            if ($barangayMatch) {
-                return $barangayMatch;
+            if ($bestMatch) {
+                return $bestMatch;
             }
         }
 
-        // 2. Second pass: match Hub area (SCN-*) or any active area for the branch/city/postal code
+        // 2. Second pass: match any active area for the branch/city/postal code
         return $candidates->first(function (DestinationArea $candidate) use ($city, $postalCode) {
             $cities = collect($candidate->cities ?? [])->map(fn ($c) => mb_strtolower(trim((string) $c)));
             $postalCodes = collect($candidate->postal_codes ?? [])->map(fn ($p) => trim((string) $p));
@@ -701,6 +738,61 @@ class LagunaHubProvisioner
             $matchPostal = $postalCode && $postalCodes->contains(trim($postalCode));
             return $matchCity || $matchPostal;
         }) ?? $candidates->first();
+    }
+
+    /**
+     * Find the approved RiderProfile assigned to a specific Barangay DestinationArea.
+     * Prioritizes online/available riders, primary area assignments, and lower active parcel load.
+     */
+    public static function resolveRiderForArea(?DestinationArea $area, ?string $branch = null): ?\App\Models\RiderProfile
+    {
+        if (! $area) {
+            return null;
+        }
+
+        $targetBranch = $area->branch ?: $branch;
+
+        $riders = \App\Models\RiderProfile::with(['user', 'areaAssignments'])
+            ->where('registration_status', 'approved')
+            ->whereHas('areaAssignments', function ($q) use ($area) {
+                $q->where('destination_area_id', $area->id)
+                  ->where('is_active', true);
+            })
+            ->withCount([
+                'parcels as active_parcels_count' => function ($pq) {
+                    $pq->whereIn('status', ['assigned', 'rider_received', 'in_transit', 'out_for_delivery']);
+                },
+            ])
+            ->get();
+
+        if ($riders->isEmpty()) {
+            return null;
+        }
+
+        // Filter to riders belonging to the target branch if applicable
+        if ($targetBranch) {
+            $branchFiltered = $riders->filter(function (\App\Models\RiderProfile $r) use ($targetBranch) {
+                $userBranch = $r->user?->branch;
+                $hubBranch = $r->hub?->branch ?: $r->hub?->city;
+                if (! $userBranch && ! $hubBranch) {
+                    return true;
+                }
+                return ($userBranch && strcasecmp(trim($userBranch), trim($targetBranch)) === 0)
+                    || ($hubBranch && strcasecmp(trim($hubBranch), trim($targetBranch)) === 0);
+            });
+
+            if ($branchFiltered->isNotEmpty()) {
+                $riders = $branchFiltered;
+            }
+        }
+
+        return $riders->sortBy(function (\App\Models\RiderProfile $r) use ($area) {
+            $isOnline = in_array($r->availability, ['online', 'available'], true) ? 0 : 1;
+            $assignment = $r->areaAssignments->firstWhere('destination_area_id', $area->id);
+            $isPrimary = ($assignment && $assignment->is_primary) ? 0 : 1;
+            $load = (int) ($r->active_parcels_count ?? 0);
+            return sprintf('%d-%d-%05d-%08d', $isOnline, $isPrimary, $load, $r->id);
+        })->first();
     }
 
     /**

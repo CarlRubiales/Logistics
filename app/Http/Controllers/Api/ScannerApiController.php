@@ -307,30 +307,26 @@ class ScannerApiController extends Controller
         // 1. If parcel already exists in the system
         if ($parcel) {
             $branchUpdate = [];
+            $effectiveAddress = $waybill['address_line'] ?? $parcel->address_line;
+            $effectiveCity = $waybill['city'] ?? $parcel->city ?: $branch;
+            $effectivePostal = $waybill['postal_code'] ?? $parcel->postal_code;
+
+            $area = \App\Services\LagunaHubProvisioner::resolveMatchingArea(
+                $parcel->store_id ?? $storeId,
+                $branch ?: $effectiveCity,
+                $effectiveAddress,
+                $effectiveCity,
+                $effectivePostal
+            ) ?: $parcel->area;
+
             if ($branch) {
                 $branchUpdate['branch'] = $branch;
                 if (empty($parcel->city)) {
-                    $branchUpdate['city'] = $waybill['city'] ?? $branch;
+                    $branchUpdate['city'] = $effectiveCity;
                 }
-                $area = DestinationArea::where('branch', $branch)->where('is_active', true)->first();
-                if ($area) {
-                    $branchUpdate['destination_area_id'] = $area->id;
-                }
-            } else {
-                $area = $parcel->area ?: DestinationArea::where('store_id', $parcel->store_id ?? $storeId)
-                    ->where('is_active', true)
-                    ->get()
-                    ->first(function ($candidate) use ($parcel) {
-                        $cities = collect($candidate->cities ?? [])->map(fn ($c) => mb_strtolower(trim($c)));
-                        $postalCodes = collect($candidate->postal_codes ?? [])->map(fn ($p) => trim($p));
-                        $matchCity = $parcel->city && $cities->contains(mb_strtolower(trim($parcel->city)));
-                        $matchPostal = $parcel->postal_code && $postalCodes->contains(trim($parcel->postal_code));
-                        $matchProvince = $candidate->province && $parcel->province && mb_strtolower(trim($candidate->province)) === mb_strtolower(trim($parcel->province));
-                        return $matchCity || $matchPostal || ($cities->isEmpty() && $postalCodes->isEmpty() && $matchProvince);
-                    });
-                if ($area && ! $parcel->destination_area_id) {
-                    $branchUpdate['destination_area_id'] = $area->id;
-                }
+            }
+            if ($area) {
+                $branchUpdate['destination_area_id'] = $area->id;
             }
 
             // Enrich existing parcel if it previously had generic intake placeholder data
@@ -423,7 +419,12 @@ class ScannerApiController extends Controller
                 && ! empty($parcel->branch)
                 && mb_strtolower(trim($parcel->branch)) !== mb_strtolower(trim($branch));
 
+            $pendingRiderAutoAssign = in_array($oldStatus, ['scanned', 'sorted'], true)
+                && empty($parcel->assigned_rider_id)
+                && \App\Services\LagunaHubProvisioner::resolveRiderForArea($area, $branch ?: $parcel->branch) !== null;
+
             $isAlreadyScanned = ! $isHubTransferArrival
+                && ! $pendingRiderAutoAssign
                 && ($parcel->metadata['transfer_state'] ?? '') !== 'in_transit_to_hub'
                 && in_array($oldStatus, ['scanned', 'sorted', 'assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered']);
 
@@ -456,6 +457,16 @@ class ScannerApiController extends Controller
                 ]);
                 $branchUpdate['assigned_rider_id'] = null;
             }
+
+            // Auto-assign to the approved rider who covers the parcel's Barangay delivery area
+            $autoRider = \App\Services\LagunaHubProvisioner::resolveRiderForArea($area, $branch ?: $parcel->branch);
+            if ($autoRider && $area) {
+                $newStatus = 'assigned';
+                $branchUpdate['assigned_rider_id'] = $autoRider->id;
+                $branchUpdate['sorted_at'] = $parcel->sorted_at ?: now();
+                $branchUpdate['assigned_at'] = now();
+            }
+
             $updateData = array_merge($branchUpdate, [
                 'status' => $newStatus,
                 'scanned_at' => now(),
@@ -469,22 +480,25 @@ class ScannerApiController extends Controller
                 'scan_type' => 'camera_scan',
                 'barcode' => $code,
                 'result' => 'success',
-                'note' => "Scanned at " . ($branch ?: 'Main') . " Hub by {$operatorName}. Status: " . ucwords(str_replace('_', ' ', $newStatus)),
+                'note' => "Scanned at " . ($branch ?: 'Main') . " Hub by {$operatorName}."
+                    . ($autoRider ? " Auto-assigned to {$autoRider->user->name} ({$area?->name})." : " Status: " . ucwords(str_replace('_', ' ', $newStatus))),
                 'scanned_at' => now(),
             ]);
 
             app(ParcelShipmentSyncService::class)->sync($parcel->fresh());
-            $this->notifyRemoteWaybillStatus($code, 'scanned', $branch, $operatorName);
+            $this->notifyRemoteWaybillStatus($code, $newStatus, $branch, $operatorName);
             $this->mirrorScanToCloudLogistics($request, $code, $branch, $operatorName, $waybill);
 
             return response()->json([
                 'status' => 'success',
                 'result_type' => 'scanned_success',
                 'is_already_scanned' => false,
-                'message' => "Parcel {$parcel->parcel_number} scanned successfully! Queued in " . ($branch ? "{$branch} Hub" : 'sorting center') . ".",
+                'message' => $autoRider
+                    ? "Parcel {$parcel->parcel_number} scanned, matched to {$area?->name}, and automatically assigned to {$autoRider->user->name}!"
+                    : "Parcel {$parcel->parcel_number} scanned successfully! Queued in " . ($branch ? "{$branch} Hub" : 'sorting center') . ".",
                 'parcel' => $this->transformParcel($parcel->fresh(['order.items', 'shipment', 'area', 'rider.user'])),
                 'stage' => $newStatus,
-                'ready_for_sorting' => true,
+                'ready_for_sorting' => ! $autoRider,
             ]);
         }
 
@@ -533,9 +547,15 @@ class ScannerApiController extends Controller
             $postalCode
         );
 
+        $autoRider = \App\Services\LagunaHubProvisioner::resolveRiderForArea($area, $branch ?: $city);
+        $initialStatus = ($autoRider && $area) ? 'assigned' : 'scanned';
+
         $newParcel->update([
-            'status' => 'scanned',
+            'status' => $initialStatus,
             'scanned_at' => now(),
+            'sorted_at' => ($autoRider && $area) ? now() : null,
+            'assigned_at' => ($autoRider && $area) ? now() : null,
+            'assigned_rider_id' => $autoRider?->id,
             'branch' => $branch ?: $city,
             'city' => $city,
             'destination_area_id' => $area?->id,
@@ -549,22 +569,26 @@ class ScannerApiController extends Controller
             'barcode' => $code,
             'result' => 'success',
             'note' => ($waybill ? "Waybill Order #{$waybill['order_id']} ({$recipientName}) " : "New intake ")
-                . "scanned at " . ($branch ?: 'Main') . " Hub by {$operatorName}.",
+                . "scanned at " . ($branch ?: 'Main') . " Hub by {$operatorName}."
+                . ($autoRider ? " Auto-assigned to {$autoRider->user->name} ({$area?->name})." : ''),
             'scanned_at' => now(),
         ]);
 
-        $this->notifyRemoteWaybillStatus($code, 'scanned', $branch, $operatorName);
+        app(ParcelShipmentSyncService::class)->sync($newParcel->fresh());
+        $this->notifyRemoteWaybillStatus($code, $initialStatus, $branch, $operatorName);
         $this->mirrorScanToCloudLogistics($request, $code, $branch, $operatorName, $waybill);
 
         return response()->json([
             'status' => 'success',
             'result_type' => 'new_intake_created',
-            'message' => $waybill
-                ? "Waybill Order #{$waybill['order_id']} ({$recipientName}) scanned and queued in " . ($branch ? "{$branch} Hub" : 'sorting center') . "!"
-                : "New parcel {$newParcel->parcel_number} registered and queued in " . ($branch ? "{$branch} Hub" : 'sorting center') . "!",
+            'message' => $autoRider
+                ? "Parcel {$newParcel->parcel_number} scanned, matched to {$area?->name}, and automatically assigned to {$autoRider->user->name}!"
+                : ($waybill
+                    ? "Waybill Order #{$waybill['order_id']} ({$recipientName}) scanned and queued in " . ($branch ? "{$branch} Hub" : 'sorting center') . "!"
+                    : "New parcel {$newParcel->parcel_number} registered and queued in " . ($branch ? "{$branch} Hub" : 'sorting center') . "!"),
             'parcel' => $this->transformParcel($newParcel->fresh(['order.items', 'area', 'rider.user', 'shipment'])),
-            'stage' => 'scanned',
-            'ready_for_sorting' => true,
+            'stage' => $initialStatus,
+            'ready_for_sorting' => ! $autoRider,
         ]);
     }
 
