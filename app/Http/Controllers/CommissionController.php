@@ -692,105 +692,133 @@ class CommissionController extends Controller
     /**
      * Export the currently filtered rider commission table as CSV.
      */
-    public function exportCsv(Request $request, CommissionCalculatorService $calculator): StreamedResponse
+    public function exportCsv(Request $request, CommissionCalculatorService $calculator): StreamedResponse|\Illuminate\Http\Response
     {
-        $user = $request->user();
-        $isMaster = $user && method_exists($user, 'isMasterAdmin') && $user->isMasterAdmin();
-        $branch = $user?->getBranchName();
-
-        if (! $isMaster) {
-            abort_unless($user && in_array($user->role, ['admin', 'logistics', 'operations_manager'], true), 403);
-        }
-
-        $requestedPeriodKey = trim((string) $request->query('period', ''));
-        $selectedPeriod = $calculator->resolvePeriod($requestedPeriodKey !== '' ? $requestedPeriodKey : null);
         try {
-            $calculator->syncPeriodCommissions($selectedPeriod);
-        } catch (\Throwable $e) {}
+            $user = $request->user();
+            $isMaster = $user && method_exists($user, 'isMasterAdmin') && $user->isMasterAdmin();
+            $branch = $user?->getBranchName();
 
-        $filterHub = $isMaster ? trim((string) $request->query('hub', '')) : ($branch ?: 'Pila');
-        $search = trim((string) $request->query('search', ''));
-        $activeTab = strtolower(trim((string) $request->query('tab', 'all')));
-
-        try {
-            $query = RiderCommission::query()
-                ->with(['rider.user', 'approver', 'payer', 'flagger'])
-                ->where('period_key', $selectedPeriod['key']);
-
-            if (! empty($filterHub)) {
-                $query->forHub($filterHub);
+            if (! $isMaster) {
+                abort_unless($user && in_array($user->role, ['admin', 'logistics', 'operations_manager', 'super_admin'], true), 403);
             }
 
-            $rows = $query->get()->sortByDesc('net_centavos')->values();
-        } catch (\Throwable $e) {
-            $rows = collect();
-        }
+            $requestedPeriodKey = trim((string) $request->query('period', ''));
+            $selectedPeriod = $calculator->resolvePeriod($requestedPeriodKey !== '' ? $requestedPeriodKey : null);
+            try {
+                $calculator->syncPeriodCommissions($selectedPeriod);
+            } catch (\Throwable $e) {}
 
-        $rows = $this->applySearchFilter($rows, $search);
+            $filterHub = $isMaster ? trim((string) $request->query('hub', '')) : ($branch ?: 'Pila');
+            $search = trim((string) $request->query('search', ''));
+            $activeTab = strtolower(trim((string) $request->query('tab', 'all')));
 
-        if (in_array($activeTab, ['pending', 'approved', 'paid'], true)) {
-            $rows = $rows->where('status', $activeTab)->values();
-        }
+            try {
+                $query = RiderCommission::query()
+                    ->with(['rider.user', 'approver', 'payer', 'flagger'])
+                    ->where('period_key', $selectedPeriod['key']);
 
-        $filename = 'lumora-commissions-' . $selectedPeriod['key'] . '-' . now('Asia/Manila')->format('Ymd-His') . '.csv';
+                if (! empty($filterHub)) {
+                    $query->forHub($filterHub);
+                }
 
-        return response()->streamDownload(function () use ($rows) {
-            $out = fopen('php://output', 'w');
-            fputcsv($out, [
-                'Rider Name',
-                'Rider Phone',
-                'Hub',
-                'Pay Period',
-                'Delivered Parcels',
-                'On-Time Parcels',
-                'On-Time Rate (%)',
-                'Rider-Fault Returns',
-                'Base Commission',
-                'On-Time Bonus',
-                'Deductions',
-                'Net Commission',
-                'Base Rate Applied (PHP)',
-                'Status',
-                'Approved By',
-                'Approved At',
-                'Paid By',
-                'Paid At',
-                'Payment Reference',
-            ]);
+                $rows = $query->get()->sortByDesc('net_centavos')->values();
+            } catch (\Throwable $e) {
+                $rows = collect();
+            }
 
-            foreach ($rows as $rc) {
-                $snap = is_array($rc->rules_snapshot) ? $rc->rules_snapshot : [];
-                $baseRateApplied = isset($snap['base_rate_centavos'])
-                    ? number_format(((int) $snap['base_rate_centavos']) / 100, 2)
-                    : '18.00';
+            $rows = $this->applySearchFilter($rows, $search);
+
+            if (in_array($activeTab, ['pending', 'approved', 'paid'], true)) {
+                $rows = $rows->where('status', $activeTab)->values();
+            }
+
+            $filename = 'lumora-commissions-' . $selectedPeriod['key'] . '-' . now('Asia/Manila')->format('Ymd-His') . '.csv';
+
+            return response()->streamDownload(function () use ($rows) {
+                $out = fopen('php://output', 'w');
+                // UTF-8 BOM so Excel opens with correct encoding and symbols
+                fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF));
 
                 fputcsv($out, [
-                    $rc->rider?->user?->name ?? ('Rider #' . $rc->rider_profile_id),
-                    $rc->rider?->phone ?? '—',
-                    $rc->hub_branch . ' Hub',
-                    $rc->period_label,
-                    $rc->delivered_count,
-                    $rc->on_time_count,
-                    number_format($rc->on_time_rate_percent, 1) . '%',
-                    $rc->return_fault_count,
-                    $rc->formatted_base,
-                    $rc->formatted_bonus,
-                    $rc->formatted_deductions,
-                    $rc->formatted_net,
-                    '₱' . $baseRateApplied,
-                    ucfirst($rc->status),
-                    $rc->approver?->name ?? '—',
-                    $rc->approved_at ? $rc->approved_at->copy()->setTimezone('Asia/Manila')->format('M j, Y g:i A') : '—',
-                    $rc->payer?->name ?? '—',
-                    $rc->paid_at ? $rc->paid_at->copy()->setTimezone('Asia/Manila')->format('M j, Y g:i A') : '—',
-                    $rc->payment_reference ?: '—',
+                    'Rider Name',
+                    'Rider Phone',
+                    'Hub',
+                    'Pay Period',
+                    'Delivered Parcels',
+                    'On-Time Parcels',
+                    'On-Time Rate (%)',
+                    'Rider-Fault Returns',
+                    'Base Commission',
+                    'On-Time Bonus',
+                    'Deductions',
+                    'Net Commission',
+                    'Base Rate Applied (PHP)',
+                    'Status',
+                    'Approved By',
+                    'Approved At',
+                    'Paid By',
+                    'Paid At',
+                    'Payment Reference',
                 ]);
-            }
 
-            fclose($out);
-        }, $filename, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-        ]);
+                $formatDate = function ($dt) {
+                    if (empty($dt)) return '—';
+                    try {
+                        if ($dt instanceof \Carbon\CarbonInterface) {
+                            return $dt->copy()->setTimezone('Asia/Manila')->format('M j, Y g:i A');
+                        }
+                        return \Carbon\Carbon::parse($dt)->setTimezone('Asia/Manila')->format('M j, Y g:i A');
+                    } catch (\Throwable $e) {
+                        return (string) $dt;
+                    }
+                };
+
+                foreach ($rows as $rc) {
+                    $snap = is_array($rc->rules_snapshot) ? $rc->rules_snapshot : (is_string($rc->rules_snapshot) ? json_decode($rc->rules_snapshot, true) : []);
+                    if (! is_array($snap)) {
+                        $snap = [];
+                    }
+                    $baseRateApplied = isset($snap['base_rate_centavos'])
+                        ? number_format(((int) $snap['base_rate_centavos']) / 100, 2)
+                        : '18.00';
+
+                    $riderName = $rc->rider?->user?->name ?? ('Rider #' . $rc->rider_profile_id);
+                    $riderPhone = $rc->rider?->phone ?? '—';
+                    $hubLabel = ($rc->hub_branch ?: 'Laguna') . ' Hub';
+                    $approvedAt = $formatDate($rc->approved_at);
+                    $paidAt = $formatDate($rc->paid_at);
+
+                    fputcsv($out, [
+                        $riderName,
+                        $riderPhone,
+                        $hubLabel,
+                        $rc->period_label,
+                        $rc->delivered_count,
+                        $rc->on_time_count,
+                        number_format($rc->on_time_rate_percent, 1) . '%',
+                        $rc->return_fault_count,
+                        $rc->formatted_base,
+                        $rc->formatted_bonus,
+                        $rc->formatted_deductions,
+                        $rc->formatted_net,
+                        '₱' . $baseRateApplied,
+                        ucfirst((string) $rc->status),
+                        $rc->approver?->name ?? '—',
+                        $approvedAt,
+                        $rc->payer?->name ?? '—',
+                        $paidAt,
+                        $rc->payment_reference ?: '—',
+                    ]);
+                }
+
+                fclose($out);
+            }, $filename, [
+                'Content-Type' => 'text/csv; charset=UTF-8',
+            ]);
+        } catch (\Throwable $e) {
+            return response('CSV export error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine(), 500);
+        }
     }
 
     /**
