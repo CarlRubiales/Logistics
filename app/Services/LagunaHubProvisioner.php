@@ -81,8 +81,8 @@ class LagunaHubProvisioner
             // Ignore if schema already provisions or concurrently creating
         }
     }
-    {
-        return [
+
+    public static function municipalities(): array
             [
                 'branch' => 'Alaminos',
                 'slug' => 'alaminos',
