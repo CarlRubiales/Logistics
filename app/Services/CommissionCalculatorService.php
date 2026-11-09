@@ -316,15 +316,15 @@ class CommissionCalculatorService
             /** @var RiderCommission|null $existing */
             $existing = $existingByRider->get($rider->id);
 
-            // Never recalculate or overwrite Approved or Paid commissions when rules or parcels change
-            if ($existing && in_array($existing->status, ['approved', 'paid'], true)) {
-                continue;
-            }
-
             $riderParcels = $parcelsInPeriod->get($rider->id, collect());
 
             $deliveredParcels = $riderParcels->where('status', 'delivered');
             $deliveredCount = $deliveredParcels->count();
+
+            // If already approved/paid and no new parcels delivered, preserve frozen snapshot
+            if ($existing && in_array($existing->status, ['approved', 'paid'], true) && $deliveredCount <= $existing->delivered_count) {
+                continue;
+            }
 
             $onTimeCount = $deliveredParcels->filter(fn (Parcel $p) => self::isDeliveredOnTime($p))->count();
             $onTimeRateBp = $deliveredCount > 0

@@ -794,20 +794,14 @@ class RiderApiController extends Controller
         app(\App\Services\ParcelShipmentSyncService::class)->sync($parcel->fresh());
         $this->syncStatusToCloud($request, $parcel, $dbStatus, $metadata);
 
-        // If delivered, record commission transaction if none exists yet
+        // If delivered, automatically recalculate real commission in real-time
         if ($dbStatus === 'delivered' && $parcel->assigned_rider_id) {
-            CommissionTransaction::firstOrCreate(
-                [
-                    'rider_profile_id' => $parcel->assigned_rider_id,
-                    'parcel_id' => $parcel->id,
-                ],
-                [
-                    'amount' => 150.00,
-                    'status' => 'pending',
-                    'description' => 'Delivery payout for ' . $parcel->parcel_number,
-                    'earned_at' => now(),
-                ]
-            );
+            try {
+                $calc = app(\App\Services\CommissionCalculatorService::class);
+                $calc->syncPeriodCommissions($calc->resolvePeriod());
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Commission sync error on parcel delivery: ' . $e->getMessage());
+            }
         }
 
         return response()->json([
@@ -835,33 +829,43 @@ class RiderApiController extends Controller
             ]);
         }
 
-        $todayStart = now()->startOfDay();
+        // Base rate is ₱20 per delivered parcel (configured in CommissionRule)
+        $rule = \App\Models\CommissionRule::current();
+        $baseRate = ((float) $rule->base_rate_centavos) / 100.0;
+        if ($baseRate <= 0) $baseRate = 20.00;
 
-        $todayEarnings = CommissionTransaction::where('rider_profile_id', $profile->id)
-            ->where('earned_at', '>=', $todayStart)
-            ->sum('amount');
-
-        $totalBalance = CommissionTransaction::where('rider_profile_id', $profile->id)
-            ->where('status', 'pending')
-            ->sum('amount');
-
-        $todayDeliveriesCount = Parcel::where('assigned_rider_id', $profile->id)
+        $todayDeliveries = Parcel::where('assigned_rider_id', $profile->id)
             ->where('status', 'delivered')
-            ->where('updated_at', '>=', $todayStart)
-            ->count();
+            ->forDate(now())
+            ->get();
+        $todayDeliveriesCount = $todayDeliveries->count();
+        $todayEarnings = $todayDeliveriesCount * $baseRate;
 
-        $historyTransactions = CommissionTransaction::where('rider_profile_id', $profile->id)
-            ->with('parcel')
-            ->latest('earned_at')
+        // Current pay period balance from RiderCommission
+        $calc = app(\App\Services\CommissionCalculatorService::class);
+        $period = $calc->resolvePeriod();
+        try {
+            $calc->syncPeriodCommissions($period);
+        } catch (\Throwable $e) {}
+
+        $riderCommission = \App\Models\RiderCommission::where('rider_profile_id', $profile->id)
+            ->where('period_key', $period['key'])
+            ->first();
+
+        $totalBalance = $riderCommission ? $riderCommission->net_amount : $todayEarnings;
+
+        $historyTransactions = Parcel::where('assigned_rider_id', $profile->id)
+            ->where('status', 'delivered')
+            ->latest('updated_at')
             ->take(10)
             ->get();
 
-        $history = $historyTransactions->map(function ($tx) {
+        $history = $historyTransactions->map(function ($p) use ($baseRate) {
             return [
-                'id' => $tx->parcel?->parcel_number ?? ('TX-' . $tx->id),
-                'store' => $tx->description ?? 'Standard Delivery',
-                'fee' => '₱' . number_format($tx->amount, 2),
-                'date' => $tx->earned_at ? $tx->earned_at->format('M d, Y') : now()->format('M d, Y'),
+                'id' => $p->parcel_number ?: ('PARCEL-' . $p->id),
+                'store' => 'Standard Delivery · ' . ($p->recipient_name ?? 'Delivered'),
+                'fee' => '₱' . number_format($baseRate, 2),
+                'date' => $p->updated_at ? $p->updated_at->timezone('Asia/Manila')->format('M d, Y') : now()->format('M d, Y'),
             ];
         });
 
@@ -918,19 +922,6 @@ class RiderApiController extends Controller
             }
         }
 
-        // Check if an existing confirmed remittance already exists for today
-        $existingForDay = Remittance::where('rider_profile_id', $profile->id)
-            ->whereDate('remit_date', $dateStr)
-            ->first();
-
-        if ($existingForDay && in_array($existingForDay->status, [Remittance::STATUS_REMITTED, Remittance::STATUS_SHORT, Remittance::STATUS_OVER], true)) {
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Remittance for ' . $dateStr . ' has already been confirmed by cashier.',
-                'data' => $this->transformRemittance($existingForDay),
-            ]);
-        }
-
         // Server-side calculation of expected COD amount from delivered parcels
         $deliveredParcels = Parcel::where('assigned_rider_id', $profile->id)
             ->where('status', 'delivered')
@@ -956,6 +947,26 @@ class RiderApiController extends Controller
         $declaredCentavos = $request->filled('declared_amount_centavos')
             ? (int) $request->input('declared_amount_centavos')
             : (int) round(((float) $request->input('amount', $request->input('declared_amount', 0))) * 100);
+
+        // Check if an existing remittance exists for this day
+        $existingForDay = Remittance::where('rider_profile_id', $profile->id)
+            ->whereDate('remit_date', $dateStr)
+            ->first();
+
+        // Support multi-wave & night runs: if existing is confirmed, but rider delivers more parcels
+        // or submits additional cash, reopen for cashier verification
+        if ($existingForDay && in_array($existingForDay->status, [Remittance::STATUS_REMITTED, Remittance::STATUS_SHORT, Remittance::STATUS_OVER], true)) {
+            if ($expectedCentavos <= $existingForDay->expected_amount_centavos && $declaredCentavos <= 0) {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Remittance for ' . $dateStr . ' has already been confirmed by cashier.',
+                    'data' => $this->transformRemittance($existingForDay),
+                ]);
+            }
+            if ($declaredCentavos > 0 && $existingForDay->declared_amount_centavos > 0 && $declaredCentavos < $existingForDay->declared_amount_centavos) {
+                $declaredCentavos = $existingForDay->declared_amount_centavos + $declaredCentavos;
+            }
+        }
 
         $hub = $profile->hub;
         $branch = $hub?->branch ?: ($user->getBranchName() ?: 'Pila');

@@ -55,12 +55,16 @@ class Parcel extends Model
         $endUtc = $date->copy()->endOfDay()->setTimezone('UTC')->toDateTimeString();
 
         return $query->where(function ($q) use ($startUtc, $endUtc, $dateStr) {
-            $q->whereBetween('created_at', [$startUtc, $endUtc])
+            $q->whereBetween('updated_at', [$startUtc, $endUtc])
+              ->orWhereDate('updated_at', $dateStr)
+              ->orWhereBetween('created_at', [$startUtc, $endUtc])
               ->orWhereDate('created_at', $dateStr)
               ->orWhereBetween('scanned_at', [$startUtc, $endUtc])
               ->orWhereDate('scanned_at', $dateStr)
               ->orWhereBetween('assigned_at', [$startUtc, $endUtc])
-              ->orWhereDate('assigned_at', $dateStr);
+              ->orWhereDate('assigned_at', $dateStr)
+              ->orWhereBetween('rider_received_at', [$startUtc, $endUtc])
+              ->orWhereDate('rider_received_at', $dateStr);
         });
     }
 
