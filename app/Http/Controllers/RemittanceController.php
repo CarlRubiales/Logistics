@@ -26,21 +26,21 @@ class RemittanceController extends Controller
             if (! \Illuminate\Support\Facades\Schema::hasTable('remittances')) {
                 \Illuminate\Support\Facades\Schema::create('remittances', function ($table) {
                     $table->id();
-                    $table->foreignId('rider_profile_id')->constrained('rider_profiles')->cascadeOnDelete();
-                    $table->foreignId('hub_id')->nullable()->constrained('hubs')->nullOnDelete();
-                    $table->string('hub_branch')->index();
+                    $table->unsignedBigInteger('rider_profile_id')->index();
+                    $table->unsignedBigInteger('hub_id')->nullable()->index();
+                    $table->string('hub_branch', 100)->index();
                     $table->date('remit_date')->index();
-                    $table->string('status')->default('awaiting_cashier')->index();
+                    $table->string('status', 40)->default('awaiting_cashier')->index();
                     $table->bigInteger('expected_amount_centavos')->default(0);
                     $table->bigInteger('declared_amount_centavos')->default(0);
                     $table->bigInteger('counted_amount_centavos')->nullable();
                     $table->bigInteger('difference_centavos')->default(0);
                     $table->timestamp('submitted_at')->nullable()->index();
                     $table->timestamp('confirmed_at')->nullable()->index();
-                    $table->foreignId('confirmed_by')->nullable()->constrained('users')->nullOnDelete();
+                    $table->unsignedBigInteger('confirmed_by')->nullable()->index();
                     $table->text('cashier_note')->nullable();
                     $table->text('rider_note')->nullable();
-                    $table->string('idempotency_key')->nullable()->unique();
+                    $table->string('idempotency_key', 191)->nullable()->unique();
                     $table->timestamps();
 
                     $table->unique(['rider_profile_id', 'remit_date']);
@@ -50,11 +50,11 @@ class RemittanceController extends Controller
             if (! \Illuminate\Support\Facades\Schema::hasTable('remittance_parcels')) {
                 \Illuminate\Support\Facades\Schema::create('remittance_parcels', function ($table) {
                     $table->id();
-                    $table->foreignId('remittance_id')->constrained('remittances')->cascadeOnDelete();
-                    $table->foreignId('parcel_id')->constrained('parcels')->cascadeOnDelete();
-                    $table->string('parcel_number')->index();
+                    $table->unsignedBigInteger('remittance_id')->index();
+                    $table->unsignedBigInteger('parcel_id')->index();
+                    $table->string('parcel_number', 100)->index();
                     $table->bigInteger('cod_amount_centavos')->default(0);
-                    $table->string('status')->default('delivered');
+                    $table->string('status', 40)->default('delivered');
                     $table->timestamps();
 
                     $table->unique(['remittance_id', 'parcel_id']);
@@ -134,11 +134,13 @@ class RemittanceController extends Controller
             ->get();
 
         // Fetch existing remittances for this hub and date
-        $remittances = Remittance::with(['rider.user', 'cashier', 'parcels'])
-            ->forBranch($branchName)
-            ->forDate($selectedDate)
-            ->get()
-            ->keyBy('rider_profile_id');
+        $remittances = \Illuminate\Support\Facades\Schema::hasTable('remittances')
+            ? Remittance::with(['rider.user', 'cashier', 'parcels'])
+                ->forBranch($branchName)
+                ->forDate($selectedDate)
+                ->get()
+                ->keyBy('rider_profile_id')
+            : collect();
 
         // Build composite row for each rider
         $riderRows = $riders->map(function (RiderProfile $rider) use ($selectedDate, $remittances, $branchName) {
@@ -507,28 +509,40 @@ class RemittanceController extends Controller
         $tz = 'Asia/Manila';
         $todayStr = Carbon::now($tz)->toDateString();
 
-        $awaitingCount = Remittance::forBranch($branchName)
-            ->whereDate('remit_date', $todayStr)
-            ->where('status', Remittance::STATUS_AWAITING_CASHIER)
-            ->count();
+        $hasRemitTable = \Illuminate\Support\Facades\Schema::hasTable('remittances');
+
+        $awaitingCount = $hasRemitTable
+            ? Remittance::forBranch($branchName)
+                ->whereDate('remit_date', $todayStr)
+                ->where('status', Remittance::STATUS_AWAITING_CASHIER)
+                ->count()
+            : 0;
 
         $hub = Hub::whereRaw('LOWER(branch) = ?', [mb_strtolower($branchName)])->first();
         $cutoffTime = $hub?->remit_cutoff_time ?: '20:00:00';
         $isPastCutoff = Carbon::now($tz)->format('H:i:s') >= $cutoffTime;
 
         // Latest submission in the last 2 hours for live banner
-        $latest = Remittance::with('rider.user')
-            ->forBranch($branchName)
-            ->whereDate('remit_date', $todayStr)
-            ->where('status', Remittance::STATUS_AWAITING_CASHIER)
-            ->latest('submitted_at')
-            ->first();
+        $latest = $hasRemitTable
+            ? Remittance::with('rider.user')
+                ->forBranch($branchName)
+                ->whereDate('remit_date', $todayStr)
+                ->where('status', Remittance::STATUS_AWAITING_CASHIER)
+                ->latest('submitted_at')
+                ->first()
+            : null;
+
+        try {
+            $cutoffFormatted = Carbon::parse($cutoffTime, $tz)->format('g:i A');
+        } catch (\Throwable $e) {
+            $cutoffFormatted = '8:00 PM';
+        }
 
         return response()->json([
             'status' => 'success',
             'awaiting_count' => $awaitingCount,
             'is_past_cutoff' => $isPastCutoff,
-            'cutoff_formatted' => Carbon::createFromFormat('H:i:s', $cutoffTime, $tz)->format('g:i A'),
+            'cutoff_formatted' => $cutoffFormatted,
             'latest_remit' => $latest ? [
                 'id' => $latest->id,
                 'rider_id' => $latest->rider_profile_id,
@@ -553,11 +567,14 @@ class RemittanceController extends Controller
             ->where('registration_status', 'approved')
             ->get();
 
-        $remittances = Remittance::with(['rider.user', 'cashier', 'parcels'])
-            ->forBranch($branchName)
-            ->forDate($dateStr)
-            ->get()
-            ->keyBy('rider_profile_id');
+        $hasRemitTable = \Illuminate\Support\Facades\Schema::hasTable('remittances');
+        $remittances = $hasRemitTable
+            ? Remittance::with(['rider.user', 'cashier', 'parcels'])
+                ->forBranch($branchName)
+                ->forDate($dateStr)
+                ->get()
+                ->keyBy('rider_profile_id')
+            : collect();
 
         $filename = "remittance_{$branchName}_{$dateStr}.csv";
 

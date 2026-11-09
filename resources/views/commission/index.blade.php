@@ -284,7 +284,7 @@
                             <div><dt>On-time ≥ {{ $rule->bonus_tier1_rate_pct }}%</dt><dd class="comm-positive">+{{ $fmt((int) $rule->bonus_tier1_centavos) }}</dd></div>
                             <div><dt>On-time ≥ {{ $rule->bonus_tier2_rate_pct }}%</dt><dd class="comm-positive">+{{ $fmt((int) $rule->bonus_tier2_centavos) }}</dd></div>
                             <div><dt>Rider-fault return</dt><dd class="comm-negative">−{{ $fmt((int) ($rule->deduction_per_return_centavos ?: 2000)) }} each</dd></div>
-                            <div><dt>Pay period</dt><dd>{{ ['semi_monthly' => 'Semi-monthly (1–15, 16–end)', 'monthly' => 'Monthly', 'weekly' => 'Weekly (Mon–Sun)'][$rule->period_type] ?? 'Semi-monthly' }}</dd></div>
+                            <div><dt>Pay period</dt><dd>{{ ['daily' => 'Daily (Day by day)', 'semi_monthly' => 'Semi-monthly (1–15, 16–end)', 'monthly' => 'Monthly', 'weekly' => 'Weekly (Mon–Sun)'][$rule->period_type] ?? 'Daily (Day by day)' }}</dd></div>
                         </dl>
                         <p class="comm-note">Rule changes recalculate Pending rows only. Approved and Paid records keep the rates they were approved with.</p>
                     </section>
@@ -430,6 +430,7 @@
             </label>
             <label for="rule-period">Pay period
                 <select id="rule-period" name="period_type">
+                    <option value="daily" @selected($rule->period_type === 'daily')>Daily (Day by day payout)</option>
                     <option value="semi_monthly" @selected($rule->period_type === 'semi_monthly')>Semi-monthly (1st–15th, 16th–end)</option>
                     <option value="monthly" @selected($rule->period_type === 'monthly')>Monthly</option>
                     <option value="weekly" @selected($rule->period_type === 'weekly')>Weekly (Mon–Sun)</option>

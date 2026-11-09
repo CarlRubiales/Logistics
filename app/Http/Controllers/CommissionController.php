@@ -217,7 +217,7 @@ class CommissionController extends Controller
             'bonus_tier2_rate_pct' => ['required', 'integer', 'min:1', 'max:100', 'gte:bonus_tier1_rate_pct'],
             'bonus_tier2_pesos' => ['required', 'numeric', 'min:0', 'max:100000'],
             'deduction_per_return_pesos' => ['required', 'numeric', 'min:0', 'max:10000'],
-            'period_type' => ['required', 'in:semi_monthly,weekly,monthly'],
+            'period_type' => ['required', 'in:daily,semi_monthly,weekly,monthly'],
         ]);
 
         $rule = CommissionRule::current();

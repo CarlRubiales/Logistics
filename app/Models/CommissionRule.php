@@ -55,14 +55,15 @@ class CommissionRule extends Model
             $rule = static::query()->latest('id')->first();
             if (! $rule) {
                 $rule = static::query()->create(self::defaultAttributes());
-            } elseif ($rule->base_rate_centavos === 1800 || empty($rule->shipping_fee_centavos)) {
-                // Seamlessly upgrade from legacy ₱18 default to ₱50 shipping fee (HQ ₱15 / Hub ₱15 / Rider ₱20)
+            } elseif ($rule->base_rate_centavos === 1800 || empty($rule->shipping_fee_centavos) || $rule->period_type !== 'daily') {
+                // Upgrade to ₱50 shipping fee split (HQ ₱15 / Hub ₱15 / Rider ₱20) and daily payout cadence
                 $rule->update([
                     'shipping_fee_centavos' => 5000,
                     'admin_commission_centavos' => 1500,
                     'hub_commission_centavos' => 1500,
                     'base_rate_centavos' => 2000,
                     'deduction_per_return_centavos' => 2000,
+                    'period_type' => 'daily',
                 ]);
             }
 
@@ -84,7 +85,7 @@ class CommissionRule extends Model
             'bonus_tier2_rate_pct' => 95,            // On-time rate >= 95%
             'bonus_tier2_centavos' => 30000,         // +₱300
             'deduction_per_return_centavos' => 2000, // -₱20 per rider-fault return/refund
-            'period_type' => 'semi_monthly',         // 1st–15th and 16th–end of month
+            'period_type' => 'daily',                // Day by day payout
         ];
     }
 

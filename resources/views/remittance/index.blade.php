@@ -614,7 +614,7 @@
                                         @endphp
                                         <div class="parcel-item">
                                             <div>
-                                                <div style="font-weight: 800; color: var(--plum);">{{ $p->tracking_number }}</div>
+                                                <div style="font-weight: 800; color: var(--plum);">{{ $p->parcel_number ?? ($p->barcode ?? 'Parcel #' . $p->id) }}</div>
                                                 <div style="font-size: 10.5px; color: var(--muted);">{{ $p->recipient_name }}</div>
                                             </div>
                                             <div style="text-align: right;">

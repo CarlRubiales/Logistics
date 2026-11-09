@@ -28,7 +28,23 @@ class CommissionCalculatorService
 
         $periods = collect();
 
-        if ($cadence === 'monthly') {
+        if ($cadence === 'daily') {
+            for ($i = 0; $i < 30; $i++) {
+                $day = $now->copy()->subDays($i);
+                $key = $day->format('Y-m-d') . '-D';
+                $label = $day->isToday()
+                    ? 'Today (' . $day->format('M j, Y') . ') · Daily'
+                    : ($day->isYesterday()
+                        ? 'Yesterday (' . $day->format('M j, Y') . ') · Daily'
+                        : $day->format('D, M j, Y') . ' · Daily');
+                $periods->push([
+                    'key' => $key,
+                    'label' => $label,
+                    'start' => $day->copy()->startOfDay(),
+                    'end' => $day->copy()->endOfDay(),
+                ]);
+            }
+        } elseif ($cadence === 'monthly') {
             for ($i = 0; $i < 6; $i++) {
                 $month = $now->copy()->subMonthsNoOverflow($i);
                 $start = $month->copy()->startOfMonth()->startOfDay();
@@ -120,6 +136,22 @@ class CommissionCalculatorService
             $found = $periods->firstWhere('key', $periodKey);
             if ($found) {
                 return $found;
+            }
+
+            // Parse custom/historical daily YYYY-MM-DD(-D) keys on the fly
+            if (preg_match('/^(\d{4}-\d{2}-\d{2})(-D)?$/', (string) $periodKey, $m)) {
+                $day = Carbon::createFromFormat('Y-m-d', $m[1], 'Asia/Manila');
+                $label = $day->isToday()
+                    ? 'Today (' . $day->format('M j, Y') . ') · Daily'
+                    : ($day->isYesterday()
+                        ? 'Yesterday (' . $day->format('M j, Y') . ') · Daily'
+                        : $day->format('D, M j, Y') . ' · Daily');
+                return [
+                    'key' => $m[1] . '-D',
+                    'label' => $label,
+                    'start' => $day->copy()->startOfDay(),
+                    'end' => $day->copy()->endOfDay(),
+                ];
             }
 
             // Parse custom/historical YYYY-MM-H1 / YYYY-MM-H2 keys on the fly

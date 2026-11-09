@@ -1007,7 +1007,7 @@ class RiderApiController extends Controller
         // Mark parcels as submitted for remittance
         foreach ($deliveredParcels as $p) {
             $metadata = $p->metadata ?? [];
-            $metadata['is_cod_remitted'] = false;
+            $metadata['is_cod_remitted'] = true;
             $metadata['cod_remit_status'] = 'awaiting_cashier';
             $metadata['cod_remitted_at'] = now()->toIso8601String();
             $p->metadata = $metadata;
