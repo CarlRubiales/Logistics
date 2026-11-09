@@ -548,141 +548,145 @@ class CommissionController extends Controller
     /**
      * Branch Hub Commission page (for Hub Admin, e.g. Pila Hub).
      */
-    public function hubIndex(Request $request, CommissionCalculatorService $calculator): View
+    public function hubIndex(Request $request, CommissionCalculatorService $calculator): View|\Illuminate\Http\Response
     {
-        $user = $request->user();
-        abort_unless($user && in_array($user->role, ['admin', 'logistics', 'operations_manager', 'super_admin'], true), 403);
-
-        $hubName = $user->isMasterAdmin() ? ($request->query('hub') ?: 'Pila') : ($user->getBranchName() ?: 'Pila');
-        $rule = CommissionRule::current();
-        $periods = $calculator->availablePeriods($rule->period_type);
-
-        $requestedPeriodKey = trim((string) $request->query('period', ''));
-        $selectedPeriod = $calculator->resolvePeriod($requestedPeriodKey !== '' ? $requestedPeriodKey : null);
-
-        if (! $periods->contains(fn (array $p) => $p['key'] === $selectedPeriod['key'])) {
-            $periods->prepend($selectedPeriod);
-        }
-
-        // Auto-sync real parcel calculations for the period
         try {
-            $calculator->syncPeriodCommissions($selectedPeriod);
+            $user = $request->user();
+            abort_unless($user && in_array($user->role, ['admin', 'logistics', 'operations_manager', 'super_admin'], true), 403);
+
+            $hubName = $user->isMasterAdmin() ? ($request->query('hub') ?: 'Pila') : ($user->getBranchName() ?: 'Pila');
+            $rule = CommissionRule::current();
+            $periods = $calculator->availablePeriods($rule->period_type);
+
+            $requestedPeriodKey = trim((string) $request->query('period', ''));
+            $selectedPeriod = $calculator->resolvePeriod($requestedPeriodKey !== '' ? $requestedPeriodKey : null);
+
+            if (! $periods->contains(fn (array $p) => $p['key'] === $selectedPeriod['key'])) {
+                $periods->prepend($selectedPeriod);
+            }
+
+            // Auto-sync real parcel calculations for the period
+            try {
+                $calculator->syncPeriodCommissions($selectedPeriod);
+            } catch (\Throwable $e) {
+                // Keep going with existing cached or fallback records
+            }
+
+            $search = trim((string) $request->query('search', ''));
+            $activeTab = strtolower(trim((string) $request->query('tab', 'all')));
+            if (! in_array($activeTab, ['all', 'awaiting_hq', 'ready_to_pay', 'paid'], true)) {
+                $activeTab = 'all';
+            }
+
+            // Scope records strictly to this hub
+            try {
+                $hubRows = RiderCommission::query()
+                    ->with(['rider.user', 'approver', 'payer', 'flagger'])
+                    ->where('period_key', $selectedPeriod['key'])
+                    ->forHub($hubName)
+                    ->get()
+                    ->sortByDesc('net_centavos')
+                    ->values();
+            } catch (\Throwable $e) {
+                $hubRows = collect();
+            }
+
+            // 4 Summary cards for this Hub:
+            $awaitingHqRows = $hubRows->where('status', 'pending');
+            $readyToPayRows = $hubRows->where('status', 'approved');
+            $paidRows = $hubRows->where('status', 'paid');
+
+            $hubNetCentavos = (int) $hubRows->sum('net_centavos');
+            $hubDeliveredCount = (int) $hubRows->sum('delivered_count');
+            $hubRidersCount = $hubRows->count();
+
+            $awaitingHqCentavos = (int) $awaitingHqRows->sum('net_centavos');
+            $awaitingHqCount = $awaitingHqRows->count();
+
+            $readyToPayCentavos = (int) $readyToPayRows->sum('net_centavos');
+            $readyToPayCount = $readyToPayRows->count();
+
+            $paidOutCentavos = (int) $paidRows->sum('net_centavos');
+            $paidOutCount = $paidRows->count();
+
+            $stats = [
+                'hub_net_centavos' => $hubNetCentavos,
+                'hub_net_formatted' => CommissionRule::formatPeso($hubNetCentavos),
+                'delivered_count' => $hubDeliveredCount,
+                'riders_count' => $hubRidersCount,
+                'awaiting_hq_centavos' => $awaitingHqCentavos,
+                'awaiting_hq_formatted' => CommissionRule::formatPeso($awaitingHqCentavos),
+                'awaiting_hq_count' => $awaitingHqCount,
+                'ready_to_pay_centavos' => $readyToPayCentavos,
+                'ready_to_pay_formatted' => CommissionRule::formatPeso($readyToPayCentavos),
+                'ready_to_pay_count' => $readyToPayCount,
+                'paid_centavos' => $paidOutCentavos,
+                'paid_formatted' => CommissionRule::formatPeso($paidOutCentavos),
+                'paid_count' => $paidOutCount,
+            ];
+
+            // Search by rider name
+            $searchedRows = $this->applySearchFilter($hubRows, $search);
+
+            // Status tabs with live counts
+            $tabCounts = [
+                'all' => $searchedRows->count(),
+                'awaiting_hq' => $searchedRows->where('status', 'pending')->count(),
+                'ready_to_pay' => $searchedRows->where('status', 'approved')->count(),
+                'paid' => $searchedRows->where('status', 'paid')->count(),
+            ];
+
+            $statusMap = [
+                'awaiting_hq' => 'pending',
+                'ready_to_pay' => 'approved',
+                'paid' => 'paid',
+            ];
+
+            $filteredRows = $activeTab === 'all'
+                ? $searchedRows->values()
+                : $searchedRows->where('status', $statusMap[$activeTab])->values();
+
+            // Paginate rider table (12 per page)
+            $perPage = 12;
+            $currentPage = max(1, (int) $request->query('page', 1));
+            $currentItems = $filteredRows->slice(($currentPage - 1) * $perPage, $perPage)->values();
+
+            $paginator = new LengthAwarePaginator(
+                $currentItems,
+                $filteredRows->count(),
+                $perPage,
+                $currentPage,
+                [
+                    'path' => $request->url(),
+                    'query' => $request->query(),
+                ]
+            );
+
+            // Selected rider for the detail panel
+            $selectedId = (int) $request->query('selected', 0);
+            $selectedCommission = null;
+            if ($selectedId > 0) {
+                $selectedCommission = $hubRows->firstWhere('id', $selectedId);
+            }
+            if (! $selectedCommission && $currentItems->isNotEmpty()) {
+                $selectedCommission = $currentItems->first();
+            }
+
+            return view('commission.hub', [
+                'commissions' => $paginator,
+                'hubName' => $hubName,
+                'rule' => $rule,
+                'periods' => $periods,
+                'selectedPeriod' => $selectedPeriod,
+                'selectedCommission' => $selectedCommission,
+                'search' => $search,
+                'activeTab' => $activeTab,
+                'tabCounts' => $tabCounts,
+                'stats' => $stats,
+            ]);
         } catch (\Throwable $e) {
-            // Keep going with existing cached or fallback records
+            return response('Hub commission error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine(), 500);
         }
-
-        $search = trim((string) $request->query('search', ''));
-        $activeTab = strtolower(trim((string) $request->query('tab', 'all')));
-        if (! in_array($activeTab, ['all', 'awaiting_hq', 'ready_to_pay', 'paid'], true)) {
-            $activeTab = 'all';
-        }
-
-        // Scope records strictly to this hub
-        try {
-            $hubRows = RiderCommission::query()
-                ->with(['rider.user', 'approver', 'payer', 'flagger'])
-                ->where('period_key', $selectedPeriod['key'])
-                ->forHub($hubName)
-                ->get()
-                ->sortByDesc('net_centavos')
-                ->values();
-        } catch (\Throwable $e) {
-            $hubRows = collect();
-        }
-
-        // 4 Summary cards for this Hub:
-        $awaitingHqRows = $hubRows->where('status', 'pending');
-        $readyToPayRows = $hubRows->where('status', 'approved');
-        $paidRows = $hubRows->where('status', 'paid');
-
-        $hubNetCentavos = (int) $hubRows->sum('net_centavos');
-        $hubDeliveredCount = (int) $hubRows->sum('delivered_count');
-        $hubRidersCount = $hubRows->count();
-
-        $awaitingHqCentavos = (int) $awaitingHqRows->sum('net_centavos');
-        $awaitingHqCount = $awaitingHqRows->count();
-
-        $readyToPayCentavos = (int) $readyToPayRows->sum('net_centavos');
-        $readyToPayCount = $readyToPayRows->count();
-
-        $paidOutCentavos = (int) $paidRows->sum('net_centavos');
-        $paidOutCount = $paidRows->count();
-
-        $stats = [
-            'hub_net_centavos' => $hubNetCentavos,
-            'hub_net_formatted' => CommissionRule::formatPeso($hubNetCentavos),
-            'delivered_count' => $hubDeliveredCount,
-            'riders_count' => $hubRidersCount,
-            'awaiting_hq_centavos' => $awaitingHqCentavos,
-            'awaiting_hq_formatted' => CommissionRule::formatPeso($awaitingHqCentavos),
-            'awaiting_hq_count' => $awaitingHqCount,
-            'ready_to_pay_centavos' => $readyToPayCentavos,
-            'ready_to_pay_formatted' => CommissionRule::formatPeso($readyToPayCentavos),
-            'ready_to_pay_count' => $readyToPayCount,
-            'paid_centavos' => $paidOutCentavos,
-            'paid_formatted' => CommissionRule::formatPeso($paidOutCentavos),
-            'paid_count' => $paidOutCount,
-        ];
-
-        // Search by rider name
-        $searchedRows = $this->applySearchFilter($hubRows, $search);
-
-        // Status tabs with live counts
-        $tabCounts = [
-            'all' => $searchedRows->count(),
-            'awaiting_hq' => $searchedRows->where('status', 'pending')->count(),
-            'ready_to_pay' => $searchedRows->where('status', 'approved')->count(),
-            'paid' => $searchedRows->where('status', 'paid')->count(),
-        ];
-
-        $statusMap = [
-            'awaiting_hq' => 'pending',
-            'ready_to_pay' => 'approved',
-            'paid' => 'paid',
-        ];
-
-        $filteredRows = $activeTab === 'all'
-            ? $searchedRows->values()
-            : $searchedRows->where('status', $statusMap[$activeTab])->values();
-
-        // Paginate rider table (12 per page)
-        $perPage = 12;
-        $currentPage = max(1, (int) $request->query('page', 1));
-        $currentItems = $filteredRows->slice(($currentPage - 1) * $perPage, $perPage)->values();
-
-        $paginator = new LengthAwarePaginator(
-            $currentItems,
-            $filteredRows->count(),
-            $perPage,
-            $currentPage,
-            [
-                'path' => $request->url(),
-                'query' => $request->query(),
-            ]
-        );
-
-        // Selected rider for the detail panel
-        $selectedId = (int) $request->query('selected', 0);
-        $selectedCommission = null;
-        if ($selectedId > 0) {
-            $selectedCommission = $hubRows->firstWhere('id', $selectedId);
-        }
-        if (! $selectedCommission && $currentItems->isNotEmpty()) {
-            $selectedCommission = $currentItems->first();
-        }
-
-        return view('commission.hub', [
-            'commissions' => $paginator,
-            'hubName' => $hubName,
-            'rule' => $rule,
-            'periods' => $periods,
-            'selectedPeriod' => $selectedPeriod,
-            'selectedCommission' => $selectedCommission,
-            'search' => $search,
-            'activeTab' => $activeTab,
-            'tabCounts' => $tabCounts,
-            'stats' => $stats,
-        ]);
     }
 
     /**
