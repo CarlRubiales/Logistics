@@ -154,7 +154,11 @@
                                     <tr data-commission-id="{{ $rc->id }}">
                                         <td>
                                             @if($rc->status === 'pending')
-                                                <input type="checkbox" class="comm-row-checkbox" value="{{ $rc->id }}" data-rider="{{ $riderName }}" data-net="{{ $rc->formatted_net }}" aria-label="Select {{ $riderName }}" onchange="updateCommissionSelection()">
+                                                @if($rc->is_flagged)
+                                                    <input type="checkbox" disabled aria-label="Cannot approve: flagged with issue by hub" title="Flagged by hub: {{ $rc->flagged_note }}">
+                                                @else
+                                                    <input type="checkbox" class="comm-row-checkbox" value="{{ $rc->id }}" data-rider="{{ $riderName }}" data-net="{{ $rc->formatted_net }}" aria-label="Select {{ $riderName }}" onchange="updateCommissionSelection()">
+                                                @endif
                                             @else
                                                 <span class="shipment-sr-only">Not selectable</span>
                                             @endif
@@ -165,6 +169,19 @@
                                                 <div>
                                                     <span class="rr-cell-title">{{ $riderName }}</span>
                                                     <span class="rr-cell-sub">{{ $rc->hub_branch }} Hub · {{ number_format($rc->on_time_rate_percent, 1) }}% on-time</span>
+                                                    @if($rc->is_flagged)
+                                                        <div style="margin-top: 2px;">
+                                                            <span class="rr-stat-pill danger" style="font-size: 10px; padding: 2px 6px;" title="{{ $rc->flagged_note }}">
+                                                                ⚠ Flagged by Hub: {{ Str::limit($rc->flagged_note, 45) }}
+                                                            </span>
+                                                            <form method="POST" action="{{ route('commission.resolve-flag', $rc->id) }}" style="display: inline-block; margin-left: 4px;">
+                                                                @csrf
+                                                                <button type="submit" class="text-button" style="font-size: 10px; color: var(--orange); font-weight: 700; background: none; border: 0; cursor: pointer;">
+                                                                    Resolve flag ✓
+                                                                </button>
+                                                            </form>
+                                                        </div>
+                                                    @endif
                                                 </div>
                                             </div>
                                         </td>

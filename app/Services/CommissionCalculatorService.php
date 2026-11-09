@@ -381,6 +381,10 @@ class CommissionCalculatorService
                     'net_centavos' => $netCentavos,
                     'rules_snapshot' => $snapshot,
                     'status' => $existing ? $existing->status : 'pending',
+                    'is_flagged' => $existing ? $existing->is_flagged : false,
+                    'flagged_note' => $existing ? $existing->flagged_note : null,
+                    'flagged_at' => $existing ? $existing->flagged_at : null,
+                    'flagged_by' => $existing ? $existing->flagged_by : null,
                 ]
             );
         }
@@ -390,7 +394,7 @@ class CommissionCalculatorService
      * Count the number of riders in Pending status for the selected (or current) pay period.
      * Used for the Sidebar badge on "Commission".
      */
-    public static function pendingRidersCount(?string $periodKey = null): int
+    public static function pendingRidersCount(?string $periodKey = null, ?string $branch = null): int
     {
         try {
             if (! Schema::hasTable('rider_commissions')) {
@@ -409,10 +413,15 @@ class CommissionCalculatorService
                 $service->syncPeriodCommissions($period);
             }
 
-            return RiderCommission::query()
+            $query = RiderCommission::query()
                 ->where('period_key', $period['key'])
-                ->where('status', 'pending')
-                ->count();
+                ->where('status', 'pending');
+
+            if (! empty($branch)) {
+                $query->whereRaw('LOWER(hub_branch) = ?', [strtolower(trim($branch))]);
+            }
+
+            return $query->count();
         } catch (\Throwable $e) {
             return 0;
         }

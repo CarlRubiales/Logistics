@@ -151,6 +151,11 @@
                 <div class="nav-label second">Manage</div>
                 <a class="nav-item {{ request()->routeIs('riders.*') ? 'active' : '' }}" href="{{ route('riders.index') }}"><span class="nav-icon">♙</span><span>Riders</span></a>
                 <a class="nav-item {{ request()->routeIs('areas.*') ? 'active' : '' }}" href="{{ route('areas.index') }}"><span class="nav-icon">⌖</span><span>Delivery Areas</span></a>
+                <a class="nav-item {{ request()->routeIs('commission.hub*') ? 'active' : '' }}" href="{{ route('commission.hub') }}">
+                    <span class="nav-icon">₱</span>
+                    <span>Commission</span>
+                    <span class="nav-pill" style="background: var(--orange); font-size: 9px; font-weight: 800; padding: 2px 5px;">NEW</span>
+                </a>
                 <a class="nav-item {{ request()->routeIs('messages.*') ? 'active' : '' }}" href="{{ route('messages.index') }}"><span class="nav-icon">✉</span><span>Messages</span></a>
                 <a class="nav-item {{ request()->routeIs('reports.*') ? 'active' : '' }}" href="{{ route('reports.index') }}"><span class="nav-icon">▤</span><span>Reports</span></a>
             @endif

@@ -2106,3 +2106,16 @@ body.logistics-page :is(button, input, select, textarea):is(:disabled, [aria-dis
     .comm-side { grid-template-columns: 1fr; }
     .comm-rule-row { grid-template-columns: 1fr; }
 }
+
+/* Hub Commission Breadcrumb */
+.comm-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+.comm-breadcrumb .sep { color: var(--line); }
+.comm-breadcrumb .curr { color: var(--plum); font-weight: 700; }

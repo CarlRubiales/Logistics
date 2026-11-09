@@ -43,6 +43,10 @@ return new class extends Migration
                 $table->bigInteger('net_centavos')->default(0);
                 $table->json('rules_snapshot')->nullable();
                 $table->string('status', 24)->default('pending')->index(); // pending | approved | paid
+                $table->boolean('is_flagged')->default(false)->index();
+                $table->text('flagged_note')->nullable();
+                $table->timestamp('flagged_at')->nullable();
+                $table->foreignId('flagged_by')->nullable()->constrained('users')->nullOnDelete();
                 $table->timestamp('approved_at')->nullable();
                 $table->foreignId('approved_by')->nullable()->constrained('users')->nullOnDelete();
                 $table->timestamp('paid_at')->nullable();
@@ -51,6 +55,15 @@ return new class extends Migration
                 $table->timestamps();
 
                 $table->unique(['rider_profile_id', 'period_key'], 'rider_commissions_rider_period_unique');
+            });
+        } else {
+            Schema::table('rider_commissions', function (Blueprint $table) {
+                if (! Schema::hasColumn('rider_commissions', 'is_flagged')) {
+                    $table->boolean('is_flagged')->default(false)->index();
+                    $table->text('flagged_note')->nullable();
+                    $table->timestamp('flagged_at')->nullable();
+                    $table->foreignId('flagged_by')->nullable()->constrained('users')->nullOnDelete();
+                }
             });
         }
     }

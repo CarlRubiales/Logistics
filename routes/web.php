@@ -97,14 +97,21 @@ Route::middleware(['auth', 'logistics'])->group(function () {
     Route::post('/sorting-center/{parcel}/assign', [SortingCenterController::class, 'assign'])->name('sorting-center.assign');
     Route::post('/sorting-center/{parcel}/transfer-hub', [SortingCenterController::class, 'transferHub'])->name('sorting-center.transfer-hub');
     Route::post('/sorting-center/{parcel}/receive-hub', [SortingCenterController::class, 'receiveHubTransfer'])->name('sorting-center.receive-hub');
-    // Finance: Rider Commission (Super Admin only — enforced by route middleware and in the controller)
+    // Finance: Rider Commission (Shared Backend)
+    // Super Admin HQ routes
     Route::middleware(\App\Http\Middleware\EnsureSuperAdmin::class)->group(function () {
         Route::get('/commission', [CommissionController::class, 'index'])->name('commission.index');
-        Route::get('/commission/export', [CommissionController::class, 'exportCsv'])->name('commission.export');
         Route::put('/commission/rules', [CommissionController::class, 'updateRules'])->name('commission.rules.update');
         Route::post('/commission/approve', [CommissionController::class, 'bulkApprove'])->name('commission.approve');
-        Route::post('/commission/{riderCommission}/mark-paid', [CommissionController::class, 'markPaid'])->name('commission.mark-paid');
+        Route::post('/commission/{riderCommission}/resolve-flag', [CommissionController::class, 'resolveFlag'])->name('commission.resolve-flag');
     });
+
+    // Branch Hub Admin & HQ routes (Export, Single & Bulk Payout, Flag Issue)
+    Route::get('/hub/commission', [CommissionController::class, 'hubIndex'])->name('commission.hub');
+    Route::get('/commission/export', [CommissionController::class, 'exportCsv'])->name('commission.export');
+    Route::post('/commission/bulk-paid', [CommissionController::class, 'bulkMarkPaid'])->name('commission.bulk-paid');
+    Route::post('/commission/{riderCommission}/mark-paid', [CommissionController::class, 'markPaid'])->name('commission.mark-paid');
+    Route::post('/commission/{riderCommission}/flag', [CommissionController::class, 'flagIssue'])->name('commission.flag');
     Route::get('/orders', [OrdersController::class, 'index'])->name('orders.index');
     Route::get('/orders/{order}', [OrdersController::class, 'show'])->name('orders.show');
 });

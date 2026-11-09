@@ -245,6 +245,16 @@ class CommissionController extends Controller
             ->whereIn('id', $validated['commission_ids'])
             ->get();
 
+        // Bulk approve validation: flagged cases cannot be approved until resolved
+        $flaggedCount = $rows->where('is_flagged', true)->count();
+        if ($flaggedCount > 0) {
+            $msg = "Cannot approve selected records because {$flaggedCount} " . ($flaggedCount === 1 ? 'record is' : 'records are') . " flagged with an issue by the hub. Please resolve the flagged issue first.";
+            if ($request->expectsJson()) {
+                return response()->json(['status' => 'error', 'message' => $msg], 422);
+            }
+            return back()->withErrors(['status' => $msg]);
+        }
+
         $approvedCount = 0;
         $now = now();
         $adminId = $request->user()?->id;
@@ -305,10 +315,27 @@ class CommissionController extends Controller
      */
     public function markPaid(Request $request, RiderCommission $riderCommission): RedirectResponse|JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
+        $user = $request->user();
+        $isMaster = $user && method_exists($user, 'isMasterAdmin') && $user->isMasterAdmin();
+        $branch = $user?->getBranchName();
+
+        if (! $isMaster) {
+            abort_unless($user && in_array($user->role, ['admin', 'logistics', 'operations_manager'], true), 403);
+            if ($branch && strcasecmp($riderCommission->hub_branch, $branch) !== 0) {
+                abort(403, 'You may only record payouts for riders assigned to your own hub.');
+            }
+        }
+
+        if ($riderCommission->status === 'paid') {
+            $msg = "Parcel payout was already recorded as Paid on {$riderCommission->paid_at?->format('M j, Y')}.";
+            if ($request->expectsJson()) {
+                return response()->json(['status' => 'success', 'message' => $msg]);
+            }
+            return back()->with('status', $msg);
+        }
 
         if ($riderCommission->status !== 'approved') {
-            $err = 'Only Approved commission records can be marked as paid.';
+            $err = 'Only Approved (Ready to pay) commission records can be marked as paid.';
             if ($request->expectsJson()) {
                 return response()->json(['status' => 'error', 'message' => $err], 422);
             }
@@ -321,8 +348,8 @@ class CommissionController extends Controller
 
         $reference = trim((string) ($validated['payment_reference'] ?? ''));
         $now = now();
-        $adminId = $request->user()?->id;
-        $adminName = $request->user()?->name ?? 'Super Admin';
+        $adminId = $user?->id;
+        $adminName = $user?->name ?? 'Hub Admin';
 
         $riderCommission->update([
             'status' => 'paid',
@@ -364,30 +391,322 @@ class CommissionController extends Controller
     }
 
     /**
+     * Bulk mark approved rows as Paid (Branch Hub and HQ).
+     */
+    public function bulkMarkPaid(Request $request): RedirectResponse|JsonResponse
+    {
+        $user = $request->user();
+        $isMaster = $user && method_exists($user, 'isMasterAdmin') && $user->isMasterAdmin();
+        $branch = $user?->getBranchName();
+
+        if (! $isMaster) {
+            abort_unless($user && in_array($user->role, ['admin', 'logistics', 'operations_manager'], true), 403);
+        }
+
+        $validated = $request->validate([
+            'commission_ids' => ['required', 'array', 'min:1'],
+            'commission_ids.*' => ['integer', 'exists:rider_commissions,id'],
+            'payment_reference' => ['nullable', 'string', 'max:160'],
+        ]);
+
+        $query = RiderCommission::query()->whereIn('id', $validated['commission_ids']);
+        if (! $isMaster && $branch) {
+            $query->forHub($branch);
+        }
+
+        $rows = $query->with('rider.user')->get();
+        $now = now();
+        $adminId = $user?->id;
+        $adminName = $user?->name ?? ($branch ? "{$branch} Hub Admin" : 'Admin');
+        $reference = trim((string) ($validated['payment_reference'] ?? ''));
+
+        $paidCount = 0;
+        foreach ($rows as $rc) {
+            if ($rc->status !== 'approved') {
+                continue;
+            }
+
+            $rc->update([
+                'status' => 'paid',
+                'paid_at' => $now,
+                'paid_by' => $adminId,
+                'payment_reference' => $reference !== '' ? $reference : $rc->payment_reference,
+            ]);
+
+            AuditLog::query()->create([
+                'user_id' => $adminId,
+                'event' => 'commission.paid',
+                'auditable_type' => RiderCommission::class,
+                'auditable_id' => $rc->id,
+                'metadata' => [
+                    'rider_name' => $rc->rider?->user?->name ?? ('Rider #' . $rc->rider_profile_id),
+                    'hub_branch' => $rc->hub_branch,
+                    'period_key' => $rc->period_key,
+                    'period_label' => $rc->period_label,
+                    'net_centavos' => $rc->net_centavos,
+                    'net_formatted' => $rc->formatted_net,
+                    'payment_reference' => $reference !== '' ? $reference : null,
+                    'paid_by_name' => $adminName,
+                ],
+                'created_at' => $now,
+            ]);
+
+            $paidCount++;
+        }
+
+        $msg = "Recorded payout for {$paidCount} " . ($paidCount === 1 ? 'rider' : 'riders') . '.';
+        if ($request->expectsJson()) {
+            return response()->json(['status' => 'success', 'paid_count' => $paidCount, 'message' => $msg]);
+        }
+        return back()->with('status', $msg);
+    }
+
+    /**
+     * Flag an issue to HQ on a commission record (Hub Admin).
+     */
+    public function flagIssue(Request $request, RiderCommission $riderCommission): RedirectResponse|JsonResponse
+    {
+        $user = $request->user();
+        $isMaster = $user && method_exists($user, 'isMasterAdmin') && $user->isMasterAdmin();
+        $branch = $user?->getBranchName();
+
+        if (! $isMaster && $branch) {
+            if (strcasecmp($riderCommission->hub_branch, $branch) !== 0) {
+                abort(403, 'You may only flag records for your own hub.');
+            }
+        }
+
+        $validated = $request->validate([
+            'note' => ['required', 'string', 'min:5', 'max:1000'],
+        ]);
+
+        $now = now();
+        $note = trim($validated['note']);
+
+        $riderCommission->update([
+            'is_flagged' => true,
+            'flagged_note' => $note,
+            'flagged_at' => $now,
+            'flagged_by' => $user?->id,
+        ]);
+
+        AuditLog::query()->create([
+            'user_id' => $user?->id,
+            'event' => 'commission.flagged',
+            'auditable_type' => RiderCommission::class,
+            'auditable_id' => $riderCommission->id,
+            'metadata' => [
+                'rider_name' => $riderCommission->rider?->user?->name ?? ('Rider #' . $riderCommission->rider_profile_id),
+                'hub_branch' => $riderCommission->hub_branch,
+                'period_key' => $riderCommission->period_key,
+                'note' => $note,
+                'flagged_by_name' => $user?->name ?? 'Hub Admin',
+            ],
+            'created_at' => $now,
+        ]);
+
+        $msg = "Flagged issue to Headquarters for {$riderCommission->rider?->user?->name}.";
+        if ($request->expectsJson()) {
+            return response()->json(['status' => 'success', 'message' => $msg]);
+        }
+        return back()->with('status', $msg);
+    }
+
+    /**
+     * Resolve a flagged issue (HQ Super Admin).
+     */
+    public function resolveFlag(Request $request, RiderCommission $riderCommission): RedirectResponse|JsonResponse
+    {
+        $this->authorizeSuperAdmin($request);
+
+        $riderCommission->update([
+            'is_flagged' => false,
+            'flagged_note' => null,
+            'flagged_at' => null,
+            'flagged_by' => null,
+        ]);
+
+        AuditLog::query()->create([
+            'user_id' => $request->user()?->id,
+            'event' => 'commission.flag_resolved',
+            'auditable_type' => RiderCommission::class,
+            'auditable_id' => $riderCommission->id,
+            'metadata' => [
+                'rider_name' => $riderCommission->rider?->user?->name,
+                'resolved_by_name' => $request->user()?->name ?? 'Super Admin',
+            ],
+            'created_at' => now(),
+        ]);
+
+        $msg = "Resolved flag for {$riderCommission->rider?->user?->name}. Record is now eligible for approval.";
+        if ($request->expectsJson()) {
+            return response()->json(['status' => 'success', 'message' => $msg]);
+        }
+        return back()->with('status', $msg);
+    }
+
+    /**
+     * Branch Hub Commission page (for Hub Admin, e.g. Pila Hub).
+     */
+    public function hubIndex(Request $request, CommissionCalculatorService $calculator): View
+    {
+        $user = $request->user();
+        abort_unless($user && in_array($user->role, ['admin', 'logistics', 'operations_manager', 'super_admin'], true), 403);
+
+        $hubName = $user->isMasterAdmin() ? ($request->query('hub') ?: 'Pila') : ($user->getBranchName() ?: 'Pila');
+        $rule = CommissionRule::current();
+        $periods = $calculator->availablePeriods($rule->period_type);
+
+        $requestedPeriodKey = trim((string) $request->query('period', ''));
+        $selectedPeriod = $calculator->resolvePeriod($requestedPeriodKey !== '' ? $requestedPeriodKey : null);
+
+        if (! $periods->contains(fn (array $p) => $p['key'] === $selectedPeriod['key'])) {
+            $periods->prepend($selectedPeriod);
+        }
+
+        // Auto-sync real parcel calculations for the period
+        $calculator->syncPeriodCommissions($selectedPeriod);
+
+        $search = trim((string) $request->query('search', ''));
+        $activeTab = strtolower(trim((string) $request->query('tab', 'all')));
+        if (! in_array($activeTab, ['all', 'awaiting_hq', 'ready_to_pay', 'paid'], true)) {
+            $activeTab = 'all';
+        }
+
+        // Scope records strictly to this hub
+        $hubRows = RiderCommission::query()
+            ->with(['rider.user', 'approver', 'payer', 'flagger'])
+            ->where('period_key', $selectedPeriod['key'])
+            ->forHub($hubName)
+            ->get()
+            ->sortByDesc('net_centavos')
+            ->values();
+
+        // 4 Summary cards for this Hub:
+        $awaitingHqRows = $hubRows->where('status', 'pending');
+        $readyToPayRows = $hubRows->where('status', 'approved');
+        $paidRows = $hubRows->where('status', 'paid');
+
+        $hubNetCentavos = (int) $hubRows->sum('net_centavos');
+        $hubDeliveredCount = (int) $hubRows->sum('delivered_count');
+        $hubRidersCount = $hubRows->count();
+
+        $awaitingHqCentavos = (int) $awaitingHqRows->sum('net_centavos');
+        $awaitingHqCount = $awaitingHqRows->count();
+
+        $readyToPayCentavos = (int) $readyToPayRows->sum('net_centavos');
+        $readyToPayCount = $readyToPayRows->count();
+
+        $paidOutCentavos = (int) $paidRows->sum('net_centavos');
+        $paidOutCount = $paidRows->count();
+
+        $stats = [
+            'hub_net_centavos' => $hubNetCentavos,
+            'hub_net_formatted' => CommissionRule::formatPeso($hubNetCentavos),
+            'delivered_count' => $hubDeliveredCount,
+            'riders_count' => $hubRidersCount,
+            'awaiting_hq_centavos' => $awaitingHqCentavos,
+            'awaiting_hq_formatted' => CommissionRule::formatPeso($awaitingHqCentavos),
+            'awaiting_hq_count' => $awaitingHqCount,
+            'ready_to_pay_centavos' => $readyToPayCentavos,
+            'ready_to_pay_formatted' => CommissionRule::formatPeso($readyToPayCentavos),
+            'ready_to_pay_count' => $readyToPayCount,
+            'paid_centavos' => $paidOutCentavos,
+            'paid_formatted' => CommissionRule::formatPeso($paidOutCentavos),
+            'paid_count' => $paidOutCount,
+        ];
+
+        // Search by rider name
+        $searchedRows = $this->applySearchFilter($hubRows, $search);
+
+        // Status tabs with live counts
+        $tabCounts = [
+            'all' => $searchedRows->count(),
+            'awaiting_hq' => $searchedRows->where('status', 'pending')->count(),
+            'ready_to_pay' => $searchedRows->where('status', 'approved')->count(),
+            'paid' => $searchedRows->where('status', 'paid')->count(),
+        ];
+
+        $statusMap = [
+            'awaiting_hq' => 'pending',
+            'ready_to_pay' => 'approved',
+            'paid' => 'paid',
+        ];
+
+        $filteredRows = $activeTab === 'all'
+            ? $searchedRows->values()
+            : $searchedRows->where('status', $statusMap[$activeTab])->values();
+
+        // Paginate rider table (12 per page)
+        $perPage = 12;
+        $currentPage = max(1, (int) $request->query('page', 1));
+        $currentItems = $filteredRows->slice(($currentPage - 1) * $perPage, $perPage)->values();
+
+        $paginator = new LengthAwarePaginator(
+            $currentItems,
+            $filteredRows->count(),
+            $perPage,
+            $currentPage,
+            [
+                'path' => $request->url(),
+                'query' => $request->query(),
+            ]
+        );
+
+        // Selected rider for the detail panel
+        $selectedId = (int) $request->query('selected', 0);
+        $selectedCommission = null;
+        if ($selectedId > 0) {
+            $selectedCommission = $hubRows->firstWhere('id', $selectedId);
+        }
+        if (! $selectedCommission && $currentItems->isNotEmpty()) {
+            $selectedCommission = $currentItems->first();
+        }
+
+        return view('commission.hub', [
+            'commissions' => $paginator,
+            'hubName' => $hubName,
+            'rule' => $rule,
+            'periods' => $periods,
+            'selectedPeriod' => $selectedPeriod,
+            'selectedCommission' => $selectedCommission,
+            'search' => $search,
+            'activeTab' => $activeTab,
+            'tabCounts' => $tabCounts,
+            'stats' => $stats,
+        ]);
+    }
+
+    /**
      * Export the currently filtered rider commission table as CSV.
      */
     public function exportCsv(Request $request, CommissionCalculatorService $calculator): StreamedResponse
     {
-        $this->authorizeSuperAdmin($request);
+        $user = $request->user();
+        $isMaster = $user && method_exists($user, 'isMasterAdmin') && $user->isMasterAdmin();
+        $branch = $user?->getBranchName();
+
+        if (! $isMaster) {
+            abort_unless($user && in_array($user->role, ['admin', 'logistics', 'operations_manager'], true), 403);
+        }
 
         $requestedPeriodKey = trim((string) $request->query('period', ''));
         $selectedPeriod = $calculator->resolvePeriod($requestedPeriodKey !== '' ? $requestedPeriodKey : null);
         $calculator->syncPeriodCommissions($selectedPeriod);
 
-        $filterHub = trim((string) $request->query('hub', ''));
+        $filterHub = $isMaster ? trim((string) $request->query('hub', '')) : ($branch ?: 'Pila');
         $search = trim((string) $request->query('search', ''));
         $activeTab = strtolower(trim((string) $request->query('tab', 'all')));
 
-        $rows = RiderCommission::query()
-            ->with(['rider.user', 'approver', 'payer'])
-            ->where('period_key', $selectedPeriod['key'])
-            ->get()
-            ->sortByDesc('net_centavos')
-            ->values();
+        $query = RiderCommission::query()
+            ->with(['rider.user', 'approver', 'payer', 'flagger'])
+            ->where('period_key', $selectedPeriod['key']);
 
-        if ($filterHub !== '') {
-            $rows = $rows->filter(fn (RiderCommission $rc) => strcasecmp($rc->hub_branch, $filterHub) === 0)->values();
+        if (! empty($filterHub)) {
+            $query->forHub($filterHub);
         }
+
+        $rows = $query->get()->sortByDesc('net_centavos')->values();
 
         $rows = $this->applySearchFilter($rows, $search);
 

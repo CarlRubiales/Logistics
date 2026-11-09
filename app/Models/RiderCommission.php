@@ -25,6 +25,10 @@ class RiderCommission extends Model
         'net_centavos',
         'rules_snapshot',
         'status',
+        'is_flagged',
+        'flagged_note',
+        'flagged_at',
+        'flagged_by',
         'approved_at',
         'approved_by',
         'paid_at',
@@ -47,6 +51,8 @@ class RiderCommission extends Model
             'deductions_centavos' => 'integer',
             'net_centavos' => 'integer',
             'rules_snapshot' => 'array',
+            'is_flagged' => 'boolean',
+            'flagged_at' => 'datetime',
             'approved_at' => 'datetime',
             'paid_at' => 'datetime',
         ];
@@ -65,6 +71,11 @@ class RiderCommission extends Model
     public function payer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'paid_by');
+    }
+
+    public function flagger(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'flagged_by');
     }
 
     public function getOnTimeRatePercentAttribute(): float
@@ -92,5 +103,14 @@ class RiderCommission extends Model
     public function getFormattedNetAttribute(): string
     {
         return CommissionRule::formatPeso((int) $this->net_centavos);
+    }
+
+    public function scopeForHub($query, ?string $hub)
+    {
+        if (empty($hub)) {
+            return $query;
+        }
+        $hubLower = strtolower(trim($hub));
+        return $query->whereRaw('LOWER(hub_branch) = ?', [$hubLower]);
     }
 }
