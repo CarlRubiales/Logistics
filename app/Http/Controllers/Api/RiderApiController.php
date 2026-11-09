@@ -904,6 +904,8 @@ class RiderApiController extends Controller
             $dateStr = $remitDate->toDateString();
         }
 
+        \App\Http\Controllers\RemittanceController::ensureTables();
+
         $idempotencyKey = $request->input('idempotency_key');
         if (! empty($idempotencyKey)) {
             $existing = Remittance::where('idempotency_key', $idempotencyKey)->first();
@@ -1030,6 +1032,8 @@ class RiderApiController extends Controller
      */
     public function remittanceStatus(Request $request): JsonResponse
     {
+        \App\Http\Controllers\RemittanceController::ensureTables();
+
         $user = $this->resolveRiderUser($request);
         $profile = $user?->riderProfile;
 

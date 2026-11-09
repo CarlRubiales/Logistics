@@ -650,11 +650,14 @@
                 </div>
                 <div style="background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px;">
                     @forelse($activityLogs as $log)
+                        @php
+                            $evt = strtolower($log->event ?? '');
+                        @endphp
                         <div class="activity-feed-item">
                             <span style="font-size: 15px;">
-                                @if(str_contains(strtolower($log->action), 'confirm'))
+                                @if(str_contains($evt, 'confirm'))
                                     💵
-                                @elseif(str_contains(strtolower($log->action), 'submit'))
+                                @elseif(str_contains($evt, 'submit'))
                                     📥
                                 @else
                                     📝
@@ -662,7 +665,7 @@
                             </span>
                             <div style="flex: 1;">
                                 <div style="color: var(--plum); font-weight: 700;">
-                                    {{ $log->user?->name ?? 'System' }}: {{ $log->description ?? $log->action }}
+                                    {{ $log->user?->name ?? 'System' }}: {{ ucwords(str_replace(['remittance_', '_'], ['', ' '], $log->event ?? 'Activity')) }}
                                 </div>
                                 @if(!empty($log->metadata['note']) || !empty($log->metadata['cashier_note']))
                                     <div style="font-size: 11px; color: var(--muted); margin-top: 2px;">
@@ -671,7 +674,7 @@
                                 @endif
                             </div>
                             <div style="color: var(--muted); font-size: 11px; white-space: nowrap;">
-                                {{ $log->created_at->timezone('Asia/Manila')->format('g:i A') }}
+                                {{ \Carbon\Carbon::parse($log->created_at ?? now())->timezone('Asia/Manila')->format('g:i A') }}
                             </div>
                         </div>
                     @empty

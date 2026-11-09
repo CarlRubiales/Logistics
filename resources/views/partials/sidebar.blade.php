@@ -158,7 +158,7 @@
                 <div class="nav-label second">Manage</div>
                 <a class="nav-item {{ request()->routeIs('riders.*') ? 'active' : '' }}" href="{{ route('riders.index') }}"><span class="nav-icon">♙</span><span>Riders</span></a>
                 <a class="nav-item {{ request()->routeIs('areas.*') ? 'active' : '' }}" href="{{ route('areas.index') }}"><span class="nav-icon">⌖</span><span>Delivery Areas</span></a>
-                <a class="nav-item {{ request()->routeIs('remittance.*') ? 'active' : '' }}" href="{{ route('remittance.hub') }}">
+                <a class="nav-item {{ request()->routeIs('remittance.*') ? 'active' : '' }}" href="{{ route('remittance.index') }}">
                     <span class="nav-icon">⛁</span>
                     <span>Remittance</span>
                     <span class="nav-pill {{ $awaitingRemitCount === 0 ? 'soft' : '' }}" id="sidebar-remit-badge" style="{{ $awaitingRemitCount > 0 ? 'background: #C43D38; color: #fff;' : '' }}" aria-label="{{ $awaitingRemitCount }} remittances awaiting cashier">{{ $awaitingRemitCount }}</span>

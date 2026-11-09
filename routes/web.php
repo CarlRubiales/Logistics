@@ -115,7 +115,8 @@ Route::middleware(['auth', 'logistics'])->group(function () {
     Route::post('/commission/{riderCommission}/flag', [CommissionController::class, 'flagIssue'])->name('commission.flag');
 
     // Hub Cashier COD Remittance
-    Route::get('/hub/remittance', [RemittanceController::class, 'index'])->name('remittance.hub');
+    Route::get('/hub/remittance', [RemittanceController::class, 'index'])->name('remittance.index');
+    Route::get('/hub/remittance/overview', [RemittanceController::class, 'index'])->name('remittance.hub');
     Route::get('/hub/remittance/poll', [RemittanceController::class, 'poll'])->name('remittance.poll');
     Route::get('/hub/remittance/export', [RemittanceController::class, 'export'])->name('remittance.export');
     Route::post('/hub/remittance/cutoff', [RemittanceController::class, 'updateCutoff'])->name('remittance.cutoff');

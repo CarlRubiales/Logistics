@@ -20,8 +20,61 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class RemittanceController extends Controller
 {
+    public static function ensureTables(): void
+    {
+        try {
+            if (! \Illuminate\Support\Facades\Schema::hasTable('remittances')) {
+                \Illuminate\Support\Facades\Schema::create('remittances', function ($table) {
+                    $table->id();
+                    $table->foreignId('rider_profile_id')->constrained('rider_profiles')->cascadeOnDelete();
+                    $table->foreignId('hub_id')->nullable()->constrained('hubs')->nullOnDelete();
+                    $table->string('hub_branch')->index();
+                    $table->date('remit_date')->index();
+                    $table->string('status')->default('awaiting_cashier')->index();
+                    $table->bigInteger('expected_amount_centavos')->default(0);
+                    $table->bigInteger('declared_amount_centavos')->default(0);
+                    $table->bigInteger('counted_amount_centavos')->nullable();
+                    $table->bigInteger('difference_centavos')->default(0);
+                    $table->timestamp('submitted_at')->nullable()->index();
+                    $table->timestamp('confirmed_at')->nullable()->index();
+                    $table->foreignId('confirmed_by')->nullable()->constrained('users')->nullOnDelete();
+                    $table->text('cashier_note')->nullable();
+                    $table->text('rider_note')->nullable();
+                    $table->string('idempotency_key')->nullable()->unique();
+                    $table->timestamps();
+
+                    $table->unique(['rider_profile_id', 'remit_date']);
+                });
+            }
+
+            if (! \Illuminate\Support\Facades\Schema::hasTable('remittance_parcels')) {
+                \Illuminate\Support\Facades\Schema::create('remittance_parcels', function ($table) {
+                    $table->id();
+                    $table->foreignId('remittance_id')->constrained('remittances')->cascadeOnDelete();
+                    $table->foreignId('parcel_id')->constrained('parcels')->cascadeOnDelete();
+                    $table->string('parcel_number')->index();
+                    $table->bigInteger('cod_amount_centavos')->default(0);
+                    $table->string('status')->default('delivered');
+                    $table->timestamps();
+
+                    $table->unique(['remittance_id', 'parcel_id']);
+                });
+            }
+
+            if (\Illuminate\Support\Facades\Schema::hasTable('hubs') && ! \Illuminate\Support\Facades\Schema::hasColumn('hubs', 'remit_cutoff_time')) {
+                \Illuminate\Support\Facades\Schema::table('hubs', function ($table) {
+                    $table->time('remit_cutoff_time')->default('20:00:00')->after('is_active');
+                });
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('RemittanceController::ensureTables: ' . $e->getMessage());
+        }
+    }
+
     private function authorizeHubAccess(Request $request): User
     {
+        self::ensureTables();
+
         $user = $request->user();
         abort_unless(
             $user && in_array($user->role, ['admin', 'logistics', 'operations_manager', 'super_admin', 'cashier'], true),
@@ -68,7 +121,11 @@ class RemittanceController extends Controller
         $cutoffTime = $hub?->remit_cutoff_time ?: '20:00:00';
         $nowTimeStr = Carbon::now($tz)->format('H:i:s');
         $isPastCutoff = $selectedDate->toDateString() === $todayStr && $nowTimeStr >= $cutoffTime;
-        $cutoffFormatted = Carbon::createFromFormat('H:i:s', $cutoffTime, $tz)->format('g:i A');
+        try {
+            $cutoffFormatted = Carbon::parse($cutoffTime, $tz)->format('g:i A');
+        } catch (\Throwable $e) {
+            $cutoffFormatted = '8:00 PM';
+        }
 
         // Fetch all active riders assigned to this hub
         $riders = RiderProfile::with(['user', 'hub'])
@@ -259,7 +316,8 @@ class RemittanceController extends Controller
             'tabCounts' => $tabCounts,
             'currentTab' => $currentTab,
             'search' => $search,
-            'riderRows' => $filteredRows,
+            'riderRows' => $riderRows,
+            'filteredRows' => $filteredRows,
             'selectedRow' => $selectedRow,
             'activityLogs' => $activityLogs,
         ]);
