@@ -15,6 +15,7 @@ use App\Http\Controllers\MessagesController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\TrackingController;
+use App\Http\Controllers\CommissionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/track', [TrackingController::class, 'index'])->name('tracking.index');
@@ -96,6 +97,14 @@ Route::middleware(['auth', 'logistics'])->group(function () {
     Route::post('/sorting-center/{parcel}/assign', [SortingCenterController::class, 'assign'])->name('sorting-center.assign');
     Route::post('/sorting-center/{parcel}/transfer-hub', [SortingCenterController::class, 'transferHub'])->name('sorting-center.transfer-hub');
     Route::post('/sorting-center/{parcel}/receive-hub', [SortingCenterController::class, 'receiveHubTransfer'])->name('sorting-center.receive-hub');
+    // Finance: Rider Commission (Super Admin only — enforced by route middleware and in the controller)
+    Route::middleware(\App\Http\Middleware\EnsureSuperAdmin::class)->group(function () {
+        Route::get('/commission', [CommissionController::class, 'index'])->name('commission.index');
+        Route::get('/commission/export', [CommissionController::class, 'exportCsv'])->name('commission.export');
+        Route::put('/commission/rules', [CommissionController::class, 'updateRules'])->name('commission.rules.update');
+        Route::post('/commission/approve', [CommissionController::class, 'bulkApprove'])->name('commission.approve');
+        Route::post('/commission/{riderCommission}/mark-paid', [CommissionController::class, 'markPaid'])->name('commission.mark-paid');
+    });
     Route::get('/orders', [OrdersController::class, 'index'])->name('orders.index');
     Route::get('/orders/{order}', [OrdersController::class, 'show'])->name('orders.show');
 });

@@ -39,6 +39,12 @@
             @endif
 
             <!-- 1. Summary Cards (Computed from real data) -->
+            @if(isset($filterIds) && $filterIds->isNotEmpty())
+                <div class="server-alert" role="status">
+                    <span>₱</span>Showing {{ $filterIds->count() }} rider-fault {{ $filterIds->count() === 1 ? 'case' : 'cases' }} linked from Commission deductions.
+                    <a href="{{ route('exceptions.index') }}" style="margin-left: auto; color: inherit; font-weight: 700;">Show all cases</a>
+                </div>
+            @endif
             <section class="rr-stat-grid" aria-label="Return and refund summary metrics">
                 <article class="rr-stat-card urgent">
                     <div class="rr-stat-top">
@@ -148,6 +154,9 @@
                     <!-- 3. Instant Filters (Search, Reason, Hub, Date Range - no separate Filter button) -->
                     <form id="rrFilterForm" method="GET" action="{{ route('exceptions.index') }}" class="rr-filters-grid" aria-label="Filter return and refund cases">
                         <input type="hidden" name="tab" value="{{ $activeTab }}">
+                        @if(isset($filterIds) && $filterIds->isNotEmpty())
+                            <input type="hidden" name="ids" value="{{ $filterIds->implode(',') }}">
+                        @endif
                         @if($selectedCase)
                             <input type="hidden" name="selected" id="rrSelectedInput" value="{{ $selectedCase['id'] }}">
                         @else
@@ -515,6 +524,14 @@
                                         </small>
                                     </div>
 
+                                    <div style="margin-bottom: 12px;">
+                                        <input type="hidden" name="rider_fault" value="0">
+                                        <label class="rr-checkbox-label" for="rr-rider-fault">
+                                            <input type="checkbox" id="rr-rider-fault" name="rider_fault" value="1" @checked($selectedCase['rider_fault'] ?? false)>
+                                            <span>Rider fault (deduct from rider commission)</span>
+                                        </label>
+                                    </div>
+
                                     <div class="rr-action-grid">
                                         <button
                                             type="button"
@@ -668,6 +685,7 @@
                 'rider_name' => $c['rider_name'],
                 'hub_label' => $c['hub_label'],
                 'resolution_note' => $c['resolution_note'],
+                'rider_fault' => (bool) ($c['rider_fault'] ?? false),
                 'resolve_url' => route('exceptions.resolve-parcel', $c['id']),
                 'audit_trail' => $c['audit_trail'],
             ],
@@ -765,6 +783,8 @@ function selectCaseRow(caseId, event) {
     if (hubLabelEl) hubLabelEl.textContent = data.hub_label;
     if (addrEl) addrEl.textContent = data.customer_address;
     if (resNoteEl) resNoteEl.value = data.resolution_note || '';
+    const faultEl = document.getElementById('rr-rider-fault');
+    if (faultEl) faultEl.checked = !!data.rider_fault;
     if (formEl) formEl.action = data.resolve_url;
 
     if (mediaContainer) {

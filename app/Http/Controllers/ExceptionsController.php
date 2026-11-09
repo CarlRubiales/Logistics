@@ -268,6 +268,8 @@ class ExceptionsController extends Controller
             'resolved_at_formatted' => $resolvedAt ? $resolvedAt->format('M j, Y · g:i A') : null,
             'cod_amount' => (float) ($meta['cod_amount'] ?? ($parcel->order?->total_amount ?? 0)),
             'is_cod' => (bool) ($meta['is_cod'] ?? false),
+            'assigned_rider_id' => $parcel->assigned_rider_id,
+            'rider_fault' => \App\Services\CommissionCalculatorService::isRiderFaultReturn($parcel),
             'audit_trail' => $auditTrail,
         ];
     }
@@ -347,6 +349,16 @@ class ExceptionsController extends Controller
         // 2. Apply non-tab filters (search, reason, hub, date_range)
         $filteredBeforeTab = $this->applyFilters($allCases, $search, $filterReason, $effectiveBranch, $dateRange);
 
+        // Optional: restrict to specific parcel IDs (used by Commission → Deductions links)
+        $filterIds = collect(explode(',', (string) $request->query('ids', '')))
+            ->map(fn ($v) => (int) trim($v))
+            ->filter(fn ($v) => $v > 0)
+            ->unique()
+            ->values();
+        if ($filterIds->isNotEmpty()) {
+            $filteredBeforeTab = $filteredBeforeTab->filter(fn (array $c) => $filterIds->contains($c['id']))->values();
+        }
+
         // 3. Compute live counts for each Status Tab
         $tabCounts = [
             'all' => $filteredBeforeTab->count(),
@@ -423,6 +435,7 @@ class ExceptionsController extends Controller
             'filterReason' => $filterReason,
             'filterHub' => $filterHub,
             'dateRange' => $dateRange,
+            'filterIds' => $filterIds,
             'branch' => $assignedBranch,
             'isMasterAdmin' => $isMasterAdmin,
             'hubs' => $hubs,
@@ -541,6 +554,14 @@ class ExceptionsController extends Controller
         $operatorRole = $request->user()?->role ? ucwords(str_replace('_', ' ', $request->user()->role)) : 'Admin';
 
         $this->applyCaseResolution($parcel, $action, $note, $operatorName, $operatorRole, $syncService);
+
+        // Optional rider-fault flag (drives commission deductions for the assigned rider)
+        if ($request->has('rider_fault')) {
+            $fresh = $parcel->fresh();
+            $freshMeta = is_array($fresh->metadata) ? $fresh->metadata : [];
+            $freshMeta['rider_fault'] = $request->boolean('rider_fault');
+            $fresh->update(['metadata' => $freshMeta]);
+        }
 
         $enriched = self::enrichParcelCase($parcel->fresh(['rider.user', 'area', 'shipment', 'order', 'scans.user']));
 

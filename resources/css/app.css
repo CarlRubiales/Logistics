@@ -2008,3 +2008,101 @@ body.logistics-page :is(button, input, select, textarea):is(:disabled, [aria-dis
 }
 
 
+
+/* ==========================================================================
+   Finance — Rider Commission page (/commission)
+   Reuses .rr-* desk components; .comm-* adds layout, table and side panels.
+   ========================================================================== */
+.comm-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.comm-header-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.comm-header-actions .rr-btn { min-height: 44px; text-decoration: none; }
+
+.comm-filters {
+    display: grid;
+    grid-template-columns: minmax(180px, 220px) minmax(160px, 200px) minmax(220px, 1fr);
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.comm-filters .rr-filter-select,
+.comm-filters .rr-filter-input { min-height: 44px; }
+
+.comm-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 18px;
+    align-items: start;
+}
+.comm-table-panel { min-width: 0; }
+.comm-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+.comm-table { min-width: 820px; }
+.comm-table th.num, .comm-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.comm-table td input[type="checkbox"], .comm-table th input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--plum); cursor: pointer; }
+.comm-table td:first-child, .comm-table th:first-child { width: 44px; text-align: center; }
+
+.comm-rider-cell { display: flex; align-items: center; gap: 10px; }
+.comm-avatar {
+    width: 34px; height: 34px; min-width: 34px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--plum), #793779);
+    color: var(--cream); font-size: 11px; font-weight: 800;
+}
+.comm-net { color: var(--plum); font-size: 13px; }
+.comm-positive { color: #1E6B37; font-weight: 700; }
+.comm-negative { color: #B3261E; font-weight: 700; }
+.comm-muted { color: var(--muted); }
+
+.comm-deduction-link {
+    display: inline-flex; align-items: center; justify-content: flex-end;
+    min-height: 32px; color: #B3261E; font-weight: 700; text-decoration: underline; text-underline-offset: 3px;
+}
+.comm-deduction-link:hover, .comm-deduction-link:focus-visible { color: var(--plum); }
+
+.comm-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 800;
+}
+.comm-status b { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.comm-status.pending { background: #FFF1DC; color: #8A4B00; }
+.comm-status.pending b { background: #D9822B; }
+.comm-status.approved { background: #E4EEF8; color: #185D8F; }
+.comm-status.approved b { background: #185D8F; }
+.comm-status.paid { background: #E3F2E7; color: #1E6B37; }
+.comm-status.paid b { background: #1E6B37; }
+
+.comm-paid-btn {
+    display: block; margin-top: 6px; min-height: 44px; padding: 0 14px;
+    border: 1px solid var(--plum); border-radius: 10px; background: var(--cream);
+    color: var(--plum); font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.comm-paid-btn:hover, .comm-paid-btn:focus-visible { background: var(--plum); color: var(--cream); }
+
+.comm-side-panel h2 { font-family: 'Playfair Display', Georgia, serif; font-size: 18px; margin: 0; color: var(--plum); }
+.comm-side-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.comm-small-btn { min-height: 44px; }
+.comm-rules-list { margin: 0; display: flex; flex-direction: column; gap: 0; }
+.comm-rules-list > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.comm-rules-list > div:last-child { border-bottom: 0; }
+.comm-rules-list dt { color: var(--muted); font-weight: 600; }
+.comm-rules-list dd { margin: 0; color: var(--ink); font-weight: 700; text-align: right; }
+.comm-note { margin: 10px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+
+.comm-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.comm-bar-label { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; margin-bottom: 5px; color: var(--ink); }
+.comm-bar-label strong { color: var(--plum); font-variant-numeric: tabular-nums; }
+.comm-bar-track { height: 10px; border-radius: 999px; background: var(--blush-1); overflow: hidden; }
+.comm-bar-fill { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--plum), var(--orange)); }
+
+.comm-rule-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+@media (max-width: 1180px) {
+    .comm-layout { grid-template-columns: minmax(0, 1fr); }
+    .comm-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+}
+@media (max-width: 640px) {
+    .comm-filters { grid-template-columns: 1fr; }
+    .comm-header-actions { width: 100%; }
+    .comm-header-actions .rr-btn { flex: 1 1 100%; justify-content: center; }
+    .comm-side { grid-template-columns: 1fr; }
+    .comm-rule-row { grid-template-columns: 1fr; }
+}

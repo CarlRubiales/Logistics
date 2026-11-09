@@ -114,6 +114,17 @@
                     <span class="nav-icon">👤</span>
                     <span>Create Account</span>
                 </a>
+                @php
+                    $commissionPendingCount = \App\Services\CommissionCalculatorService::pendingRidersCount(
+                        request()->routeIs('commission.*') ? request()->query('period') : null
+                    );
+                @endphp
+                <div class="nav-label second">Finance</div>
+                <a class="nav-item {{ request()->routeIs('commission.*') ? 'active' : '' }}" href="{{ route('commission.index') }}">
+                    <span class="nav-icon">₱</span>
+                    <span>Commission</span>
+                    <span class="nav-pill {{ $commissionPendingCount === 0 ? 'soft' : '' }}" id="sidebar-commission-badge" aria-label="{{ $commissionPendingCount }} riders with pending commission">{{ $commissionPendingCount }}</span>
+                </a>
                 <div class="nav-label second">Communications & Audits</div>
                 <a class="nav-item {{ request()->routeIs('exceptions.*') || request()->routeIs('returns.*') ? 'active' : '' }}" href="{{ route('exceptions.index') }}">
                     <span class="nav-icon">↺</span>
