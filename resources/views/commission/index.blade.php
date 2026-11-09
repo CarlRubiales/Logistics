@@ -103,6 +103,14 @@
             <section class="rr-stat-grid" aria-label="Commission summary for {{ $selectedPeriod['label'] }}">
                 <article class="rr-stat-card">
                     <div class="rr-stat-top">
+                        <span class="rr-stat-label">Shipping fees total</span>
+                        <span class="rr-stat-pill neutral">{{ $stats['shipping_fee_rate_formatted'] }} / parcel</span>
+                    </div>
+                    <strong class="rr-stat-value">{{ $stats['total_shipping_fee_formatted'] }}</strong>
+                    <span class="rr-stat-meta">{{ number_format($stats['delivered_count']) }} delivered × {{ $stats['shipping_fee_rate_formatted'] }}</span>
+                </article>
+                <article class="rr-stat-card">
+                    <div class="rr-stat-top">
                         <span class="rr-stat-label">Net rider commission</span>
                         <span class="rr-stat-pill neutral">{{ number_format($stats['delivered_count']) }} delivered</span>
                     </div>

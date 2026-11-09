@@ -1119,6 +1119,8 @@ class ScannerApiController extends Controller
                 ->acceptJson()
                 ->post("{$ecommerceBaseUrl}/api/logistics/waybill/" . urlencode($barcode) . '/status', [
                     'status' => $status,
+                    'label' => ucwords(str_replace('_', ' ', $status)),
+                    'location' => $branch ? "{$branch} Hub" : 'Lumora Logistics Hub',
                     'hub' => $branch ? "{$branch} Hub" : 'Main Hub',
                     'operator' => $operator,
                     'note' => "Parcel {$status} at " . ($branch ? "{$branch} Hub" : 'Lumora Logistics Hub'),
