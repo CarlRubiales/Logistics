@@ -704,21 +704,27 @@ class CommissionController extends Controller
 
         $requestedPeriodKey = trim((string) $request->query('period', ''));
         $selectedPeriod = $calculator->resolvePeriod($requestedPeriodKey !== '' ? $requestedPeriodKey : null);
-        $calculator->syncPeriodCommissions($selectedPeriod);
+        try {
+            $calculator->syncPeriodCommissions($selectedPeriod);
+        } catch (\Throwable $e) {}
 
         $filterHub = $isMaster ? trim((string) $request->query('hub', '')) : ($branch ?: 'Pila');
         $search = trim((string) $request->query('search', ''));
         $activeTab = strtolower(trim((string) $request->query('tab', 'all')));
 
-        $query = RiderCommission::query()
-            ->with(['rider.user', 'approver', 'payer', 'flagger'])
-            ->where('period_key', $selectedPeriod['key']);
+        try {
+            $query = RiderCommission::query()
+                ->with(['rider.user', 'approver', 'payer', 'flagger'])
+                ->where('period_key', $selectedPeriod['key']);
 
-        if (! empty($filterHub)) {
-            $query->forHub($filterHub);
+            if (! empty($filterHub)) {
+                $query->forHub($filterHub);
+            }
+
+            $rows = $query->get()->sortByDesc('net_centavos')->values();
+        } catch (\Throwable $e) {
+            $rows = collect();
         }
-
-        $rows = $query->get()->sortByDesc('net_centavos')->values();
 
         $rows = $this->applySearchFilter($rows, $search);
 
