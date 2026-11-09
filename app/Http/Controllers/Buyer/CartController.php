@@ -196,8 +196,8 @@ class CartController extends Controller
             'item_count' => (int) $items->sum('quantity'),
             'subtotal' => round($items->sum(fn (array $item) => $item['original_price'] * $item['quantity']), 2),
             'discount' => round($items->sum('line_discount'), 2),
-            'shipping' => $items->isEmpty() ? 0 : 15,
-            'total' => round($items->sum('line_total') + ($items->isEmpty() ? 0 : 15), 2),
+            'shipping' => $items->isEmpty() ? 0 : 50,
+            'total' => round($items->sum('line_total') + ($items->isEmpty() ? 0 : 50), 2),
         ];
     }
 

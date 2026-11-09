@@ -95,6 +95,15 @@ class CommissionController extends Controller
             $paidOutCentavos = (int) $paidRows->sum('net_centavos');
             $paidRidersCount = $paidRows->count();
 
+            $shippingFeeRate = (int) ($rule->shipping_fee_centavos ?: 5000);
+            $adminRate = (int) ($rule->admin_commission_centavos ?: 1500);
+            $hubRate = (int) ($rule->hub_commission_centavos ?: 1500);
+            $riderBaseRate = (int) ($rule->base_rate_centavos ?: 2000);
+
+            $totalShippingFeeCentavos = $totalDeliveredCount * $shippingFeeRate;
+            $totalAdminShareCentavos = $totalDeliveredCount * $adminRate;
+            $totalHubShareCentavos = $totalDeliveredCount * $hubRate;
+
             $stats = [
                 'net_centavos' => $netCommissionCentavos,
                 'net_formatted' => CommissionRule::formatPeso($netCommissionCentavos),
@@ -109,6 +118,20 @@ class CommissionController extends Controller
                 'paid_centavos' => $paidOutCentavos,
                 'paid_formatted' => CommissionRule::formatPeso($paidOutCentavos),
                 'paid_riders' => $paidRidersCount,
+                'shipping_fee_rate' => $shippingFeeRate,
+                'shipping_fee_rate_formatted' => CommissionRule::formatPeso($shippingFeeRate),
+                'admin_rate' => $adminRate,
+                'admin_rate_formatted' => CommissionRule::formatPeso($adminRate),
+                'hub_rate' => $hubRate,
+                'hub_rate_formatted' => CommissionRule::formatPeso($hubRate),
+                'rider_base_rate' => $riderBaseRate,
+                'rider_base_rate_formatted' => CommissionRule::formatPeso($riderBaseRate),
+                'total_shipping_fee_centavos' => $totalShippingFeeCentavos,
+                'total_shipping_fee_formatted' => CommissionRule::formatPeso($totalShippingFeeCentavos),
+                'total_admin_share_centavos' => $totalAdminShareCentavos,
+                'total_admin_share_formatted' => CommissionRule::formatPeso($totalAdminShareCentavos),
+                'total_hub_share_centavos' => $totalHubShareCentavos,
+                'total_hub_share_formatted' => CommissionRule::formatPeso($totalHubShareCentavos),
             ];
 
             // Apply search filter (rider name or hub)
@@ -185,6 +208,9 @@ class CommissionController extends Controller
         $this->authorizeSuperAdmin($request);
 
         $validated = $request->validate([
+            'shipping_fee_pesos' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+            'admin_commission_pesos' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+            'hub_commission_pesos' => ['nullable', 'numeric', 'min:0', 'max:10000'],
             'base_rate_pesos' => ['required', 'numeric', 'min:0', 'max:10000'],
             'bonus_tier1_rate_pct' => ['required', 'integer', 'min:1', 'max:100'],
             'bonus_tier1_pesos' => ['required', 'numeric', 'min:0', 'max:100000'],
@@ -198,6 +224,9 @@ class CommissionController extends Controller
         $oldSnapshot = $rule->toSnapshotArray();
 
         $newAttributes = [
+            'shipping_fee_centavos' => isset($validated['shipping_fee_pesos']) ? (int) round(((float) $validated['shipping_fee_pesos']) * 100) : 5000,
+            'admin_commission_centavos' => isset($validated['admin_commission_pesos']) ? (int) round(((float) $validated['admin_commission_pesos']) * 100) : 1500,
+            'hub_commission_centavos' => isset($validated['hub_commission_pesos']) ? (int) round(((float) $validated['hub_commission_pesos']) * 100) : 1500,
             'base_rate_centavos' => (int) round(((float) $validated['base_rate_pesos']) * 100),
             'bonus_tier1_rate_pct' => (int) $validated['bonus_tier1_rate_pct'],
             'bonus_tier1_centavos' => (int) round(((float) $validated['bonus_tier1_pesos']) * 100),
@@ -620,6 +649,13 @@ class CommissionController extends Controller
             $paidOutCentavos = (int) $paidRows->sum('net_centavos');
             $paidOutCount = $paidRows->count();
 
+            $hubShareRate = (int) ($rule->hub_commission_centavos ?: 1500);
+            $riderBaseRate = (int) ($rule->base_rate_centavos ?: 2000);
+            $adminRate = (int) ($rule->admin_commission_centavos ?: 1500);
+            $shippingFeeRate = (int) ($rule->shipping_fee_centavos ?: 5000);
+
+            $hubCommissionEarnedCentavos = $hubDeliveredCount * $hubShareRate;
+
             $stats = [
                 'hub_net_centavos' => $hubNetCentavos,
                 'hub_net_formatted' => CommissionRule::formatPeso($hubNetCentavos),
@@ -634,6 +670,16 @@ class CommissionController extends Controller
                 'paid_centavos' => $paidOutCentavos,
                 'paid_formatted' => CommissionRule::formatPeso($paidOutCentavos),
                 'paid_count' => $paidOutCount,
+                'hub_share_rate' => $hubShareRate,
+                'hub_share_rate_formatted' => CommissionRule::formatPeso($hubShareRate),
+                'rider_base_rate' => $riderBaseRate,
+                'rider_base_rate_formatted' => CommissionRule::formatPeso($riderBaseRate),
+                'admin_rate' => $adminRate,
+                'admin_rate_formatted' => CommissionRule::formatPeso($adminRate),
+                'shipping_fee_rate' => $shippingFeeRate,
+                'shipping_fee_rate_formatted' => CommissionRule::formatPeso($shippingFeeRate),
+                'hub_commission_earned_centavos' => $hubCommissionEarnedCentavos,
+                'hub_commission_earned_formatted' => CommissionRule::formatPeso($hubCommissionEarnedCentavos),
             ];
 
             // Search by rider name
@@ -760,7 +806,10 @@ class CommissionController extends Controller
                     'On-Time Parcels',
                     'On-Time Rate (%)',
                     'Rider-Fault Returns',
-                    'Base Commission',
+                    'Shipping Fee / Parcel (PHP)',
+                    'Logistics Admin Share (PHP)',
+                    'Hub Commission Share (PHP)',
+                    'Rider Base (PHP)',
                     'On-Time Bonus',
                     'Deductions',
                     'Net Commission',
@@ -792,7 +841,16 @@ class CommissionController extends Controller
                     }
                     $baseRateApplied = isset($snap['base_rate_centavos'])
                         ? number_format(((int) $snap['base_rate_centavos']) / 100, 2)
-                        : '18.00';
+                        : '20.00';
+                    $shippingFeeApplied = isset($snap['shipping_fee_centavos'])
+                        ? number_format(((int) $snap['shipping_fee_centavos']) / 100, 2)
+                        : '50.00';
+                    $adminShareApplied = isset($snap['admin_commission_centavos'])
+                        ? number_format((((int) $snap['admin_commission_centavos']) * $rc->delivered_count) / 100, 2)
+                        : number_format((1500 * $rc->delivered_count) / 100, 2);
+                    $hubShareApplied = isset($snap['hub_commission_centavos'])
+                        ? number_format((((int) $snap['hub_commission_centavos']) * $rc->delivered_count) / 100, 2)
+                        : number_format((1500 * $rc->delivered_count) / 100, 2);
 
                     $riderName = $rc->rider?->user?->name ?? ('Rider #' . $rc->rider_profile_id);
                     $riderPhone = $rc->rider?->phone ?? '—';
@@ -809,6 +867,9 @@ class CommissionController extends Controller
                         $rc->on_time_count,
                         number_format($rc->on_time_rate_percent, 1) . '%',
                         $rc->return_fault_count,
+                        '₱' . $shippingFeeApplied,
+                        '₱' . $adminShareApplied,
+                        '₱' . $hubShareApplied,
                         $rc->formatted_base,
                         $rc->formatted_bonus,
                         $rc->formatted_deductions,

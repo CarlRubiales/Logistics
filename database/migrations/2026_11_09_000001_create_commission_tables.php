@@ -11,15 +11,24 @@ return new class extends Migration
         if (! Schema::hasTable('commission_rules')) {
             Schema::create('commission_rules', function (Blueprint $table) {
                 $table->id();
-                $table->unsignedInteger('base_rate_centavos')->default(1800); // ₱18.00 per delivered parcel
+                $table->unsignedInteger('shipping_fee_centavos')->default(5000); // ₱50.00 default shipping fee
+                $table->unsignedInteger('admin_commission_centavos')->default(1500); // ₱15.00 Logistics Admin share
+                $table->unsignedInteger('hub_commission_centavos')->default(1500); // ₱15.00 Hub Commission share
+                $table->unsignedInteger('base_rate_centavos')->default(2000); // ₱20.00 per delivered parcel for Rider
                 $table->unsignedTinyInteger('bonus_tier1_rate_pct')->default(90); // >= 90% on-time
                 $table->unsignedInteger('bonus_tier1_centavos')->default(15000); // +₱150.00
                 $table->unsignedTinyInteger('bonus_tier2_rate_pct')->default(95); // >= 95% on-time
                 $table->unsignedInteger('bonus_tier2_centavos')->default(30000); // +₱300.00
-                $table->unsignedInteger('deduction_per_return_centavos')->default(1800); // -₱18.00 per rider-fault return
+                $table->unsignedInteger('deduction_per_return_centavos')->default(2000); // -₱20.00 per rider-fault return
                 $table->string('period_type', 32)->default('semi_monthly'); // semi_monthly | weekly | monthly
                 $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
                 $table->timestamps();
+            });
+        } elseif (! Schema::hasColumn('commission_rules', 'shipping_fee_centavos')) {
+            Schema::table('commission_rules', function (Blueprint $table) {
+                $table->unsignedInteger('shipping_fee_centavos')->default(5000)->after('id');
+                $table->unsignedInteger('admin_commission_centavos')->default(1500)->after('shipping_fee_centavos');
+                $table->unsignedInteger('hub_commission_centavos')->default(1500)->after('admin_commission_centavos');
             });
         }
 

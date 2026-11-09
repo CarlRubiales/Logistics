@@ -82,15 +82,46 @@
                 </div>
             </form>
 
+            <!-- Shipping Fee Split Banner (₱50 Default: HQ ₱15 · Hub ₱15 · Rider ₱20) -->
+            <div style="background: linear-gradient(135deg, rgba(30, 107, 55, 0.05), rgba(226, 112, 58, 0.08)); border: 1px solid rgba(30, 107, 55, 0.15); border-radius: 12px; padding: 12px 18px; margin-bottom: 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">🚚</span>
+                    <div>
+                        <strong style="color: var(--plum); font-size: 14px; font-weight: 800;">Default Shipping Fee: {{ $stats['shipping_fee_rate_formatted'] }} / parcel</strong>
+                        <div style="font-size: 11.5px; color: var(--muted);">Branch hub earns {{ $stats['hub_share_rate_formatted'] }} per delivered parcel · Rider base: {{ $stats['rider_base_rate_formatted'] }}</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <span style="display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; background: rgba(30, 107, 55, 0.1); color: #1E6B37; font-size: 12px; font-weight: 800;">
+                        🏬 Hub Commission: {{ $stats['hub_share_rate_formatted'] }}
+                    </span>
+                    <span style="display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; background: rgba(226, 112, 58, 0.12); color: var(--orange); font-size: 12px; font-weight: 800;">
+                        🛵 Rider Base: {{ $stats['rider_base_rate_formatted'] }}
+                    </span>
+                    <span style="display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; background: rgba(61, 27, 61, 0.08); color: var(--plum); font-size: 12px; font-weight: 700;">
+                        🏢 HQ Admin: {{ $stats['admin_rate_formatted'] }}
+                    </span>
+                </div>
+            </div>
+
             <!-- 4. Summary cards -->
             <section class="rr-stat-grid" aria-label="Hub commission metrics for {{ $selectedPeriod['label'] }}">
+                <article class="rr-stat-card evidence">
+                    <div class="rr-stat-top">
+                        <span class="rr-stat-label">Hub commission earned</span>
+                        <span class="rr-stat-pill info">{{ $stats['hub_share_rate_formatted'] }} / del</span>
+                    </div>
+                    <strong class="rr-stat-value">{{ $stats['hub_commission_earned_formatted'] }}</strong>
+                    <span class="rr-stat-meta">{{ number_format($stats['delivered_count']) }} delivered × {{ $stats['hub_share_rate_formatted'] }} for {{ $hubName }} Hub</span>
+                </article>
+
                 <article class="rr-stat-card">
                     <div class="rr-stat-top">
-                        <span class="rr-stat-label">Hub net commission</span>
+                        <span class="rr-stat-label">Rider net to disburse</span>
                         <span class="rr-stat-pill neutral">{{ number_format($stats['delivered_count']) }} delivered · {{ $stats['riders_count'] }} riders</span>
                     </div>
                     <strong class="rr-stat-value">{{ $stats['hub_net_formatted'] }}</strong>
-                    <span class="rr-stat-meta">{{ $hubName }} Hub total earnings this period</span>
+                    <span class="rr-stat-meta">Total net courier earnings for this run</span>
                 </article>
 
                 <article class="rr-stat-card urgent">
@@ -102,22 +133,13 @@
                     <span class="rr-stat-meta">{{ $stats['awaiting_hq_count'] === 0 ? 'No records awaiting HQ' : 'Pending headquarters review' }}</span>
                 </article>
 
-                <article class="rr-stat-card evidence">
+                <article class="rr-stat-card sla-time">
                     <div class="rr-stat-top">
                         <span class="rr-stat-label">Ready to pay</span>
                         <span class="rr-stat-pill info">{{ $stats['ready_to_pay_count'] }} {{ $stats['ready_to_pay_count'] === 1 ? 'rider' : 'riders' }}</span>
                     </div>
                     <strong class="rr-stat-value">{{ $stats['ready_to_pay_formatted'] }}</strong>
-                    <span class="rr-stat-meta">{{ $stats['ready_to_pay_count'] === 0 ? 'No approved payouts waiting' : 'Approved by HQ — ready for cash payout' }}</span>
-                </article>
-
-                <article class="rr-stat-card sla-time">
-                    <div class="rr-stat-top">
-                        <span class="rr-stat-label">Paid out</span>
-                        <span class="rr-stat-pill neutral">{{ $stats['paid_count'] }} {{ $stats['paid_count'] === 1 ? 'rider' : 'riders' }}</span>
-                    </div>
-                    <strong class="rr-stat-value">{{ $stats['paid_formatted'] }}</strong>
-                    <span class="rr-stat-meta">{{ $stats['paid_count'] === 0 ? 'No payouts recorded yet' : 'Disbursed and recorded' }}</span>
+                    <span class="rr-stat-meta">{{ $stats['ready_to_pay_count'] === 0 ? 'No approved payouts waiting' : 'Approved by HQ — ready for payout' }}</span>
                 </article>
             </section>
 
@@ -299,10 +321,18 @@
                                         <strong id="hub-detail-delivered" style="color: var(--ink);">{{ number_format($selectedCommission->delivered_count) }} parcels</strong>
                                     </div>
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12.5px;">
-                                        <span style="color: var(--muted);">Base calculation</span>
+                                        <span style="color: var(--muted);">Shipping fee revenue</span>
+                                        <strong style="color: var(--ink);">{{ $selectedCommission->delivered_count }} × ₱50.00 = ₱{{ number_format($selectedCommission->delivered_count * 50, 2) }}</strong>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12.5px;">
+                                        <span style="color: var(--muted);">Hub share (₱15/del)</span>
+                                        <strong style="color: #1E6B37;">+₱{{ number_format($selectedCommission->delivered_count * 15, 2) }}</strong>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12.5px;">
+                                        <span style="color: var(--muted);">Rider base share</span>
                                         <strong id="hub-detail-base-calc" style="color: var(--ink);">
                                             @php
-                                                $baseSnapRate = is_array($selectedCommission->rules_snapshot) ? ($selectedCommission->rules_snapshot['base_rate_centavos'] ?? 1800) : 1800;
+                                                $baseSnapRate = is_array($selectedCommission->rules_snapshot) ? ($selectedCommission->rules_snapshot['base_rate_centavos'] ?? 2000) : 2000;
                                             @endphp
                                             {{ $selectedCommission->delivered_count }} × ₱{{ number_format($baseSnapRate / 100, 0) }} = {{ $selectedCommission->formatted_base }}
                                         </strong>
@@ -320,7 +350,7 @@
                                         </strong>
                                     </div>
                                     <div style="border-top: 1px dashed var(--line); padding-top: 10px; display: flex; justify-content: space-between; align-items: baseline;">
-                                        <span style="font-size: 13px; font-weight: 800; color: var(--plum);">Net to pay</span>
+                                        <span style="font-size: 13px; font-weight: 800; color: var(--plum);">Net to pay rider</span>
                                         <strong id="hub-detail-net" style="font-size: 20px; font-family: 'Playfair Display', serif; color: var(--plum);">
                                             {{ $selectedCommission->formatted_net }}
                                         </strong>
@@ -388,10 +418,13 @@
                             <span class="rr-cell-sub" style="font-weight: 700; color: var(--orange);">Set by Headquarters</span>
                         </div>
                         <dl class="comm-rules-list">
-                            <div><dt>Base rate</dt><dd>{{ $fmt((int) $rule->base_rate_centavos) }} / delivered parcel</dd></div>
+                            <div><dt>Shipping fee</dt><dd><strong>{{ $fmt((int) ($rule->shipping_fee_centavos ?: 5000)) }}</strong> / parcel</dd></div>
+                            <div><dt>Hub commission share</dt><dd class="comm-positive">{{ $fmt((int) ($rule->hub_commission_centavos ?: 1500)) }} / del</dd></div>
+                            <div><dt>Rider base rate</dt><dd class="comm-positive">{{ $fmt((int) ($rule->base_rate_centavos ?: 2000)) }} / del</dd></div>
+                            <div><dt>Logistics Admin (HQ)</dt><dd class="comm-positive">{{ $fmt((int) ($rule->admin_commission_centavos ?: 1500)) }} / del</dd></div>
                             <div><dt>On-time ≥ {{ $rule->bonus_tier1_rate_pct }}%</dt><dd class="comm-positive">+{{ $fmt((int) $rule->bonus_tier1_centavos) }}</dd></div>
                             <div><dt>On-time ≥ {{ $rule->bonus_tier2_rate_pct }}%</dt><dd class="comm-positive">+{{ $fmt((int) $rule->bonus_tier2_centavos) }}</dd></div>
-                            <div><dt>Rider-fault return</dt><dd class="comm-negative">−{{ $fmt((int) $rule->deduction_per_return_centavos) }} each</dd></div>
+                            <div><dt>Rider-fault return</dt><dd class="comm-negative">−{{ $fmt((int) ($rule->deduction_per_return_centavos ?: 2000)) }} each</dd></div>
                             <div><dt>Pay period</dt><dd>Semi-monthly (1–15, 16–end)</dd></div>
                         </dl>
                         <p class="comm-note">Rates and bonus criteria are centrally governed by Lumora Headquarters.</p>
@@ -465,7 +498,7 @@
                 'status' => $rc->status,
                 'status_label' => $rc->status === 'approved' ? 'Ready to pay' : ($rc->status === 'pending' ? 'Awaiting HQ' : 'Paid'),
                 'delivered_count' => number_format($rc->delivered_count),
-                'base_rate' => number_format((is_array($rc->rules_snapshot) ? ($rc->rules_snapshot['base_rate_centavos'] ?? 1800) : 1800) / 100, 0),
+                'base_rate' => number_format((is_array($rc->rules_snapshot) ? ($rc->rules_snapshot['base_rate_centavos'] ?? 2000) : 2000) / 100, 0),
                 'base_formatted' => $rc->formatted_base,
                 'bonus_centavos' => $rc->bonus_centavos,
                 'bonus_formatted' => $rc->formatted_bonus,

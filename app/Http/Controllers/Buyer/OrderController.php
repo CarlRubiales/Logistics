@@ -229,7 +229,7 @@ class OrderController extends Controller
                 ? $this->buyNowOrderLines($request)
                 : $this->cartOrderLines($request);
 
-            $shipping = 15;
+            $shipping = 50;
 
             $subtotal = round($lines->sum(function (array $line) {
                 return (float) $line['product']->price * $line['quantity'];
@@ -528,7 +528,7 @@ class OrderController extends Controller
 
     private function summary($items): array
     {
-        $shipping = $items->isEmpty() ? 0 : 15;
+        $shipping = $items->isEmpty() ? 0 : 50;
 
         $subtotal = round($items->sum(function (array $item) {
             return $item['original_price'] * $item['quantity'];

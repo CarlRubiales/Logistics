@@ -438,7 +438,7 @@
                 const subtotal = chosen.reduce((sum, row) => sum + Number(row.dataset.originalPrice) * Number(row.querySelector('[data-quantity]').textContent), 0);
                 const lineTotals = chosen.reduce((sum, row) => sum + Number(row.dataset.price) * Number(row.querySelector('[data-quantity]').textContent), 0);
                 const discount = subtotal - lineTotals;
-                const shipping = chosen.length ? 15 : 0;
+                const shipping = chosen.length ? 50 : 0;
                 const selectedCount = document.querySelector('#selected-count');
                 const subtotalEl = document.querySelector('#subtotal');
                 const discountEl = document.querySelector('#discount');

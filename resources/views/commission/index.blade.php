@@ -77,15 +77,53 @@
                 </div>
             </form>
 
-            <!-- 3. Summary cards -->
+            <!-- 3. Shipping Fee Split Banner (₱50 Default: HQ ₱15 · Hub ₱15 · Rider ₱20) -->
+            <div style="background: linear-gradient(135deg, rgba(61, 27, 61, 0.05), rgba(226, 112, 58, 0.08)); border: 1px solid rgba(61, 27, 61, 0.12); border-radius: 12px; padding: 12px 18px; margin-bottom: 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">🚚</span>
+                    <div>
+                        <strong style="color: var(--plum); font-size: 14px; font-weight: 800;">Default Shipping Fee: {{ $stats['shipping_fee_rate_formatted'] }} / parcel</strong>
+                        <div style="font-size: 11.5px; color: var(--muted);">Standard delivery revenue split across platform, local hub, and courier</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <span style="display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; background: rgba(61, 27, 61, 0.08); color: var(--plum); font-size: 12px; font-weight: 700;">
+                        🏢 Logistics Admin: {{ $stats['admin_rate_formatted'] }}
+                    </span>
+                    <span style="display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; background: rgba(30, 107, 55, 0.08); color: #1E6B37; font-size: 12px; font-weight: 700;">
+                        🏬 Branch Hub: {{ $stats['hub_rate_formatted'] }}
+                    </span>
+                    <span style="display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; background: rgba(226, 112, 58, 0.12); color: var(--orange); font-size: 12px; font-weight: 700;">
+                        🛵 Rider Base: {{ $stats['rider_base_rate_formatted'] }}
+                    </span>
+                </div>
+            </div>
+
+            <!-- Summary cards -->
             <section class="rr-stat-grid" aria-label="Commission summary for {{ $selectedPeriod['label'] }}">
                 <article class="rr-stat-card">
                     <div class="rr-stat-top">
-                        <span class="rr-stat-label">Net commission</span>
+                        <span class="rr-stat-label">Net rider commission</span>
                         <span class="rr-stat-pill neutral">{{ number_format($stats['delivered_count']) }} delivered</span>
                     </div>
                     <strong class="rr-stat-value">{{ $stats['net_formatted'] }}</strong>
-                    <span class="rr-stat-meta">{{ $stats['delivered_count'] === 0 ? 'No delivered parcels this period' : $selectedPeriod['label'] }}</span>
+                    <span class="rr-stat-meta">{{ $stats['delivered_count'] === 0 ? 'No delivered parcels this period' : 'Total rider payout for period' }}</span>
+                </article>
+                <article class="rr-stat-card evidence">
+                    <div class="rr-stat-top">
+                        <span class="rr-stat-label">Logistics Admin (HQ)</span>
+                        <span class="rr-stat-pill info">{{ $stats['admin_rate_formatted'] }} / del</span>
+                    </div>
+                    <strong class="rr-stat-value">{{ $stats['total_admin_share_formatted'] }}</strong>
+                    <span class="rr-stat-meta">{{ number_format($stats['delivered_count']) }} delivered × {{ $stats['admin_rate_formatted'] }}</span>
+                </article>
+                <article class="rr-stat-card damage">
+                    <div class="rr-stat-top">
+                        <span class="rr-stat-label">Branch hubs total</span>
+                        <span class="rr-stat-pill warn">{{ $stats['hub_rate_formatted'] }} / del</span>
+                    </div>
+                    <strong class="rr-stat-value">{{ $stats['total_hub_share_formatted'] }}</strong>
+                    <span class="rr-stat-meta">{{ number_format($stats['delivered_count']) }} delivered × {{ $stats['hub_rate_formatted'] }}</span>
                 </article>
                 <article class="rr-stat-card urgent">
                     <div class="rr-stat-top">
@@ -94,22 +132,6 @@
                     </div>
                     <strong class="rr-stat-value">{{ $stats['pending_formatted'] }}</strong>
                     <span class="rr-stat-meta">{{ $stats['pending_riders'] === 0 ? 'Nothing waiting for approval' : 'Review and approve below' }}</span>
-                </article>
-                <article class="rr-stat-card evidence">
-                    <div class="rr-stat-top">
-                        <span class="rr-stat-label">Approved, awaiting payout</span>
-                        <span class="rr-stat-pill info">{{ $stats['approved_riders'] }} {{ $stats['approved_riders'] === 1 ? 'rider' : 'riders' }}</span>
-                    </div>
-                    <strong class="rr-stat-value">{{ $stats['approved_formatted'] }}</strong>
-                    <span class="rr-stat-meta">{{ $stats['approved_riders'] === 0 ? 'No approved payouts outstanding' : 'Mark as paid once transferred' }}</span>
-                </article>
-                <article class="rr-stat-card sla-time">
-                    <div class="rr-stat-top">
-                        <span class="rr-stat-label">Paid out</span>
-                        <span class="rr-stat-pill neutral">{{ $stats['paid_riders'] }} {{ $stats['paid_riders'] === 1 ? 'rider' : 'riders' }}</span>
-                    </div>
-                    <strong class="rr-stat-value">{{ $stats['paid_formatted'] }}</strong>
-                    <span class="rr-stat-meta">{{ $stats['paid_riders'] === 0 ? 'No payouts recorded yet' : 'Recorded with date and admin' }}</span>
                 </article>
             </section>
 
@@ -247,10 +269,13 @@
                             <button type="button" class="rr-btn secondary comm-small-btn" onclick="openRulesModal()">Edit rules</button>
                         </div>
                         <dl class="comm-rules-list">
-                            <div><dt>Base rate</dt><dd>{{ $fmt((int) $rule->base_rate_centavos) }} / delivered parcel</dd></div>
+                            <div><dt>Shipping fee</dt><dd><strong>{{ $fmt((int) ($rule->shipping_fee_centavos ?: 5000)) }}</strong> / parcel</dd></div>
+                            <div><dt>Logistics Admin (HQ)</dt><dd class="comm-positive">{{ $fmt((int) ($rule->admin_commission_centavos ?: 1500)) }}</dd></div>
+                            <div><dt>Branch Hub</dt><dd class="comm-positive">{{ $fmt((int) ($rule->hub_commission_centavos ?: 1500)) }}</dd></div>
+                            <div><dt>Rider base rate</dt><dd class="comm-positive">{{ $fmt((int) ($rule->base_rate_centavos ?: 2000)) }} / del</dd></div>
                             <div><dt>On-time ≥ {{ $rule->bonus_tier1_rate_pct }}%</dt><dd class="comm-positive">+{{ $fmt((int) $rule->bonus_tier1_centavos) }}</dd></div>
                             <div><dt>On-time ≥ {{ $rule->bonus_tier2_rate_pct }}%</dt><dd class="comm-positive">+{{ $fmt((int) $rule->bonus_tier2_centavos) }}</dd></div>
-                            <div><dt>Rider-fault return</dt><dd class="comm-negative">−{{ $fmt((int) $rule->deduction_per_return_centavos) }} each</dd></div>
+                            <div><dt>Rider-fault return</dt><dd class="comm-negative">−{{ $fmt((int) ($rule->deduction_per_return_centavos ?: 2000)) }} each</dd></div>
                             <div><dt>Pay period</dt><dd>{{ ['semi_monthly' => 'Semi-monthly (1–15, 16–end)', 'monthly' => 'Monthly', 'weekly' => 'Weekly (Mon–Sun)'][$rule->period_type] ?? 'Semi-monthly' }}</dd></div>
                         </dl>
                         <p class="comm-note">Rule changes recalculate Pending rows only. Approved and Paid records keep the rates they were approved with.</p>
@@ -360,9 +385,22 @@
             @csrf
             @method('PUT')
             <input type="hidden" name="period" value="{{ $selectedPeriod['key'] }}">
-            <label for="rule-base">Base rate per delivered parcel (₱)
-                <input id="rule-base" type="number" name="base_rate_pesos" min="0" step="0.01" required value="{{ number_format($rule->base_rate_centavos / 100, 2, '.', '') }}">
-            </label>
+            <div class="comm-rule-row">
+                <label for="rule-shipping">Default shipping fee (₱)
+                    <input id="rule-shipping" type="number" name="shipping_fee_pesos" min="0" step="0.01" required value="{{ number_format(($rule->shipping_fee_centavos ?: 5000) / 100, 2, '.', '') }}">
+                </label>
+                <label for="rule-admin">Logistics Admin share (₱)
+                    <input id="rule-admin" type="number" name="admin_commission_pesos" min="0" step="0.01" required value="{{ number_format(($rule->admin_commission_centavos ?: 1500) / 100, 2, '.', '') }}">
+                </label>
+            </div>
+            <div class="comm-rule-row">
+                <label for="rule-hub">Hub commission share (₱)
+                    <input id="rule-hub" type="number" name="hub_commission_pesos" min="0" step="0.01" required value="{{ number_format(($rule->hub_commission_centavos ?: 1500) / 100, 2, '.', '') }}">
+                </label>
+                <label for="rule-base">Rider base rate (₱)
+                    <input id="rule-base" type="number" name="base_rate_pesos" min="0" step="0.01" required value="{{ number_format(($rule->base_rate_centavos ?: 2000) / 100, 2, '.', '') }}">
+                </label>
+            </div>
             <div class="comm-rule-row">
                 <label for="rule-t1-pct">Tier 1 on-time ≥ (%)
                     <input id="rule-t1-pct" type="number" name="bonus_tier1_rate_pct" min="1" max="100" required value="{{ $rule->bonus_tier1_rate_pct }}">

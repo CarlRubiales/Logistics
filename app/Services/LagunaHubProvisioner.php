@@ -24,16 +24,27 @@ class LagunaHubProvisioner
             if (! Schema::hasTable('commission_rules')) {
                 Schema::create('commission_rules', function ($table) {
                     $table->id();
-                    $table->unsignedInteger('base_rate_centavos')->default(1800);
+                    $table->unsignedInteger('shipping_fee_centavos')->default(5000);
+                    $table->unsignedInteger('admin_commission_centavos')->default(1500);
+                    $table->unsignedInteger('hub_commission_centavos')->default(1500);
+                    $table->unsignedInteger('base_rate_centavos')->default(2000);
                     $table->unsignedTinyInteger('bonus_tier1_rate_pct')->default(90);
                     $table->unsignedInteger('bonus_tier1_centavos')->default(15000);
                     $table->unsignedTinyInteger('bonus_tier2_rate_pct')->default(95);
                     $table->unsignedInteger('bonus_tier2_centavos')->default(30000);
-                    $table->unsignedInteger('deduction_per_return_centavos')->default(1800);
+                    $table->unsignedInteger('deduction_per_return_centavos')->default(2000);
                     $table->string('period_type', 32)->default('semi_monthly');
                     $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
                     $table->timestamps();
                 });
+            } else {
+                if (! Schema::hasColumn('commission_rules', 'shipping_fee_centavos')) {
+                    Schema::table('commission_rules', function ($table) {
+                        $table->unsignedInteger('shipping_fee_centavos')->default(5000)->after('id');
+                        $table->unsignedInteger('admin_commission_centavos')->default(1500)->after('shipping_fee_centavos');
+                        $table->unsignedInteger('hub_commission_centavos')->default(1500)->after('admin_commission_centavos');
+                    });
+                }
             }
 
             if (! Schema::hasTable('rider_commissions')) {
