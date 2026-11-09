@@ -93,7 +93,7 @@
             </div>
         </div>
         @php
-            $returnNeedsActionCount = \App\Http\Controllers\ExceptionsController::needsActionCount(auth()->user()->getBranchName());
+            $returnNeedsActionCount = \App\Http\Controllers\ExceptionsController::needsActionCount(auth()->user()->isMasterAdmin() ? null : auth()->user()->getBranchName());
         @endphp
         <nav class="side-nav" aria-label="Primary navigation">
             @if(auth()->user()->isMasterAdmin())

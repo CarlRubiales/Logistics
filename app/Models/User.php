@@ -28,6 +28,10 @@ class User extends Authenticatable
 
     public function getBranchName(): ?string
     {
+        if ($this->isMasterAdmin()) {
+            return null;
+        }
+
         if (! empty($this->branch)) {
             return $this->branch;
         }

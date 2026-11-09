@@ -292,8 +292,8 @@ class ExceptionsController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        $assignedBranch = $user?->getBranchName();
         $isMasterAdmin = $user && method_exists($user, 'isMasterAdmin') && $user->isMasterAdmin();
+        $assignedBranch = $isMasterAdmin ? null : $user?->getBranchName();
 
         $search = trim((string) $request->query('search', ''));
         $filterReason = trim((string) $request->query('reason', ''));
@@ -599,7 +599,8 @@ class ExceptionsController extends Controller
 
         $operatorName = $request->user()?->name ?? 'Logistics Admin';
         $operatorRole = $request->user()?->role ? ucwords(str_replace('_', ' ', $request->user()->role)) : 'Admin';
-        $branch = $request->user()?->getBranchName();
+        $isMaster = $request->user() && method_exists($request->user(), 'isMasterAdmin') && $request->user()->isMasterAdmin();
+        $branch = $isMaster ? null : $request->user()?->getBranchName();
 
         $parcels = Parcel::query()
             ->forBranch($branch)
@@ -619,7 +620,8 @@ class ExceptionsController extends Controller
     public function exportCsv(Request $request): StreamedResponse
     {
         $user = $request->user();
-        $assignedBranch = $user?->getBranchName();
+        $isMasterAdmin = $user && method_exists($user, 'isMasterAdmin') && $user->isMasterAdmin();
+        $assignedBranch = $isMasterAdmin ? null : $user?->getBranchName();
 
         $search = trim((string) $request->query('search', ''));
         $filterReason = trim((string) $request->query('reason', ''));
