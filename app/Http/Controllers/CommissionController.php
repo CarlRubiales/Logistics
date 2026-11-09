@@ -30,139 +30,150 @@ class CommissionController extends Controller
         );
     }
 
-    public function index(Request $request, CommissionCalculatorService $calculator): View
+    public function index(Request $request, CommissionCalculatorService $calculator): View|\Illuminate\Http\Response
     {
-        $this->authorizeSuperAdmin($request);
+        try {
+            $this->authorizeSuperAdmin($request);
 
-        $rule = CommissionRule::current();
-        $periods = $calculator->availablePeriods($rule->period_type);
+            $rule = CommissionRule::current();
+            $periods = $calculator->availablePeriods($rule->period_type);
 
-        $requestedPeriodKey = trim((string) $request->query('period', ''));
-        $selectedPeriod = $calculator->resolvePeriod($requestedPeriodKey !== '' ? $requestedPeriodKey : null);
+            $requestedPeriodKey = trim((string) $request->query('period', ''));
+            $selectedPeriod = $calculator->resolvePeriod($requestedPeriodKey !== '' ? $requestedPeriodKey : null);
 
-        if (! $periods->contains(fn (array $p) => $p['key'] === $selectedPeriod['key'])) {
-            $periods->prepend($selectedPeriod);
+            if (! $periods->contains(fn (array $p) => $p['key'] === $selectedPeriod['key'])) {
+                $periods->prepend($selectedPeriod);
+            }
+
+            // Synchronize pending rider commission records from real parcel data on the server
+            try {
+                $calculator->syncPeriodCommissions($selectedPeriod);
+            } catch (\Throwable $e) {}
+
+            $filterHub = trim((string) $request->query('hub', ''));
+            $search = trim((string) $request->query('search', ''));
+            $activeTab = strtolower(trim((string) $request->query('tab', 'all')));
+            if (! in_array($activeTab, ['all', 'pending', 'approved', 'paid'], true)) {
+                $activeTab = 'all';
+            }
+
+            // Load all commission rows for the selected period
+            try {
+                $allPeriodRows = RiderCommission::query()
+                    ->with(['rider.user', 'approver', 'payer', 'flagger'])
+                    ->where('period_key', $selectedPeriod['key'])
+                    ->get()
+                    ->sortByDesc('net_centavos')
+                    ->values();
+            } catch (\Throwable $e) {
+                $allPeriodRows = collect();
+            }
+
+            // Compute "By hub" horizontal bar breakdown across all hubs for the selected period
+            $byHub = $this->computeByHubBreakdown($allPeriodRows);
+
+            // Apply Hub filter
+            $periodHubRows = $filterHub !== ''
+                ? $allPeriodRows->filter(fn (RiderCommission $rc) => strcasecmp($rc->hub_branch, $filterHub) === 0)->values()
+                : $allPeriodRows;
+
+            // 3. Summary Cards for the selected period and hub (computed from real data)
+            $pendingRows = $periodHubRows->where('status', 'pending');
+            $approvedRows = $periodHubRows->where('status', 'approved');
+            $paidRows = $periodHubRows->where('status', 'paid');
+
+            $netCommissionCentavos = (int) $periodHubRows->sum('net_centavos');
+            $totalDeliveredCount = (int) $periodHubRows->sum('delivered_count');
+            $totalReturnFaultCount = (int) $periodHubRows->sum('return_fault_count');
+
+            $pendingApprovalCentavos = (int) $pendingRows->sum('net_centavos');
+            $pendingRidersCount = $pendingRows->count();
+
+            $approvedAwaitingCentavos = (int) $approvedRows->sum('net_centavos');
+            $approvedRidersCount = $approvedRows->count();
+
+            $paidOutCentavos = (int) $paidRows->sum('net_centavos');
+            $paidRidersCount = $paidRows->count();
+
+            $stats = [
+                'net_centavos' => $netCommissionCentavos,
+                'net_formatted' => CommissionRule::formatPeso($netCommissionCentavos),
+                'delivered_count' => $totalDeliveredCount,
+                'return_fault_count' => $totalReturnFaultCount,
+                'pending_centavos' => $pendingApprovalCentavos,
+                'pending_formatted' => CommissionRule::formatPeso($pendingApprovalCentavos),
+                'pending_riders' => $pendingRidersCount,
+                'approved_centavos' => $approvedAwaitingCentavos,
+                'approved_formatted' => CommissionRule::formatPeso($approvedAwaitingCentavos),
+                'approved_riders' => $approvedRidersCount,
+                'paid_centavos' => $paidOutCentavos,
+                'paid_formatted' => CommissionRule::formatPeso($paidOutCentavos),
+                'paid_riders' => $paidRidersCount,
+            ];
+
+            // Apply search filter (rider name or hub)
+            $searchedRows = $this->applySearchFilter($periodHubRows, $search);
+
+            // 4. Status tabs with live counts
+            $tabCounts = [
+                'all' => $searchedRows->count(),
+                'pending' => $searchedRows->where('status', 'pending')->count(),
+                'approved' => $searchedRows->where('status', 'approved')->count(),
+                'paid' => $searchedRows->where('status', 'paid')->count(),
+            ];
+
+            $filteredRows = $activeTab === 'all'
+                ? $searchedRows->values()
+                : $searchedRows->where('status', $activeTab)->values();
+
+            // Paginate rider table (12 per page)
+            $perPage = 12;
+            $currentPage = max(1, (int) $request->query('page', 1));
+            $currentItems = $filteredRows->slice(($currentPage - 1) * $perPage, $perPage)->values();
+
+            $paginator = new LengthAwarePaginator(
+                $currentItems,
+                $filteredRows->count(),
+                $perPage,
+                $currentPage,
+                [
+                    'path' => $request->url(),
+                    'query' => $request->query(),
+                ]
+            );
+
+            // Hub list for the Hub selector
+            $hubs = $this->availableHubs($allPeriodRows);
+
+            // Recent commission audit log entries
+            try {
+                $recentAudits = AuditLog::query()
+                    ->with('user')
+                    ->whereIn('auditable_type', [RiderCommission::class, CommissionRule::class])
+                    ->orderByDesc('created_at')
+                    ->limit(8)
+                    ->get();
+            } catch (\Throwable $e) {
+                $recentAudits = collect();
+            }
+
+            return view('commission.index', [
+                'commissions' => $paginator,
+                'rule' => $rule,
+                'periods' => $periods,
+                'selectedPeriod' => $selectedPeriod,
+                'filterHub' => $filterHub,
+                'search' => $search,
+                'activeTab' => $activeTab,
+                'tabCounts' => $tabCounts,
+                'stats' => $stats,
+                'byHub' => $byHub,
+                'hubs' => $hubs,
+                'recentAudits' => $recentAudits,
+            ]);
+        } catch (\Throwable $e) {
+            return response('HQ commission error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine(), 500);
         }
-
-        // Synchronize pending rider commission records from real parcel data on the server
-        $calculator->syncPeriodCommissions($selectedPeriod);
-
-        $filterHub = trim((string) $request->query('hub', ''));
-        $search = trim((string) $request->query('search', ''));
-        $activeTab = strtolower(trim((string) $request->query('tab', 'all')));
-        if (! in_array($activeTab, ['all', 'pending', 'approved', 'paid'], true)) {
-            $activeTab = 'all';
-        }
-
-        // Load all commission rows for the selected period
-        $allPeriodRows = RiderCommission::query()
-            ->with(['rider.user', 'approver', 'payer'])
-            ->where('period_key', $selectedPeriod['key'])
-            ->get()
-            ->sortBy([
-                fn (RiderCommission $a, RiderCommission $b) => $b->net_centavos <=> $a->net_centavos,
-                fn (RiderCommission $a, RiderCommission $b) => strcasecmp($a->rider?->user?->name ?? '', $b->rider?->user?->name ?? ''),
-            ])
-            ->values();
-
-        // Compute "By hub" horizontal bar breakdown across all hubs for the selected period
-        $byHub = $this->computeByHubBreakdown($allPeriodRows);
-
-        // Apply Hub filter
-        $periodHubRows = $filterHub !== ''
-            ? $allPeriodRows->filter(fn (RiderCommission $rc) => strcasecmp($rc->hub_branch, $filterHub) === 0)->values()
-            : $allPeriodRows;
-
-        // 3. Summary Cards for the selected period and hub (computed from real data)
-        $pendingRows = $periodHubRows->where('status', 'pending');
-        $approvedRows = $periodHubRows->where('status', 'approved');
-        $paidRows = $periodHubRows->where('status', 'paid');
-
-        $netCommissionCentavos = (int) $periodHubRows->sum('net_centavos');
-        $totalDeliveredCount = (int) $periodHubRows->sum('delivered_count');
-        $totalReturnFaultCount = (int) $periodHubRows->sum('return_fault_count');
-
-        $pendingApprovalCentavos = (int) $pendingRows->sum('net_centavos');
-        $pendingRidersCount = $pendingRows->count();
-
-        $approvedAwaitingCentavos = (int) $approvedRows->sum('net_centavos');
-        $approvedRidersCount = $approvedRows->count();
-
-        $paidOutCentavos = (int) $paidRows->sum('net_centavos');
-        $paidRidersCount = $paidRows->count();
-
-        $stats = [
-            'net_centavos' => $netCommissionCentavos,
-            'net_formatted' => CommissionRule::formatPeso($netCommissionCentavos),
-            'delivered_count' => $totalDeliveredCount,
-            'return_fault_count' => $totalReturnFaultCount,
-            'pending_centavos' => $pendingApprovalCentavos,
-            'pending_formatted' => CommissionRule::formatPeso($pendingApprovalCentavos),
-            'pending_riders' => $pendingRidersCount,
-            'approved_centavos' => $approvedAwaitingCentavos,
-            'approved_formatted' => CommissionRule::formatPeso($approvedAwaitingCentavos),
-            'approved_riders' => $approvedRidersCount,
-            'paid_centavos' => $paidOutCentavos,
-            'paid_formatted' => CommissionRule::formatPeso($paidOutCentavos),
-            'paid_riders' => $paidRidersCount,
-        ];
-
-        // Apply search filter (rider name or hub)
-        $searchedRows = $this->applySearchFilter($periodHubRows, $search);
-
-        // 4. Status tabs with live counts
-        $tabCounts = [
-            'all' => $searchedRows->count(),
-            'pending' => $searchedRows->where('status', 'pending')->count(),
-            'approved' => $searchedRows->where('status', 'approved')->count(),
-            'paid' => $searchedRows->where('status', 'paid')->count(),
-        ];
-
-        $filteredRows = $activeTab === 'all'
-            ? $searchedRows->values()
-            : $searchedRows->where('status', $activeTab)->values();
-
-        // Paginate rider table (12 per page)
-        $perPage = 12;
-        $currentPage = max(1, (int) $request->query('page', 1));
-        $currentItems = $filteredRows->slice(($currentPage - 1) * $perPage, $perPage)->values();
-
-        $paginator = new LengthAwarePaginator(
-            $currentItems,
-            $filteredRows->count(),
-            $perPage,
-            $currentPage,
-            [
-                'path' => $request->url(),
-                'query' => $request->query(),
-            ]
-        );
-
-        // Hub list for the Hub selector
-        $hubs = $this->availableHubs($allPeriodRows);
-
-        // Recent commission audit log entries
-        $recentAudits = AuditLog::query()
-            ->with('user')
-            ->whereIn('auditable_type', [RiderCommission::class, CommissionRule::class])
-            ->orderByDesc('created_at')
-            ->limit(8)
-            ->get();
-
-        return view('commission.index', [
-            'commissions' => $paginator,
-            'rule' => $rule,
-            'periods' => $periods,
-            'selectedPeriod' => $selectedPeriod,
-            'filterHub' => $filterHub,
-            'search' => $search,
-            'activeTab' => $activeTab,
-            'tabCounts' => $tabCounts,
-            'stats' => $stats,
-            'byHub' => $byHub,
-            'hubs' => $hubs,
-            'recentAudits' => $recentAudits,
-        ]);
     }
 
     /**
@@ -882,28 +893,25 @@ class CommissionController extends Controller
      */
     private function availableHubs(Collection $allPeriodRows): Collection
     {
-        try {
-            $hubTableBranches = Hub::query()->where('is_active', true)->pluck('branch');
-        } catch (\Throwable $e) {
-            $hubTableBranches = collect();
-        }
+        $hubs = collect();
 
         try {
-            $locationCities = FulfillmentLocation::query()->where('is_active', true)->pluck('city');
-        } catch (\Throwable $e) {
-            $locationCities = collect();
-        }
+            $hubs = $hubs->merge(collect(\App\Services\LagunaHubProvisioner::municipalities())->pluck('branch'));
+        } catch (\Throwable $e) {}
 
-        $areaBranches = DestinationArea::query()->whereNotNull('branch')->where('branch', '!=', '')->distinct()->pluck('branch');
-        $parcelBranches = Parcel::query()->whereNotNull('branch')->where('branch', '!=', '')->distinct()->pluck('branch');
-        $userBranches = User::query()->whereNotNull('branch')->where('branch', '!=', '')->distinct()->pluck('branch');
+        try {
+            $hubs = $hubs->merge(Hub::query()->where('is_active', true)->pluck('branch'));
+        } catch (\Throwable $e) {}
 
-        return $hubTableBranches
-            ->merge($locationCities)
-            ->merge($areaBranches)
-            ->merge($parcelBranches)
-            ->merge($userBranches)
-            ->merge($allPeriodRows->pluck('hub_branch'))
+        try {
+            $hubs = $hubs->merge(DestinationArea::query()->whereNotNull('branch')->where('branch', '!=', '')->distinct()->pluck('branch'));
+        } catch (\Throwable $e) {}
+
+        try {
+            $hubs = $hubs->merge($allPeriodRows->pluck('hub_branch'));
+        } catch (\Throwable $e) {}
+
+        return $hubs
             ->map(fn ($b) => trim((string) $b))
             ->filter()
             ->unique(fn (string $b) => strtolower($b))

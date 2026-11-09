@@ -172,7 +172,7 @@
                                                     @if($rc->is_flagged)
                                                         <div style="margin-top: 2px;">
                                                             <span class="rr-stat-pill danger" style="font-size: 10px; padding: 2px 6px;" title="{{ $rc->flagged_note }}">
-                                                                ⚠ Flagged by Hub: {{ Str::limit($rc->flagged_note, 45) }}
+                                                                ⚠ Flagged by Hub: {{ \Illuminate\Support\Str::limit($rc->flagged_note, 45) }}
                                                             </span>
                                                             <form method="POST" action="{{ route('commission.resolve-flag', $rc->id) }}" style="display: inline-block; margin-left: 4px;">
                                                                 @csrf
@@ -202,7 +202,7 @@
                                             @if($rc->status === 'approved')
                                                 <button type="button" class="comm-paid-btn" onclick="openPaidModal({{ $rc->id }}, @js($riderName), @js($rc->formatted_net))">Mark as paid</button>
                                             @elseif($rc->status === 'paid')
-                                                <span class="rr-cell-sub">{{ $rc->paid_at?->copy()->setTimezone('Asia/Manila')->format('M j, Y') }} · {{ $rc->payer?->name ?? 'Admin' }}</span>
+                                                <span class="rr-cell-sub">{{ $rc->paid_at ? \Carbon\Carbon::parse($rc->paid_at)->setTimezone('Asia/Manila')->format('M j, Y') : '—' }} · {{ $rc->payer?->name ?? 'Admin' }}</span>
                                                 @if($rc->payment_reference)
                                                     <span class="rr-cell-sub">Ref: {{ $rc->payment_reference }}</span>
                                                 @endif
@@ -292,7 +292,7 @@
                                             @endif
                                         </strong>
                                         @if(!empty($m['payment_reference']))<p>Ref: {{ $m['payment_reference'] }}</p>@endif
-                                        <time>{{ $a->user?->name ?? 'Admin' }} · {{ $a->created_at?->copy()->setTimezone('Asia/Manila')->format('M j, Y · g:i A') }}</time>
+                                        <time>{{ $a->user?->name ?? 'Admin' }} · {{ $a->created_at ? \Carbon\Carbon::parse($a->created_at)->setTimezone('Asia/Manila')->format('M j, Y · g:i A') : '—' }}</time>
                                     </li>
                                 @endforeach
                             </ul>

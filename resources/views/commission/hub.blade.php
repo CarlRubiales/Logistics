@@ -232,7 +232,7 @@
                                                 <span class="comm-status approved"><b></b>Ready to pay</span>
                                             @elseif($rc->status === 'paid')
                                                 <span class="comm-status paid"><b></b>Paid</span>
-                                                <span class="rr-cell-sub">{{ $rc->paid_at?->copy()->setTimezone('Asia/Manila')->format('M j, Y') }}</span>
+                                                <span class="rr-cell-sub">{{ $rc->paid_at ? \Carbon\Carbon::parse($rc->paid_at)->setTimezone('Asia/Manila')->format('M j, Y') : '' }}</span>
                                             @endif
                                         </td>
                                     </tr>
@@ -348,7 +348,7 @@
                                         </form>
                                     @elseif($selectedCommission->status === 'paid')
                                         <div style="padding: 10px 12px; border-radius: 8px; background: #E3F2E7; color: #1E6B37; font-size: 12px; font-weight: 600;">
-                                            ✓ Paid on {{ $selectedCommission->paid_at?->copy()->setTimezone('Asia/Manila')->format('M j, Y') }}
+                                            ✓ Paid on {{ $selectedCommission->paid_at ? \Carbon\Carbon::parse($selectedCommission->paid_at)->setTimezone('Asia/Manila')->format('M j, Y') : '—' }}
                                             @if($selectedCommission->payment_reference)
                                                 <div style="font-size: 11px; color: var(--ink); margin-top: 2px;">Ref: {{ $selectedCommission->payment_reference }}</div>
                                             @endif
@@ -476,7 +476,7 @@
                 'net_formatted' => $rc->formatted_net,
                 'is_flagged' => (bool) $rc->is_flagged,
                 'flagged_note' => $rc->flagged_note,
-                'paid_at' => $rc->paid_at ? $rc->paid_at->copy()->setTimezone('Asia/Manila')->format('M j, Y') : null,
+                'paid_at' => $rc->paid_at ? \Carbon\Carbon::parse($rc->paid_at)->setTimezone('Asia/Manila')->format('M j, Y') : null,
                 'payment_reference' => $rc->payment_reference,
                 'pay_url' => route('commission.mark-paid', $rc->id),
                 'flag_url' => route('commission.flag', $rc->id),
