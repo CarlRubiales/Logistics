@@ -1632,8 +1632,23 @@ class RiderApiController extends Controller
         }
 
         if ($dbStatus === 'exception' || $request->boolean('isReturnRefund') || $request->boolean('is_return_refund')) {
+            $reportedAt = now();
             $metadata['is_return_refund'] = true;
-            $metadata['return_reported_at'] = now()->toIso8601String();
+            $metadata['return_status'] = $metadata['return_status'] ?? 'pending';
+            $metadata['return_reported_at'] = $metadata['return_reported_at'] ?? $reportedAt->toIso8601String();
+            $metadata['sla_deadline_at'] = $metadata['sla_deadline_at'] ?? $reportedAt->copy()->addHours(24)->toIso8601String();
+
+            $riderName = $this->resolveRiderUser($request)?->name ?? ($parcel->rider?->user?->name ?? 'Assigned Rider');
+            $audit = is_array($metadata['return_audit_trail'] ?? null) ? $metadata['return_audit_trail'] : [];
+            $audit[] = [
+                'actor' => $riderName,
+                'role' => 'Rider',
+                'action' => 'Submitted Return / Refund',
+                'status' => 'pending',
+                'note' => trim(($metadata['return_reason'] ?? 'Return / Refund') . (! empty($metadata['return_notes']) ? ' — ' . $metadata['return_notes'] : '')),
+                'timestamp' => $reportedAt->toIso8601String(),
+            ];
+            $metadata['return_audit_trail'] = $audit;
         }
 
         if ($request->filled('proofUrl') || $request->filled('proof_url')) {

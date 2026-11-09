@@ -92,6 +92,9 @@
                 <strong>{{ auth()->user()->isMasterAdmin() ? 'Headquarters (All Hubs)' : (auth()->user()->getBranchName() ? (auth()->user()->getBranchName() . ' Hub') : (auth()->user()->name ?? 'Lumora')) }}</strong>
             </div>
         </div>
+        @php
+            $returnNeedsActionCount = \App\Http\Controllers\ExceptionsController::needsActionCount(auth()->user()->getBranchName());
+        @endphp
         <nav class="side-nav" aria-label="Primary navigation">
             @if(auth()->user()->isMasterAdmin())
                 <div class="nav-label">Master Administration</div>
@@ -115,6 +118,7 @@
                 <a class="nav-item {{ request()->routeIs('exceptions.*') || request()->routeIs('returns.*') ? 'active' : '' }}" href="{{ route('exceptions.index') }}">
                     <span class="nav-icon">↺</span>
                     <span>Return / Refund</span>
+                    <span class="nav-pill {{ $returnNeedsActionCount === 0 ? 'soft' : '' }}" id="sidebar-return-badge" aria-label="{{ $returnNeedsActionCount }} return or refund cases need action">{{ $returnNeedsActionCount }}</span>
                 </a>
                 <a class="nav-item {{ request()->routeIs('messages.*') ? 'active' : '' }}" href="{{ route('messages.index') }}">
                     <span class="nav-icon">✉</span>
@@ -128,7 +132,11 @@
                 <div class="nav-label">Workspace</div>
                 <a class="nav-item {{ request()->routeIs('sorting-center.*') ? 'active' : '' }}" href="{{ route('sorting-center.index') }}"><span class="nav-icon">⌂</span><span>Sorting Center</span></a>
                 <a class="nav-item {{ request()->routeIs('shipments.*') ? 'active' : '' }}" href="{{ route('shipments.index') }}"><span class="nav-icon">◈</span><span>Shipments</span></a>
-                <a class="nav-item {{ request()->routeIs('exceptions.*') || request()->routeIs('returns.*') ? 'active' : '' }}" href="{{ route('exceptions.index') }}"><span class="nav-icon">↺</span><span>Return / Refund</span></a>
+                <a class="nav-item {{ request()->routeIs('exceptions.*') || request()->routeIs('returns.*') ? 'active' : '' }}" href="{{ route('exceptions.index') }}">
+                    <span class="nav-icon">↺</span>
+                    <span>Return / Refund</span>
+                    <span class="nav-pill {{ $returnNeedsActionCount === 0 ? 'soft' : '' }}" id="sidebar-return-badge" aria-label="{{ $returnNeedsActionCount }} return or refund cases need action">{{ $returnNeedsActionCount }}</span>
+                </a>
                 <div class="nav-label second">Manage</div>
                 <a class="nav-item {{ request()->routeIs('riders.*') ? 'active' : '' }}" href="{{ route('riders.index') }}"><span class="nav-icon">♙</span><span>Riders</span></a>
                 <a class="nav-item {{ request()->routeIs('areas.*') ? 'active' : '' }}" href="{{ route('areas.index') }}"><span class="nav-icon">⌖</span><span>Delivery Areas</span></a>
