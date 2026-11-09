@@ -50,6 +50,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/deliveries/{id}/accept', [RiderApiController::class, 'acceptDelivery']);
         Route::match(['post', 'patch'], '/deliveries/{id}/status', [RiderApiController::class, 'updateDeliveryStatus']);
         Route::get('/earnings', [RiderApiController::class, 'earnings']);
+        Route::post('/remit-cod', [RiderApiController::class, 'remitCodCash']);
 
         // Mobile Scanner & Parcel Workflow Contract
         Route::get('/parcels', [RiderApiController::class, 'parcels']);

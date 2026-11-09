@@ -872,6 +872,41 @@ class RiderApiController extends Controller
     }
 
     /**
+     * Record COD cash remittance surrendered to hub cashier.
+     */
+    public function remitCodCash(Request $request): JsonResponse
+    {
+        $user = $this->resolveRiderUser($request);
+        $profile = $user?->riderProfile;
+
+        $amount = (float) $request->input('amount', 0);
+        $note = $request->input('note', 'COD Remittance confirmed by rider');
+        $date = $request->input('date', now()->format('Y-m-d'));
+
+        if ($profile) {
+            // Mark all delivered COD parcels for date as remitted
+            Parcel::where('assigned_rider_id', $profile->id)
+                ->where('status', 'delivered')
+                ->whereDate('updated_at', $date)
+                ->get()
+                ->each(function (Parcel $parcel) {
+                    $metadata = $parcel->metadata ?? [];
+                    $metadata['is_cod_remitted'] = true;
+                    $metadata['cod_remitted_at'] = now()->toIso8601String();
+                    $parcel->metadata = $metadata;
+                    $parcel->save();
+                });
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'COD cash remittance recorded successfully.',
+            'remitted_amount' => $amount,
+            'remitted_at' => now()->toIso8601String(),
+        ]);
+    }
+
+    /**
      * Logout and revoke active token.
      */
     public function logout(Request $request): JsonResponse
@@ -1417,6 +1452,7 @@ class RiderApiController extends Controller
             'landmark' => $metadata['landmark'] ?? ($p->address_line ?? $areaName),
             'cod_amount' => $codAmount,
             'is_cod' => $isCod,
+            'is_cod_remitted' => (bool) ($metadata['is_cod_remitted'] ?? false),
             'items_summary' => $metadata['items_summary'] ?? null,
             'order_number' => $metadata['waybill_order_number'] ?? null,
             'stop_order' => (int) ($metadata['stop_order'] ?? 1),
