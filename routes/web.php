@@ -16,6 +16,7 @@ use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\TrackingController;
 use App\Http\Controllers\CommissionController;
+use App\Http\Controllers\RemittanceController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/track', [TrackingController::class, 'index'])->name('tracking.index');
@@ -112,6 +113,15 @@ Route::middleware(['auth', 'logistics'])->group(function () {
     Route::post('/commission/bulk-paid', [CommissionController::class, 'bulkMarkPaid'])->name('commission.bulk-paid');
     Route::post('/commission/{riderCommission}/mark-paid', [CommissionController::class, 'markPaid'])->name('commission.mark-paid');
     Route::post('/commission/{riderCommission}/flag', [CommissionController::class, 'flagIssue'])->name('commission.flag');
+
+    // Hub Cashier COD Remittance
+    Route::get('/hub/remittance', [RemittanceController::class, 'index'])->name('remittance.hub');
+    Route::get('/hub/remittance/poll', [RemittanceController::class, 'poll'])->name('remittance.poll');
+    Route::get('/hub/remittance/export', [RemittanceController::class, 'export'])->name('remittance.export');
+    Route::post('/hub/remittance/cutoff', [RemittanceController::class, 'updateCutoff'])->name('remittance.cutoff');
+    Route::post('/hub/remittance/remind', [RemittanceController::class, 'remindUnremitted'])->name('remittance.remind');
+    Route::post('/hub/remittance/{id}/confirm', [RemittanceController::class, 'confirm'])->name('remittance.confirm');
+
     Route::get('/orders', [OrdersController::class, 'index'])->name('orders.index');
     Route::get('/orders/{order}', [OrdersController::class, 'show'])->name('orders.show');
 });

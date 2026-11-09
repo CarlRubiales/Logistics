@@ -94,6 +94,13 @@
         </div>
         @php
             $returnNeedsActionCount = \App\Http\Controllers\ExceptionsController::needsActionCount(auth()->user()->isMasterAdmin() ? null : auth()->user()->getBranchName());
+            $branchForRemit = auth()->user()->isMasterAdmin() ? null : auth()->user()->getBranchName();
+            $awaitingRemitCount = \Illuminate\Support\Facades\Schema::hasTable('remittances')
+                ? \App\Models\Remittance::where('status', \App\Models\Remittance::STATUS_AWAITING_CASHIER)
+                    ->when($branchForRemit, fn($q) => $q->where('hub_branch', $branchForRemit))
+                    ->whereDate('remit_date', \Carbon\Carbon::now('Asia/Manila')->toDateString())
+                    ->count()
+                : 0;
         @endphp
         <nav class="side-nav" aria-label="Primary navigation">
             @if(auth()->user()->isMasterAdmin())
@@ -151,6 +158,11 @@
                 <div class="nav-label second">Manage</div>
                 <a class="nav-item {{ request()->routeIs('riders.*') ? 'active' : '' }}" href="{{ route('riders.index') }}"><span class="nav-icon">♙</span><span>Riders</span></a>
                 <a class="nav-item {{ request()->routeIs('areas.*') ? 'active' : '' }}" href="{{ route('areas.index') }}"><span class="nav-icon">⌖</span><span>Delivery Areas</span></a>
+                <a class="nav-item {{ request()->routeIs('remittance.*') ? 'active' : '' }}" href="{{ route('remittance.hub') }}">
+                    <span class="nav-icon">⛁</span>
+                    <span>Remittance</span>
+                    <span class="nav-pill {{ $awaitingRemitCount === 0 ? 'soft' : '' }}" id="sidebar-remit-badge" style="{{ $awaitingRemitCount > 0 ? 'background: #C43D38; color: #fff;' : '' }}" aria-label="{{ $awaitingRemitCount }} remittances awaiting cashier">{{ $awaitingRemitCount }}</span>
+                </a>
                 <a class="nav-item {{ request()->routeIs('commission.hub*') ? 'active' : '' }}" href="{{ route('commission.hub') }}">
                     <span class="nav-icon">₱</span>
                     <span>Commission</span>

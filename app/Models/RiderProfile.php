@@ -28,6 +28,7 @@ class RiderProfile extends Model
     public function areas() { return $this->belongsToMany(DestinationArea::class, 'rider_area_assignments'); }
     public function parcels() { return $this->hasMany(Parcel::class, 'assigned_rider_id'); }
     public function commissions() { return $this->hasMany(CommissionTransaction::class); }
+    public function remittances() { return $this->hasMany(Remittance::class); }
 
     public function scopeForBranch($query, ?string $branch, $areaIds = null)
     {

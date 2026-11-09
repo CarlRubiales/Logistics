@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Hub extends Model
 {
-    protected $fillable = ['name', 'branch', 'address', 'city', 'is_active'];
+    protected $fillable = ['name', 'branch', 'address', 'city', 'is_active', 'remit_cutoff_time'];
 
     protected function casts(): array
     {
@@ -17,5 +17,10 @@ class Hub extends Model
     public function riders(): HasMany
     {
         return $this->hasMany(RiderProfile::class);
+    }
+
+    public function remittances(): HasMany
+    {
+        return $this->hasMany(Remittance::class);
     }
 }

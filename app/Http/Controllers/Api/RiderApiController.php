@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\CommissionTransaction;
 use App\Models\DestinationArea;
 use App\Models\EmailOtpVerification;
@@ -10,6 +11,8 @@ use App\Models\ErpMessage;
 use App\Models\Hub;
 use App\Models\Parcel;
 use App\Models\ParcelScan;
+use App\Models\Remittance;
+use App\Models\RemittanceParcel;
 use App\Models\RiderAreaAssignment;
 use App\Models\RiderProfile;
 use App\Models\User;
@@ -874,36 +877,257 @@ class RiderApiController extends Controller
     /**
      * Record COD cash remittance surrendered to hub cashier.
      */
-    public function remitCodCash(Request $request): JsonResponse
+    /**
+     * Submit EOD COD cash remittance from the rider app.
+     * Transitions remittance into "Awaiting cashier". Expected amount is strictly computed on server.
+     */
+    public function submitRemittance(Request $request): JsonResponse
     {
         $user = $this->resolveRiderUser($request);
         $profile = $user?->riderProfile;
 
-        $amount = (float) $request->input('amount', 0);
-        $note = $request->input('note', 'COD Remittance confirmed by rider');
-        $date = $request->input('date', now()->format('Y-m-d'));
+        if (! $profile) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Rider profile not found.',
+            ], 404);
+        }
 
-        if ($profile) {
-            // Mark all delivered COD parcels for date as remitted
-            Parcel::where('assigned_rider_id', $profile->id)
+        $tz = 'Asia/Manila';
+        $todayStr = Carbon::now($tz)->toDateString();
+        $dateStr = $request->input('date', $todayStr);
+
+        try {
+            $remitDate = Carbon::createFromFormat('Y-m-d', $dateStr, $tz);
+        } catch (\Throwable $e) {
+            $remitDate = Carbon::now($tz);
+            $dateStr = $remitDate->toDateString();
+        }
+
+        $idempotencyKey = $request->input('idempotency_key');
+        if (! empty($idempotencyKey)) {
+            $existing = Remittance::where('idempotency_key', $idempotencyKey)->first();
+            if ($existing) {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Remittance already submitted (idempotent).',
+                    'data' => $this->transformRemittance($existing),
+                ]);
+            }
+        }
+
+        // Check if an existing confirmed remittance already exists for today
+        $existingForDay = Remittance::where('rider_profile_id', $profile->id)
+            ->whereDate('remit_date', $dateStr)
+            ->first();
+
+        if ($existingForDay && in_array($existingForDay->status, [Remittance::STATUS_REMITTED, Remittance::STATUS_SHORT, Remittance::STATUS_OVER], true)) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Remittance for ' . $dateStr . ' has already been confirmed by cashier.',
+                'data' => $this->transformRemittance($existingForDay),
+            ]);
+        }
+
+        // Server-side calculation of expected COD amount from delivered parcels
+        $deliveredParcels = Parcel::where('assigned_rider_id', $profile->id)
+            ->where('status', 'delivered')
+            ->forDate($remitDate)
+            ->get();
+
+        $expectedCentavos = 0;
+        $codParcels = [];
+        foreach ($deliveredParcels as $p) {
+            $metadata = $p->metadata ?? [];
+            $isCod = (bool) ($metadata['is_cod'] ?? false);
+            $codAmount = (float) ($metadata['cod_amount'] ?? ($p->order?->total_amount ?? 0));
+            if ($isCod && $codAmount > 0) {
+                $centavos = (int) round($codAmount * 100);
+                $expectedCentavos += $centavos;
+                $codParcels[] = [
+                    'parcel' => $p,
+                    'centavos' => $centavos,
+                ];
+            }
+        }
+
+        $declaredCentavos = $request->filled('declared_amount_centavos')
+            ? (int) $request->input('declared_amount_centavos')
+            : (int) round(((float) $request->input('amount', $request->input('declared_amount', 0))) * 100);
+
+        $hub = $profile->hub;
+        $branch = $hub?->branch ?: ($user->getBranchName() ?: 'Pila');
+        $initialStatus = ($expectedCentavos > 0 || $declaredCentavos > 0)
+            ? Remittance::STATUS_AWAITING_CASHIER
+            : Remittance::STATUS_NOTHING_DUE;
+
+        $remittance = Remittance::updateOrCreate(
+            [
+                'rider_profile_id' => $profile->id,
+                'remit_date' => $dateStr,
+            ],
+            [
+                'hub_id' => $hub?->id,
+                'hub_branch' => $branch,
+                'status' => $initialStatus,
+                'expected_amount_centavos' => $expectedCentavos,
+                'declared_amount_centavos' => $declaredCentavos,
+                'difference_centavos' => $declaredCentavos - $expectedCentavos,
+                'submitted_at' => now(),
+                'rider_note' => $request->input('note'),
+                'idempotency_key' => $idempotencyKey ?: Str::uuid()->toString(),
+            ]
+        );
+
+        // Update/link covered COD parcels
+        RemittanceParcel::where('remittance_id', $remittance->id)->delete();
+        foreach ($codParcels as $item) {
+            RemittanceParcel::create([
+                'remittance_id' => $remittance->id,
+                'parcel_id' => $item['parcel']->id,
+                'parcel_number' => $item['parcel']->parcel_number ?: ('PARCEL-' . $item['parcel']->id),
+                'cod_amount_centavos' => $item['centavos'],
+                'status' => $item['parcel']->status,
+            ]);
+        }
+
+        // Mark parcels as submitted for remittance
+        foreach ($deliveredParcels as $p) {
+            $metadata = $p->metadata ?? [];
+            $metadata['is_cod_remitted'] = false;
+            $metadata['cod_remit_status'] = 'awaiting_cashier';
+            $metadata['cod_remitted_at'] = now()->toIso8601String();
+            $p->metadata = $metadata;
+            $p->save();
+        }
+
+        // Write Audit Log
+        AuditLog::create([
+            'user_id' => $user->id,
+            'event' => 'remittance_submitted',
+            'auditable_type' => Remittance::class,
+            'auditable_id' => $remittance->id,
+            'metadata' => [
+                'rider_name' => $user->name,
+                'branch' => $branch,
+                'declared_amount' => $remittance->declared_amount,
+                'expected_amount' => $remittance->expected_amount,
+                'status' => $remittance->status,
+                'cod_parcels_count' => count($codParcels),
+            ],
+            'created_at' => now(),
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Remit submitted successfully. Awaiting cashier confirmation.',
+            'data' => $this->transformRemittance($remittance),
+        ]);
+    }
+
+    /**
+     * Get current remittance status for rider app.
+     */
+    public function remittanceStatus(Request $request): JsonResponse
+    {
+        $user = $this->resolveRiderUser($request);
+        $profile = $user?->riderProfile;
+
+        if (! $profile) {
+            return response()->json(['status' => 'error', 'message' => 'Rider profile not found.'], 404);
+        }
+
+        $tz = 'Asia/Manila';
+        $todayStr = Carbon::now($tz)->toDateString();
+        $dateStr = $request->input('date', $todayStr);
+
+        $remittance = Remittance::with(['cashier', 'parcels'])
+            ->where('rider_profile_id', $profile->id)
+            ->whereDate('remit_date', $dateStr)
+            ->first();
+
+        if (! $remittance) {
+            // Check delivered COD parcels to report expected amount even if unsubmitted
+            $deliveredParcels = Parcel::where('assigned_rider_id', $profile->id)
                 ->where('status', 'delivered')
-                ->whereDate('updated_at', $date)
-                ->get()
-                ->each(function (Parcel $parcel) {
-                    $metadata = $parcel->metadata ?? [];
-                    $metadata['is_cod_remitted'] = true;
-                    $metadata['cod_remitted_at'] = now()->toIso8601String();
-                    $parcel->metadata = $metadata;
-                    $parcel->save();
-                });
+                ->forDate($dateStr)
+                ->get();
+
+            $expectedCentavos = 0;
+            $codCount = 0;
+            foreach ($deliveredParcels as $p) {
+                $metadata = $p->metadata ?? [];
+                $isCod = (bool) ($metadata['is_cod'] ?? false);
+                $codAmount = (float) ($metadata['cod_amount'] ?? ($p->order?->total_amount ?? 0));
+                if ($isCod && $codAmount > 0) {
+                    $expectedCentavos += (int) round($codAmount * 100);
+                    $codCount++;
+                }
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'id' => null,
+                    'remittance_id' => null,
+                    'remit_date' => $dateStr,
+                    'status' => $expectedCentavos > 0 ? Remittance::STATUS_NOT_REMITTED : Remittance::STATUS_NOTHING_DUE,
+                    'status_label' => $expectedCentavos > 0 ? 'Not remitted' : 'Nothing due',
+                    'expected_amount' => round($expectedCentavos / 100, 2),
+                    'declared_amount' => 0.00,
+                    'counted_amount' => null,
+                    'difference' => 0.00,
+                    'balance_due' => round($expectedCentavos / 100, 2),
+                    'cod_parcels_count' => $codCount,
+                    'cashier_name' => null,
+                    'confirmed_at' => null,
+                    'cashier_note' => null,
+                    'formatted_expected' => '₱' . number_format(round($expectedCentavos / 100, 2), 2),
+                    'formatted_declared' => '₱0.00',
+                    'formatted_counted' => '—',
+                    'formatted_difference' => '₱0.00',
+                ],
+            ]);
         }
 
         return response()->json([
             'status' => 'success',
-            'message' => 'COD cash remittance recorded successfully.',
-            'remitted_amount' => $amount,
-            'remitted_at' => now()->toIso8601String(),
+            'data' => $this->transformRemittance($remittance),
         ]);
+    }
+
+    private function transformRemittance(Remittance $r): array
+    {
+        return [
+            'id' => $r->id,
+            'remit_date' => $r->remit_date?->format('Y-m-d') ?? now()->format('Y-m-d'),
+            'status' => $r->status,
+            'status_label' => $r->status_label,
+            'expected_amount' => $r->expected_amount,
+            'declared_amount' => $r->declared_amount,
+            'counted_amount' => $r->counted_amount,
+            'difference' => $r->difference,
+            'balance_due' => $r->balance_due,
+            'submitted_at' => $r->submitted_at?->toIso8601String(),
+            'confirmed_at' => $r->confirmed_at?->toIso8601String(),
+            'confirmed_by' => $r->confirmed_by,
+            'cashier_name' => $r->cashier?->name,
+            'cashier_note' => $r->cashier_note,
+            'rider_note' => $r->rider_note,
+            'cod_parcels_count' => $r->parcels()->count(),
+            'formatted_expected' => $r->formatted_expected,
+            'formatted_declared' => $r->formatted_declared,
+            'formatted_counted' => $r->formatted_counted,
+            'formatted_difference' => $r->formatted_difference,
+        ];
+    }
+
+    /**
+     * Backward compatible endpoint that forwards to submitRemittance.
+     */
+    public function remitCodCash(Request $request): JsonResponse
+    {
+        return $this->submitRemittance($request);
     }
 
     /**
