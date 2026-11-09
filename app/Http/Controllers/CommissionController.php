@@ -565,7 +565,11 @@ class CommissionController extends Controller
         }
 
         // Auto-sync real parcel calculations for the period
-        $calculator->syncPeriodCommissions($selectedPeriod);
+        try {
+            $calculator->syncPeriodCommissions($selectedPeriod);
+        } catch (\Throwable $e) {
+            // Keep going with existing cached or fallback records
+        }
 
         $search = trim((string) $request->query('search', ''));
         $activeTab = strtolower(trim((string) $request->query('tab', 'all')));
@@ -574,13 +578,17 @@ class CommissionController extends Controller
         }
 
         // Scope records strictly to this hub
-        $hubRows = RiderCommission::query()
-            ->with(['rider.user', 'approver', 'payer', 'flagger'])
-            ->where('period_key', $selectedPeriod['key'])
-            ->forHub($hubName)
-            ->get()
-            ->sortByDesc('net_centavos')
-            ->values();
+        try {
+            $hubRows = RiderCommission::query()
+                ->with(['rider.user', 'approver', 'payer', 'flagger'])
+                ->where('period_key', $selectedPeriod['key'])
+                ->forHub($hubName)
+                ->get()
+                ->sortByDesc('net_centavos')
+                ->values();
+        } catch (\Throwable $e) {
+            $hubRows = collect();
+        }
 
         // 4 Summary cards for this Hub:
         $awaitingHqRows = $hubRows->where('status', 'pending');

@@ -301,7 +301,10 @@
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12.5px;">
                                         <span style="color: var(--muted);">Base calculation</span>
                                         <strong id="hub-detail-base-calc" style="color: var(--ink);">
-                                            {{ $selectedCommission->delivered_count }} × ₱{{ number_format(($selectedCommission->rules_snapshot['base_rate_centavos'] ?? 1800) / 100, 0) }} = {{ $selectedCommission->formatted_base }}
+                                            @php
+                                                $baseSnapRate = is_array($selectedCommission->rules_snapshot) ? ($selectedCommission->rules_snapshot['base_rate_centavos'] ?? 1800) : 1800;
+                                            @endphp
+                                            {{ $selectedCommission->delivered_count }} × ₱{{ number_format($baseSnapRate / 100, 0) }} = {{ $selectedCommission->formatted_base }}
                                         </strong>
                                     </div>
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12.5px;">
@@ -462,7 +465,7 @@
                 'status' => $rc->status,
                 'status_label' => $rc->status === 'approved' ? 'Ready to pay' : ($rc->status === 'pending' ? 'Awaiting HQ' : 'Paid'),
                 'delivered_count' => number_format($rc->delivered_count),
-                'base_rate' => number_format(($rc->rules_snapshot['base_rate_centavos'] ?? 1800) / 100, 0),
+                'base_rate' => number_format((is_array($rc->rules_snapshot) ? ($rc->rules_snapshot['base_rate_centavos'] ?? 1800) : 1800) / 100, 0),
                 'base_formatted' => $rc->formatted_base,
                 'bonus_centavos' => $rc->bonus_centavos,
                 'bonus_formatted' => $rc->formatted_bonus,
