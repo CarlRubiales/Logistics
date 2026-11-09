@@ -85,6 +85,7 @@ class LagunaHubProvisioner
     public static function municipalities(): array
     {
         return [
+            [
                 'branch' => 'Alaminos',
                 'slug' => 'alaminos',
                 'email' => 'alaminos@gmail.com',
