@@ -389,19 +389,29 @@ class ExceptionsController extends Controller
         }
 
         // Hub list for the Hub dropdown
-        $hubs = FulfillmentLocation::query()
-            ->where('is_active', true)
-            ->orderBy('branch')
-            ->orderBy('city')
-            ->get()
-            ->map(fn ($h) => $h->branch ?: $h->city)
-            ->filter()
-            ->unique()
-            ->values();
-
-        if ($hubs->isEmpty()) {
-            $hubs = $allCases->pluck('hub')->filter()->unique()->sort()->values();
+        try {
+            $locationHubs = FulfillmentLocation::query()
+                ->where('is_active', true)
+                ->orderBy('city')
+                ->pluck('city');
+        } catch (\Throwable $e) {
+            $locationHubs = collect();
         }
+
+        $parcelBranches = Parcel::query()
+            ->whereNotNull('branch')
+            ->where('branch', '!=', '')
+            ->distinct()
+            ->pluck('branch');
+
+        $hubs = $locationHubs
+            ->merge($parcelBranches)
+            ->merge($allCases->pluck('hub'))
+            ->map(fn ($h) => trim((string) $h))
+            ->filter()
+            ->unique(fn (string $h) => strtolower($h))
+            ->sort()
+            ->values();
 
         return view('exceptions.index', [
             'cases' => $paginator,
