@@ -149,10 +149,15 @@ class Remittance extends Model
         $branchLower = mb_strtolower(trim($branch));
         return $query->where(function ($q) use ($branchLower) {
             $q->whereRaw('LOWER(hub_branch) = ?', [$branchLower])
+              ->orWhereRaw('LOWER(hub_branch) LIKE ?', ["%{$branchLower}%"])
               ->orWhereHas('hub', function ($hq) use ($branchLower) {
                   $hq->whereRaw('LOWER(branch) = ?', [$branchLower])
                      ->orWhereRaw('LOWER(name) = ?', [$branchLower])
-                     ->orWhereRaw('LOWER(city) = ?', [$branchLower]);
+                     ->orWhereRaw('LOWER(city) = ?', [$branchLower])
+                     ->orWhereRaw('LOWER(branch) LIKE ?', ["%{$branchLower}%"]);
+              })
+              ->orWhereHas('rider', function ($rq) use ($branchLower) {
+                  $rq->whereHas('user', fn ($uq) => $uq->whereRaw('LOWER(branch) LIKE ?', ["%{$branchLower}%"]));
               });
         });
     }

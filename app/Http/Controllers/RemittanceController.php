@@ -102,10 +102,15 @@ class RemittanceController extends Controller
             }
         }
 
-        $hub = Hub::whereRaw('LOWER(branch) = ?', [mb_strtolower($branchName)])
-            ->orWhereRaw('LOWER(name) = ?', [mb_strtolower($branchName . ' hub')])
-            ->orWhereRaw('LOWER(city) = ?', [mb_strtolower($branchName)])
-            ->first();
+        try {
+            $hub = Hub::whereRaw('LOWER(branch) = ?', [mb_strtolower($branchName)])
+                ->orWhereRaw('LOWER(name) = ?', [mb_strtolower($branchName . ' hub')])
+                ->orWhereRaw('LOWER(city) = ?', [mb_strtolower($branchName)])
+                ->first();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('RemittanceController hub query: ' . $e->getMessage());
+            $hub = null;
+        }
 
         $tz = 'Asia/Manila';
         $todayStr = Carbon::now($tz)->toDateString();
@@ -127,45 +132,62 @@ class RemittanceController extends Controller
             $cutoffFormatted = '8:00 PM';
         }
 
-        // Fetch all active riders assigned to this hub
-        $riders = RiderProfile::with(['user', 'hub'])
-            ->forBranch($branchName)
-            ->where('registration_status', 'approved')
-            ->get();
-
-        // Fetch existing remittances for this hub and date
-        $remittances = \Illuminate\Support\Facades\Schema::hasTable('remittances')
-            ? Remittance::with(['rider.user', 'cashier', 'parcels'])
+        try {
+            // Fetch all active riders assigned to this hub
+            $riders = RiderProfile::with(['user', 'hub'])
                 ->forBranch($branchName)
-                ->forDate($selectedDate)
-                ->get()
-                ->keyBy('rider_profile_id')
-            : collect();
+                ->where('registration_status', 'approved')
+                ->get();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('RemittanceController riders query: ' . $e->getMessage());
+            $riders = collect();
+        }
+
+        try {
+            // Fetch existing remittances for this hub and date
+            $remittances = \Illuminate\Support\Facades\Schema::hasTable('remittances')
+                ? Remittance::with(['rider.user', 'cashier', 'parcels'])
+                    ->forBranch($branchName)
+                    ->forDate($selectedDate)
+                    ->get()
+                    ->keyBy('rider_profile_id')
+                : collect();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('RemittanceController remittances query: ' . $e->getMessage());
+            $remittances = collect();
+        }
 
         // Build composite row for each rider
         $riderRows = $riders->map(function (RiderProfile $rider) use ($selectedDate, $remittances, $branchName) {
             $remittance = $remittances->get($rider->id);
 
             // Fetch parcels for this rider on this date
-            $allParcels = Parcel::where('assigned_rider_id', $rider->id)
-                ->forDate($selectedDate)
-                ->get();
+            try {
+                $allParcels = Parcel::where('assigned_rider_id', $rider->id)
+                    ->forDate($selectedDate)
+                    ->get();
+            } catch (\Throwable $e) {
+                $allParcels = collect();
+            }
 
             $deliveredCodParcels = $allParcels->filter(function (Parcel $p) {
-                $meta = $p->metadata ?? [];
+                $meta = is_array($p->metadata) ? $p->metadata : (is_string($p->metadata) ? json_decode($p->metadata, true) : []);
+                $meta = is_array($meta) ? $meta : [];
                 $isCod = (bool) ($meta['is_cod'] ?? false);
-                $codVal = (float) ($meta['cod_amount'] ?? ($p->order?->total_amount ?? 0));
+                $codVal = (float) ($meta['cod_amount'] ?? ($p->order?->total ?? ($p->order?->total_amount ?? 0)));
                 return $p->status === 'delivered' && $isCod && $codVal > 0;
             });
 
             $totalAssignedCodCount = $allParcels->filter(function (Parcel $p) {
-                $meta = $p->metadata ?? [];
+                $meta = is_array($p->metadata) ? $p->metadata : (is_string($p->metadata) ? json_decode($p->metadata, true) : []);
+                $meta = is_array($meta) ? $meta : [];
                 return (bool) ($meta['is_cod'] ?? false);
             })->count();
 
             $serverExpectedCentavos = $deliveredCodParcels->sum(function (Parcel $p) {
-                $meta = $p->metadata ?? [];
-                $codVal = (float) ($meta['cod_amount'] ?? ($p->order?->total_amount ?? 0));
+                $meta = is_array($p->metadata) ? $p->metadata : (is_string($p->metadata) ? json_decode($p->metadata, true) : []);
+                $meta = is_array($meta) ? $meta : [];
+                $codVal = (float) ($meta['cod_amount'] ?? ($p->order?->total ?? ($p->order?->total_amount ?? 0)));
                 return (int) round($codVal * 100);
             });
 
@@ -184,7 +206,7 @@ class RemittanceController extends Controller
                 $cashierName = $remittance->cashier?->name;
                 $cashierNote = $remittance->cashier_note;
                 $riderNote = $remittance->rider_note;
-                $coveredParcels = $remittance->parcels;
+                $coveredParcels = $remittance->parcels ?? collect();
             } else {
                 $status = $expectedAmount > 0 ? Remittance::STATUS_NOT_REMITTED : Remittance::STATUS_NOTHING_DUE;
                 $declaredAmount = 0.00;
@@ -247,7 +269,7 @@ class RemittanceController extends Controller
             ->sum('expected_amount');
 
         $shortagesSum = $riderRows->where('status', Remittance::STATUS_SHORT)
-            ->sum(fn ($r) => abs($r->difference));
+            ->sum(fn ($r) => abs((float) ($r->difference ?? 0)));
 
         $totalNotRemittedIncludingShort = $notRemittedAmount + $shortagesSum;
 
@@ -283,18 +305,27 @@ class RemittanceController extends Controller
             : ($filteredRows->firstWhere('status', Remittance::STATUS_AWAITING_CASHIER) ?? $filteredRows->first());
 
         // Activity Today Feed
-        $activityLogs = AuditLog::with('user')
-            ->where('auditable_type', Remittance::class)
-            ->whereDate('created_at', $selectedDate->format('Y-m-d'))
-            ->where(function ($q) use ($branchName) {
-                $q->where('metadata->branch', $branchName)
-                  ->orWhereNull('metadata->branch');
-            })
-            ->latest('id')
-            ->take(15)
-            ->get();
+        try {
+            $activityLogs = AuditLog::with('user')
+                ->where('auditable_type', Remittance::class)
+                ->whereDate('created_at', $selectedDate->format('Y-m-d'))
+                ->where(function ($q) use ($branchName) {
+                    $q->where('metadata->branch', $branchName)
+                      ->orWhereNull('metadata->branch');
+                })
+                ->latest('id')
+                ->take(15)
+                ->get();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('RemittanceController activityLogs: ' . $e->getMessage());
+            $activityLogs = collect();
+        }
 
-        $activeHubs = Hub::where('is_active', true)->get();
+        try {
+            $activeHubs = Hub::where('is_active', true)->get();
+        } catch (\Throwable $e) {
+            $activeHubs = collect();
+        }
 
         return view('remittance.index', [
             'hubName' => $branchName,
@@ -437,7 +468,8 @@ class RemittanceController extends Controller
                     ->forDate($dateStr)
                     ->get()
                     ->sum(function (Parcel $p) {
-                        $meta = $p->metadata ?? [];
+                        $meta = is_array($p->metadata) ? $p->metadata : (is_string($p->metadata) ? json_decode($p->metadata, true) : []);
+                        $meta = is_array($meta) ? $meta : [];
                         return ((bool) ($meta['is_cod'] ?? false)) ? (int) round(((float) ($meta['cod_amount'] ?? 0)) * 100) : 0;
                     });
 
@@ -608,7 +640,8 @@ class RemittanceController extends Controller
                     ->forDate($dateStr)
                     ->get()
                     ->sum(function (Parcel $p) {
-                        $meta = $p->metadata ?? [];
+                        $meta = is_array($p->metadata) ? $p->metadata : (is_string($p->metadata) ? json_decode($p->metadata, true) : []);
+                        $meta = is_array($meta) ? $meta : [];
                         return ((bool) ($meta['is_cod'] ?? false)) ? (int) round(((float) ($meta['cod_amount'] ?? 0)) * 100) : 0;
                     });
 

@@ -537,7 +537,7 @@
                             </div>
 
                             <!-- Cashier Action Form (When Awaiting Cashier or Re-confirming) -->
-                            @if($selectedRow->status === \App\Models\Remittance::STATUS_AWAITING_CASHIER || ($selectedRow->remittance_id && in_array($selectedRow->status, [\App\Models\Remittance::STATUS_SHORT, \App\Models\Remittance::STATUS_OVER])))
+                            @if(!empty($selectedRow->remittance_id) && ($selectedRow->status === \App\Models\Remittance::STATUS_AWAITING_CASHIER || in_array($selectedRow->status, [\App\Models\Remittance::STATUS_SHORT, \App\Models\Remittance::STATUS_OVER])))
                                 <form method="POST" action="{{ route('remittance.confirm', ['id' => $selectedRow->remittance_id]) }}" style="margin-bottom: 20px;">
                                     @csrf
                                     <div style="font-weight: 800; font-size: 13px; color: var(--plum); margin-bottom: 6px;">
@@ -575,6 +575,15 @@
                                         ✓ Confirm Cash Intake
                                     </button>
                                 </form>
+                            @elseif($selectedRow->status === \App\Models\Remittance::STATUS_AWAITING_CASHIER)
+                                <div style="background: #FFF4E5; border: 1px solid #F5C68A; border-radius: 8px; padding: 14px; margin-bottom: 18px;">
+                                    <div style="font-weight: 800; font-size: 13px; color: #7A3E00; margin-bottom: 4px;">
+                                        ⏳ Remittance Submission Pending
+                                    </div>
+                                    <div style="font-size: 11.5px; color: #7A3E00; line-height: 1.4;">
+                                        Rider declared <strong>{{ $fmt($selectedRow->declared_amount) }}</strong>, and the remittance record is currently synchronizing. Please refresh in a moment to review.
+                                    </div>
+                                </div>
                             @elseif($selectedRow->status === \App\Models\Remittance::STATUS_REMITTED)
                                 <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 8px; padding: 14px; margin-bottom: 18px;">
                                     <div style="font-weight: 800; font-size: 13px; color: #065F46; margin-bottom: 4px;">
