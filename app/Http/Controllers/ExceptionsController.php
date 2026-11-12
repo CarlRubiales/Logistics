@@ -270,6 +270,12 @@ class ExceptionsController extends Controller
             'is_cod' => (bool) ($meta['is_cod'] ?? false),
             'assigned_rider_id' => $parcel->assigned_rider_id,
             'rider_fault' => \App\Services\CommissionCalculatorService::isRiderFaultReturn($parcel),
+            'return_items' => $meta['return_items'] ?? ($parcel->order?->items?->map(fn ($i) => [
+                'name' => $i->name,
+                'quantity' => $i->quantity,
+                'price' => $i->unit_price,
+            ])->all() ?? []),
+            'is_seller_approved' => ($meta['return_approved_by'] ?? '') === 'seller' || str_contains(strtolower($meta['return_resolution'] ?? ''), 'approved by seller'),
             'audit_trail' => $auditTrail,
         ];
     }

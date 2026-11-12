@@ -1652,6 +1652,7 @@ class RiderApiController extends Controller
             'in_transit' => 'PICKED_UP_FROM_HUB',
             'out_for_delivery' => 'OUT_FOR_DELIVERY',
             'delivered' => 'DELIVERED',
+            'returned' => 'RETURNED',
             'exception' => 'DELIVERY_FAILED',
             default => 'ASSIGNED_TO_RIDER',
         };
@@ -1660,6 +1661,7 @@ class RiderApiController extends Controller
             'rider_received', 'in_transit' => 'pickedUp',
             'out_for_delivery' => 'outForDelivery',
             'delivered' => 'delivered',
+            'returned' => 'returnedToHub',
             'exception' => 'failed',
             default => 'accepted',
         };
@@ -1699,6 +1701,9 @@ class RiderApiController extends Controller
             'failure_notes' => $metadata['failure_notes'] ?? ($metadata['return_notes'] ?? null),
             'return_reason' => $metadata['return_reason'] ?? ($metadata['failure_reason'] ?? null),
             'return_notes' => $metadata['return_notes'] ?? ($metadata['failure_notes'] ?? null),
+            'is_return_refund' => (bool) ($metadata['is_return_refund'] ?? false),
+            'return_status' => $metadata['return_status'] ?? null,
+            'return_items' => $metadata['return_items'] ?? null,
             'pod_photo_path' => ! empty($metadata['return_photo_path']) || ! empty($metadata['return_photo_data'])
                 ? url("/returns/media/{$p->id}/photo")
                 : ($metadata['proof_url'] ?? null),

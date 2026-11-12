@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\LogisticsReturnApiController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\RiderApiController;
 use App\Http\Controllers\Api\ScannerApiController;
@@ -9,11 +10,14 @@ use App\Http\Middleware\AuthenticateIntegration;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-// Bridge endpoints for Lumora E-Commerce Waybill integration
+// Bridge endpoints for Lumora E-Commerce Waybill integration & Return dispatch
 Route::get('/logistics/waybill/{barcode}', [ScannerApiController::class, 'waybillLookup']);
 Route::post('/logistics/waybill/{barcode}/status', [ScannerApiController::class, 'waybillStatusUpdate']);
+Route::post('/logistics/return-request', [LogisticsReturnApiController::class, 'handleReturnRequest']);
 
 Route::prefix('v1')->group(function () {
+    Route::post('/logistics/return-request', [LogisticsReturnApiController::class, 'handleReturnRequest']);
+
     Route::get('/health', function () {
         return response()->json([
             'service' => 'lumora-logistics',

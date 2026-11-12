@@ -28,6 +28,8 @@ class ProcessWebhookDelivery implements ShouldQueue
 
         if (in_array($delivery->event_type, ['order.created', 'order.updated', 'order.paid'], true)) {
             $syncService->upsertFromWebhook($delivery->payload);
+        } elseif ($delivery->event_type === 'order.return_approved') {
+            app(\App\Http\Controllers\Api\LogisticsReturnApiController::class)->handleReturnRequest(new \Illuminate\Http\Request([], $delivery->payload));
         }
 
         $delivery->update(['status' => 'processed', 'processed_at' => now(), 'error' => null]);

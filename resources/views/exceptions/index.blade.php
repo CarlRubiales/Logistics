@@ -503,8 +503,52 @@
                                 </div>
                             </div>
 
-                            <!-- Resolution Form & Actions -->
-                            <div class="rr-detail-section">
+                            <!-- Return / Refund Items List -->
+                            <div class="rr-detail-section" id="detail-return-items-section">
+                                <h3 class="rr-section-title">Return / Refund Items</h3>
+                                <div id="detail-return-items-container">
+                                    @if(!empty($selectedCase['return_items']))
+                                        <div style="background:var(--cream);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:6px;">
+                                            <table style="width:100%;font-size:12px;border-collapse:collapse;">
+                                                <thead>
+                                                    <tr style="border-bottom:1px solid var(--line);color:var(--muted);text-align:left;">
+                                                        <th style="padding-bottom:5px;">Item</th>
+                                                        <th style="padding-bottom:5px;text-align:center;width:40px;">Qty</th>
+                                                        <th style="padding-bottom:5px;text-align:right;width:70px;">Price</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach($selectedCase['return_items'] as $ritem)
+                                                        <tr style="border-bottom:1px dashed var(--line);">
+                                                            <td style="padding:6px 0;font-weight:600;">{{ $ritem['name'] ?? 'Product Item' }}</td>
+                                                            <td style="padding:6px 0;text-align:center;">{{ $ritem['quantity'] ?? 1 }}</td>
+                                                            <td style="padding:6px 0;text-align:right;">₱{{ number_format((float) ($ritem['price'] ?? 0), 2) }}</td>
+                                                        </tr>
+                                                    @endforeach
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    @else
+                                        <p style="font-size:12px;color:var(--muted);margin:0;">No specific line items attached.</p>
+                                    @endif
+                                </div>
+                            </div>
+
+                            <!-- Seller Approved Notice (Removes manual approve/decline) -->
+                            <div class="rr-detail-section" id="detail-seller-approved-box" style="display: {{ ($selectedCase['is_seller_approved'] ?? false) ? 'block' : 'none' }};">
+                                <div style="background:#ECFDF5;border:1.5px solid #10B981;border-radius:12px;padding:14px 16px;">
+                                    <div style="display:flex;align-items:center;gap:8px;font-weight:700;color:#065F46;font-size:13.5px;">
+                                        <span style="font-size:18px;">✓</span>
+                                        <span>Approved by Seller &bull; Assigned to Courier</span>
+                                    </div>
+                                    <p style="font-size:12px;color:#047857;margin:6px 0 0;line-height:1.45;">
+                                        This return has been reviewed and approved directly by the seller. It is automatically assigned to delivering courier <strong id="detail-approved-rider">{{ $selectedCase['rider_name'] }}</strong> for return pickup intake. No manual admin approval or decline is needed.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Resolution Form & Actions (Shown only when NOT seller-approved) -->
+                            <div class="rr-detail-section" id="detail-resolve-form-section" style="display: {{ ($selectedCase['is_seller_approved'] ?? false) ? 'none' : 'block' }};">
                                 <h3 class="rr-section-title">Resolve Case</h3>
                                 <form id="rrResolveForm" method="POST" action="{{ route('exceptions.resolve-parcel', $selectedCase['id']) }}" onsubmit="return handleSingleResolveSubmit(event)">
                                     @csrf
@@ -686,6 +730,8 @@
                 'hub_label' => $c['hub_label'],
                 'resolution_note' => $c['resolution_note'],
                 'rider_fault' => (bool) ($c['rider_fault'] ?? false),
+                'return_items' => $c['return_items'] ?? [],
+                'is_seller_approved' => (bool) ($c['is_seller_approved'] ?? false),
                 'resolve_url' => route('exceptions.resolve-parcel', $c['id']),
                 'audit_trail' => $c['audit_trail'],
             ],
@@ -786,6 +832,53 @@ function selectCaseRow(caseId, event) {
     const faultEl = document.getElementById('rr-rider-fault');
     if (faultEl) faultEl.checked = !!data.rider_fault;
     if (formEl) formEl.action = data.resolve_url;
+
+    // Toggle Seller Approved Notice vs Manual Resolution Form
+    const sellerApprovedBox = document.getElementById('detail-seller-approved-box');
+    const resolveFormSection = document.getElementById('detail-resolve-form-section');
+    const approvedRiderEl = document.getElementById('detail-approved-rider');
+    if (approvedRiderEl) approvedRiderEl.textContent = data.rider_name || 'Assigned Courier';
+
+    if (sellerApprovedBox && resolveFormSection) {
+        if (data.is_seller_approved) {
+            sellerApprovedBox.style.display = 'block';
+            resolveFormSection.style.display = 'none';
+        } else {
+            sellerApprovedBox.style.display = 'none';
+            resolveFormSection.style.display = 'block';
+        }
+    }
+
+    // Render Return Items list
+    const returnItemsContainer = document.getElementById('detail-return-items-container');
+    if (returnItemsContainer) {
+        if (Array.isArray(data.return_items) && data.return_items.length > 0) {
+            let rHtml = `
+                <div style="background:var(--cream);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:6px;">
+                    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+                        <thead>
+                            <tr style="border-bottom:1px solid var(--line);color:var(--muted);text-align:left;">
+                                <th style="padding-bottom:5px;">Item</th>
+                                <th style="padding-bottom:5px;text-align:center;width:40px;">Qty</th>
+                                <th style="padding-bottom:5px;text-align:right;width:70px;">Price</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+            data.return_items.forEach(item => {
+                const priceFormatted = Number(item.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                rHtml += `
+                    <tr style="border-bottom:1px dashed var(--line);">
+                        <td style="padding:6px 0;font-weight:600;">${escapeHtml(item.name || item.product_name || 'Product Item')}</td>
+                        <td style="padding:6px 0;text-align:center;">${escapeHtml(item.quantity || 1)}</td>
+                        <td style="padding:6px 0;text-align:right;">₱${priceFormatted}</td>
+                    </tr>`;
+            });
+            rHtml += `</tbody></table></div>`;
+            returnItemsContainer.innerHTML = rHtml;
+        } else {
+            returnItemsContainer.innerHTML = '<p style="font-size:12px;color:var(--muted);margin:0;">No specific line items attached.</p>';
+        }
+    }
 
     if (mediaContainer) {
         if (data.has_photo || data.has_video) {
