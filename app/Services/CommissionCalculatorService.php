@@ -353,8 +353,14 @@ class CommissionCalculatorService
             $deliveredParcels = $riderParcels->where('status', 'delivered');
             $deliveredCount = $deliveredParcels->count();
 
-            // If already approved/paid and no new parcels delivered, preserve frozen snapshot
+            // If already approved/paid and no new parcels delivered, ensure bonus is removed
             if ($existing && in_array($existing->status, ['approved', 'paid'], true) && $deliveredCount <= $existing->delivered_count) {
+                if ($existing->bonus_centavos > 0) {
+                    $existing->update([
+                        'bonus_centavos' => 0,
+                        'net_centavos' => max(0, $existing->base_centavos - $existing->deductions_centavos),
+                    ]);
+                }
                 continue;
             }
 
@@ -378,17 +384,11 @@ class CommissionCalculatorService
 
             $baseCentavos = $deliveredCount * (int) $rule->base_rate_centavos;
 
+            // Rider bonus removed: commission shows strictly for delivered parcels
             $bonusCentavos = 0;
-            if ($deliveredCount > 0) {
-                if ($onTimeRatePct >= (int) $rule->bonus_tier2_rate_pct) {
-                    $bonusCentavos = (int) $rule->bonus_tier2_centavos;
-                } elseif ($onTimeRatePct >= (int) $rule->bonus_tier1_rate_pct) {
-                    $bonusCentavos = (int) $rule->bonus_tier1_centavos;
-                }
-            }
 
             $deductionsCentavos = $returnFaultCount * (int) $rule->deduction_per_return_centavos;
-            $netCentavos = max(0, $baseCentavos + $bonusCentavos - $deductionsCentavos);
+            $netCentavos = max(0, $baseCentavos - $deductionsCentavos);
 
             $hubBranch = self::resolveRiderHub($rider);
 

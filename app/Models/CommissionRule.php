@@ -55,13 +55,17 @@ class CommissionRule extends Model
             $rule = static::query()->latest('id')->first();
             if (! $rule) {
                 $rule = static::query()->create(self::defaultAttributes());
-            } elseif ($rule->base_rate_centavos === 1800 || empty($rule->shipping_fee_centavos) || $rule->period_type !== 'daily') {
-                // Upgrade to ₱50 shipping fee split (HQ ₱15 / Hub ₱15 / Rider ₱20) and daily payout cadence
+            } elseif ($rule->bonus_tier1_centavos > 0 || $rule->bonus_tier2_centavos > 0 || $rule->base_rate_centavos === 1800 || empty($rule->shipping_fee_centavos) || $rule->period_type !== 'daily') {
+                // Enforce commission on delivered parcels only (no bonuses), ₱50 shipping fee split, and daily payout cadence
                 $rule->update([
                     'shipping_fee_centavos' => 5000,
                     'admin_commission_centavos' => 1500,
                     'hub_commission_centavos' => 1500,
                     'base_rate_centavos' => 2000,
+                    'bonus_tier1_rate_pct' => 0,
+                    'bonus_tier1_centavos' => 0,
+                    'bonus_tier2_rate_pct' => 0,
+                    'bonus_tier2_centavos' => 0,
                     'deduction_per_return_centavos' => 2000,
                     'period_type' => 'daily',
                 ]);
@@ -79,11 +83,11 @@ class CommissionRule extends Model
             'shipping_fee_centavos' => 5000,        // ₱50 default shipping fee per parcel
             'admin_commission_centavos' => 1500,     // ₱15 Logistics Admin share
             'hub_commission_centavos' => 1500,       // ₱15 Branch Hub share
-            'base_rate_centavos' => 2000,            // ₱20 Rider base commission
-            'bonus_tier1_rate_pct' => 90,            // On-time rate >= 90%
-            'bonus_tier1_centavos' => 15000,         // +₱150
-            'bonus_tier2_rate_pct' => 95,            // On-time rate >= 95%
-            'bonus_tier2_centavos' => 30000,         // +₱300
+            'base_rate_centavos' => 2000,            // ₱20 Rider commission per delivered parcel
+            'bonus_tier1_rate_pct' => 0,             // Bonuses removed per business rules
+            'bonus_tier1_centavos' => 0,
+            'bonus_tier2_rate_pct' => 0,
+            'bonus_tier2_centavos' => 0,
             'deduction_per_return_centavos' => 2000, // -₱20 per rider-fault return/refund
             'period_type' => 'daily',                // Day by day payout
         ];

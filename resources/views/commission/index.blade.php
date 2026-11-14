@@ -167,10 +167,9 @@
                                     </th>
                                     <th scope="col">Rider / Hub</th>
                                     <th scope="col" class="num">Delivered</th>
-                                    <th scope="col" class="num">Base</th>
-                                    <th scope="col" class="num">Bonus</th>
+                                    <th scope="col" class="num">Commission</th>
                                     <th scope="col" class="num">Deductions</th>
-                                    <th scope="col" class="num">Net</th>
+                                    <th scope="col" class="num">Net Payout</th>
                                     <th scope="col">Status</th>
                                 </tr>
                             </thead>
@@ -217,7 +216,6 @@
                                         </td>
                                         <td class="num">{{ number_format($rc->delivered_count) }}</td>
                                         <td class="num">{{ $rc->formatted_base }}</td>
-                                        <td class="num {{ $rc->bonus_centavos > 0 ? 'comm-positive' : 'comm-muted' }}">{{ $rc->formatted_bonus }}</td>
                                         <td class="num">
                                             @if($rc->deductions_centavos > 0 && count($returnIds) > 0)
                                                 <a class="comm-deduction-link" href="{{ route('exceptions.index', ['ids' => implode(',', $returnIds)]) }}" aria-label="View {{ $rc->return_fault_count }} return or refund cases behind this deduction">{{ $rc->formatted_deductions }}</a>
@@ -280,9 +278,7 @@
                             <div><dt>Shipping fee</dt><dd><strong>{{ $fmt((int) ($rule->shipping_fee_centavos ?: 5000)) }}</strong> / parcel</dd></div>
                             <div><dt>Logistics Admin (HQ)</dt><dd class="comm-positive">{{ $fmt((int) ($rule->admin_commission_centavos ?: 1500)) }}</dd></div>
                             <div><dt>Branch Hub</dt><dd class="comm-positive">{{ $fmt((int) ($rule->hub_commission_centavos ?: 1500)) }}</dd></div>
-                            <div><dt>Rider base rate</dt><dd class="comm-positive">{{ $fmt((int) ($rule->base_rate_centavos ?: 2000)) }} / del</dd></div>
-                            <div><dt>On-time ≥ {{ $rule->bonus_tier1_rate_pct }}%</dt><dd class="comm-positive">+{{ $fmt((int) $rule->bonus_tier1_centavos) }}</dd></div>
-                            <div><dt>On-time ≥ {{ $rule->bonus_tier2_rate_pct }}%</dt><dd class="comm-positive">+{{ $fmt((int) $rule->bonus_tier2_centavos) }}</dd></div>
+                            <div><dt>Rider rate</dt><dd class="comm-positive">{{ $fmt((int) ($rule->base_rate_centavos ?: 2000)) }} / del</dd></div>
                             <div><dt>Rider-fault return</dt><dd class="comm-negative">−{{ $fmt((int) ($rule->deduction_per_return_centavos ?: 2000)) }} each</dd></div>
                             <div><dt>Pay period</dt><dd>{{ ['daily' => 'Daily (Day by day)', 'semi_monthly' => 'Semi-monthly (1–15, 16–end)', 'monthly' => 'Monthly', 'weekly' => 'Weekly (Mon–Sun)'][$rule->period_type] ?? 'Daily (Day by day)' }}</dd></div>
                         </dl>
@@ -409,22 +405,10 @@
                     <input id="rule-base" type="number" name="base_rate_pesos" min="0" step="0.01" required value="{{ number_format(($rule->base_rate_centavos ?: 2000) / 100, 2, '.', '') }}">
                 </label>
             </div>
-            <div class="comm-rule-row">
-                <label for="rule-t1-pct">Tier 1 on-time ≥ (%)
-                    <input id="rule-t1-pct" type="number" name="bonus_tier1_rate_pct" min="1" max="100" required value="{{ $rule->bonus_tier1_rate_pct }}">
-                </label>
-                <label for="rule-t1-amt">Tier 1 bonus (₱)
-                    <input id="rule-t1-amt" type="number" name="bonus_tier1_pesos" min="0" step="0.01" required value="{{ number_format($rule->bonus_tier1_centavos / 100, 2, '.', '') }}">
-                </label>
-            </div>
-            <div class="comm-rule-row">
-                <label for="rule-t2-pct">Tier 2 on-time ≥ (%)
-                    <input id="rule-t2-pct" type="number" name="bonus_tier2_rate_pct" min="1" max="100" required value="{{ $rule->bonus_tier2_rate_pct }}">
-                </label>
-                <label for="rule-t2-amt">Tier 2 bonus (₱)
-                    <input id="rule-t2-amt" type="number" name="bonus_tier2_pesos" min="0" step="0.01" required value="{{ number_format($rule->bonus_tier2_centavos / 100, 2, '.', '') }}">
-                </label>
-            </div>
+            <input type="hidden" name="bonus_tier1_rate_pct" value="0">
+            <input type="hidden" name="bonus_tier1_pesos" value="0">
+            <input type="hidden" name="bonus_tier2_rate_pct" value="0">
+            <input type="hidden" name="bonus_tier2_pesos" value="0">
             <label for="rule-deduct">Deduction per rider-fault return (₱)
                 <input id="rule-deduct" type="number" name="deduction_per_return_pesos" min="0" step="0.01" required value="{{ number_format($rule->deduction_per_return_centavos / 100, 2, '.', '') }}">
             </label>

@@ -38,7 +38,7 @@
                 <div>
                     <div class="eyebrow">{{ strtoupper($hubName) }} HUB · RIDER EARNINGS</div>
                     <h1>Commission</h1>
-                    <p class="intro">Review rider delivery earnings, verify on-time bonuses, and record branch cash payouts. Commission rates and rules are set by Headquarters.</p>
+                    <p class="intro">Review rider delivery earnings from delivered parcels and record branch cash payouts. Commission rates are set by Headquarters.</p>
                 </div>
                 <div class="comm-header-actions">
                     <a class="rr-btn secondary" href="{{ route('commission.export', $baseQuery) }}" aria-label="Export hub commission table to CSV">
@@ -178,10 +178,9 @@
                                     </th>
                                     <th scope="col">Rider</th>
                                     <th scope="col" class="num">Delivered</th>
-                                    <th scope="col" class="num">Base</th>
-                                    <th scope="col" class="num">Bonus</th>
+                                    <th scope="col" class="num">Commission</th>
                                     <th scope="col" class="num">Deductions</th>
-                                    <th scope="col" class="num">Net</th>
+                                    <th scope="col" class="num">Net Payout</th>
                                     <th scope="col">Status</th>
                                 </tr>
                             </thead>
@@ -237,7 +236,6 @@
                                         </td>
                                         <td class="num">{{ number_format($rc->delivered_count) }}</td>
                                         <td class="num">{{ $rc->formatted_base }}</td>
-                                        <td class="num {{ $rc->bonus_centavos > 0 ? 'comm-positive' : 'comm-muted' }}">{{ $rc->formatted_bonus }}</td>
                                         <td class="num" onclick="event.stopPropagation()">
                                             @if($rc->deductions_centavos > 0 && count($returnIds) > 0)
                                                 <a class="comm-deduction-link" href="{{ route('exceptions.index', ['ids' => implode(',', $returnIds)]) }}" aria-label="View {{ $rc->return_fault_count }} return cases">{{ $rc->formatted_deductions }}</a>
@@ -329,18 +327,12 @@
                                         <strong style="color: #1E6B37;">+₱{{ number_format($selectedCommission->delivered_count * 15, 2) }}</strong>
                                     </div>
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12.5px;">
-                                        <span style="color: var(--muted);">Rider base share</span>
+                                        <span style="color: var(--muted);">Rider delivery commission</span>
                                         <strong id="hub-detail-base-calc" style="color: var(--ink);">
                                             @php
                                                 $baseSnapRate = is_array($selectedCommission->rules_snapshot) ? ($selectedCommission->rules_snapshot['base_rate_centavos'] ?? 2000) : 2000;
                                             @endphp
                                             {{ $selectedCommission->delivered_count }} × ₱{{ number_format($baseSnapRate / 100, 0) }} = {{ $selectedCommission->formatted_base }}
-                                        </strong>
-                                    </div>
-                                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12.5px;">
-                                        <span style="color: var(--muted);">On-time bonus ({{ number_format($selectedCommission->on_time_rate_percent, 1) }}%)</span>
-                                        <strong id="hub-detail-bonus" class="{{ $selectedCommission->bonus_centavos > 0 ? 'comm-positive' : 'comm-muted' }}">
-                                            {{ $selectedCommission->formatted_bonus }}
                                         </strong>
                                     </div>
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 12.5px;">
@@ -422,12 +414,10 @@
                             <div><dt>Hub commission share</dt><dd class="comm-positive">{{ $fmt((int) ($rule->hub_commission_centavos ?: 1500)) }} / del</dd></div>
                             <div><dt>Rider base rate</dt><dd class="comm-positive">{{ $fmt((int) ($rule->base_rate_centavos ?: 2000)) }} / del</dd></div>
                             <div><dt>Logistics Admin (HQ)</dt><dd class="comm-positive">{{ $fmt((int) ($rule->admin_commission_centavos ?: 1500)) }} / del</dd></div>
-                            <div><dt>On-time ≥ {{ $rule->bonus_tier1_rate_pct }}%</dt><dd class="comm-positive">+{{ $fmt((int) $rule->bonus_tier1_centavos) }}</dd></div>
-                            <div><dt>On-time ≥ {{ $rule->bonus_tier2_rate_pct }}%</dt><dd class="comm-positive">+{{ $fmt((int) $rule->bonus_tier2_centavos) }}</dd></div>
                             <div><dt>Rider-fault return</dt><dd class="comm-negative">−{{ $fmt((int) ($rule->deduction_per_return_centavos ?: 2000)) }} each</dd></div>
-                            <div><dt>Pay period</dt><dd>Semi-monthly (1–15, 16–end)</dd></div>
+                            <div><dt>Pay period</dt><dd>{{ ['daily' => 'Daily (Day by day)', 'semi_monthly' => 'Semi-monthly (1–15, 16–end)', 'monthly' => 'Monthly', 'weekly' => 'Weekly (Mon–Sun)'][$rule->period_type] ?? 'Daily (Day by day)' }}</dd></div>
                         </dl>
-                        <p class="comm-note">Rates and bonus criteria are centrally governed by Lumora Headquarters.</p>
+                        <p class="comm-note">Rates are centrally governed by Lumora Headquarters.</p>
                     </section>
                 </div>
             </div>
