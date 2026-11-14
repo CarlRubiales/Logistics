@@ -300,6 +300,11 @@ class RiderApiController extends Controller
             'barangay' => ['nullable', 'string', 'max:150'],
             'street' => ['nullable', 'string', 'max:500'],
             'address' => ['nullable', 'string', 'max:500'],
+            'birthday' => ['nullable', 'string', 'max:40'],
+            'date_of_birth' => ['nullable', 'string', 'max:40'],
+            'birth_date' => ['nullable', 'string', 'max:40'],
+            'age' => ['nullable', 'string', 'max:20'],
+            'sex' => ['nullable', 'string', 'max:30'],
         ]);
 
         $email = strtolower(trim($validated['email']));

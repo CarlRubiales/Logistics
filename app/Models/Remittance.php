@@ -74,22 +74,22 @@ class Remittance extends Model
 
     public function getExpectedAmountAttribute(): float
     {
-        return round($this->expected_amount_centavos / 100, 2);
+        return round(((int) ($this->expected_amount_centavos ?? 0)) / 100, 2);
     }
 
     public function getDeclaredAmountAttribute(): float
     {
-        return round($this->declared_amount_centavos / 100, 2);
+        return round(((int) ($this->declared_amount_centavos ?? 0)) / 100, 2);
     }
 
     public function getCountedAmountAttribute(): ?float
     {
-        return $this->counted_amount_centavos !== null ? round($this->counted_amount_centavos / 100, 2) : null;
+        return $this->counted_amount_centavos !== null ? round(((int) $this->counted_amount_centavos) / 100, 2) : null;
     }
 
     public function getDifferenceAttribute(): float
     {
-        return round($this->difference_centavos / 100, 2);
+        return round(((int) ($this->difference_centavos ?? 0)) / 100, 2);
     }
 
     public function getBalanceDueAttribute(): float
@@ -130,14 +130,15 @@ class Remittance extends Model
 
     public function getStatusLabelAttribute(): string
     {
-        return match ($this->status) {
+        $st = (string) ($this->status ?? 'unknown');
+        return match ($st) {
             self::STATUS_NOT_REMITTED => 'Not remitted',
             self::STATUS_AWAITING_CASHIER => 'Awaiting cashier',
             self::STATUS_REMITTED => 'Remitted',
             self::STATUS_SHORT => 'Short',
             self::STATUS_OVER => 'Over',
             self::STATUS_NOTHING_DUE => 'Nothing due',
-            default => ucfirst(str_replace('_', ' ', $this->status)),
+            default => ucfirst(str_replace('_', ' ', $st)),
         };
     }
 

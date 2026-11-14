@@ -34,7 +34,7 @@ class RemittanceParcel extends Model
 
     public function getCodAmountAttribute(): float
     {
-        return round($this->cod_amount_centavos / 100, 2);
+        return round(((int) ($this->cod_amount_centavos ?? 0)) / 100, 2);
     }
 
     public function getFormattedCodAttribute(): string

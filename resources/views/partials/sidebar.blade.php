@@ -93,14 +93,22 @@
             </div>
         </div>
         @php
-            $returnNeedsActionCount = \App\Http\Controllers\ExceptionsController::needsActionCount(auth()->user()->isMasterAdmin() ? null : auth()->user()->getBranchName());
-            $branchForRemit = auth()->user()->isMasterAdmin() ? null : auth()->user()->getBranchName();
-            $awaitingRemitCount = \Illuminate\Support\Facades\Schema::hasTable('remittances')
-                ? \App\Models\Remittance::where('status', \App\Models\Remittance::STATUS_AWAITING_CASHIER)
-                    ->when($branchForRemit, fn($q) => $q->where('hub_branch', $branchForRemit))
-                    ->whereDate('remit_date', \Carbon\Carbon::now('Asia/Manila')->toDateString())
-                    ->count()
-                : 0;
+            try {
+                $returnNeedsActionCount = \App\Http\Controllers\ExceptionsController::needsActionCount(auth()->user()->isMasterAdmin() ? null : auth()->user()->getBranchName());
+            } catch (\Throwable $e) {
+                $returnNeedsActionCount = 0;
+            }
+            try {
+                $branchForRemit = auth()->user()->isMasterAdmin() ? null : auth()->user()->getBranchName();
+                $awaitingRemitCount = \Illuminate\Support\Facades\Schema::hasTable('remittances')
+                    ? \App\Models\Remittance::where('status', \App\Models\Remittance::STATUS_AWAITING_CASHIER)
+                        ->when($branchForRemit, fn($q) => $q->where('hub_branch', $branchForRemit))
+                        ->whereDate('remit_date', \Carbon\Carbon::now('Asia/Manila')->toDateString())
+                        ->count()
+                    : 0;
+            } catch (\Throwable $e) {
+                $awaitingRemitCount = 0;
+            }
         @endphp
         <nav class="side-nav" aria-label="Primary navigation">
             @if(auth()->user()->isMasterAdmin())

@@ -57,16 +57,20 @@ class User extends Authenticatable
             return 'Main';
         }
         // Match against existing active hubs
-        $hubs = Hub::where('is_active', true)->get();
-        foreach ($hubs as $hub) {
-            if ($hub->branch && str_contains($nameOrEmail, strtolower($hub->branch))) {
-                return $hub->branch;
+        try {
+            $hubs = Hub::where('is_active', true)->get();
+            foreach ($hubs as $hub) {
+                if ($hub->branch && str_contains($nameOrEmail, strtolower($hub->branch))) {
+                    return $hub->branch;
+                }
+                if ($hub->name && str_contains($nameOrEmail, strtolower($hub->name))) {
+                    return $hub->branch ?: $hub->name;
+                }
             }
-            if ($hub->name && str_contains($nameOrEmail, strtolower($hub->name))) {
-                return $hub->branch ?: $hub->name;
-            }
+            return $hubs->first()?->branch ?: 'Pila';
+        } catch (\Throwable $e) {
+            return 'Pila';
         }
-        return $hubs->first()?->branch ?: 'Pila';
     }
 
     public function getAssignedBranch(): ?string
@@ -76,7 +80,8 @@ class User extends Authenticatable
 
     public function isMasterAdmin(): bool
     {
-        return $this->role === 'super_admin' || ($this->role === 'admin' && empty($this->branch) && strcasecmp($this->name, 'pila') !== 0 && stripos($this->name, 'santa cruz') === false);
+        $userName = (string) ($this->name ?? '');
+        return $this->role === 'super_admin' || ($this->role === 'admin' && empty($this->branch) && strcasecmp($userName, 'pila') !== 0 && stripos($userName, 'santa cruz') === false);
     }
 
     public static function getMasterAdmin(): ?self

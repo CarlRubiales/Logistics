@@ -63,7 +63,7 @@ class RemittanceController extends Controller
 
             if (\Illuminate\Support\Facades\Schema::hasTable('hubs') && ! \Illuminate\Support\Facades\Schema::hasColumn('hubs', 'remit_cutoff_time')) {
                 \Illuminate\Support\Facades\Schema::table('hubs', function ($table) {
-                    $table->time('remit_cutoff_time')->default('20:00:00')->after('is_active');
+                    $table->time('remit_cutoff_time')->default('20:00:00')->nullable();
                 });
             }
         } catch (\Throwable $e) {
@@ -87,273 +87,331 @@ class RemittanceController extends Controller
 
     public function index(Request $request): View
     {
-        $user = $this->authorizeHubAccess($request);
-        $isMasterAdmin = $user->isMasterAdmin();
+        try {
+            $user = $this->authorizeHubAccess($request);
+            $isMasterAdmin = $user->isMasterAdmin();
 
-        $branchName = $isMasterAdmin
-            ? ($request->query('hub') ?: ($user->getBranchName() ?: 'Pila'))
-            : ($user->getBranchName() ?: 'Pila');
+            $branchName = $isMasterAdmin
+                ? ($request->query('hub') ?: ($user->getBranchName() ?: 'Pila'))
+                : ($user->getBranchName() ?: 'Pila');
 
-        // Verify hub isolation: non-master users cannot query other hubs
-        if (! $isMasterAdmin && $request->filled('hub')) {
-            $requestedHub = trim((string) $request->query('hub'));
-            if (strcasecmp($requestedHub, $branchName) !== 0) {
-                abort(403, 'Unauthorized. You can only view remittances for your assigned hub (' . $branchName . ').');
+            // Verify hub isolation: non-master users cannot query other hubs
+            if (! $isMasterAdmin && $request->filled('hub')) {
+                $requestedHub = trim((string) $request->query('hub'));
+                if (strcasecmp($requestedHub, $branchName) !== 0) {
+                    abort(403, 'Unauthorized. You can only view remittances for your assigned hub (' . $branchName . ').');
+                }
             }
-        }
 
-        try {
-            $hub = Hub::whereRaw('LOWER(branch) = ?', [mb_strtolower($branchName)])
-                ->orWhereRaw('LOWER(name) = ?', [mb_strtolower($branchName . ' hub')])
-                ->orWhereRaw('LOWER(city) = ?', [mb_strtolower($branchName)])
-                ->first();
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('RemittanceController hub query: ' . $e->getMessage());
-            $hub = null;
-        }
-
-        $tz = 'Asia/Manila';
-        $todayStr = Carbon::now($tz)->toDateString();
-        $dateStr = $request->query('date', $todayStr);
-
-        try {
-            $selectedDate = Carbon::createFromFormat('Y-m-d', $dateStr, $tz);
-        } catch (\Throwable $e) {
-            $selectedDate = Carbon::now($tz);
-            $dateStr = $todayStr;
-        }
-
-        $cutoffTime = $hub?->remit_cutoff_time ?: '20:00:00';
-        $nowTimeStr = Carbon::now($tz)->format('H:i:s');
-        $isPastCutoff = $selectedDate->toDateString() === $todayStr && $nowTimeStr >= $cutoffTime;
-        try {
-            $cutoffFormatted = Carbon::parse($cutoffTime, $tz)->format('g:i A');
-        } catch (\Throwable $e) {
-            $cutoffFormatted = '8:00 PM';
-        }
-
-        try {
-            // Fetch all active riders assigned to this hub
-            $riders = RiderProfile::with(['user', 'hub'])
-                ->forBranch($branchName)
-                ->where('registration_status', 'approved')
-                ->get();
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('RemittanceController riders query: ' . $e->getMessage());
-            $riders = collect();
-        }
-
-        try {
-            // Fetch existing remittances for this hub and date
-            $remittances = \Illuminate\Support\Facades\Schema::hasTable('remittances')
-                ? Remittance::with(['rider.user', 'cashier', 'parcels'])
-                    ->forBranch($branchName)
-                    ->forDate($selectedDate)
-                    ->get()
-                    ->keyBy('rider_profile_id')
-                : collect();
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('RemittanceController remittances query: ' . $e->getMessage());
-            $remittances = collect();
-        }
-
-        // Build composite row for each rider
-        $riderRows = $riders->map(function (RiderProfile $rider) use ($selectedDate, $remittances, $branchName) {
-            $remittance = $remittances->get($rider->id);
-
-            // Fetch parcels for this rider on this date
             try {
-                $allParcels = Parcel::where('assigned_rider_id', $rider->id)
-                    ->forDate($selectedDate)
+                $hub = Hub::whereRaw('LOWER(branch) = ?', [mb_strtolower($branchName)])
+                    ->orWhereRaw('LOWER(name) = ?', [mb_strtolower($branchName . ' hub')])
+                    ->orWhereRaw('LOWER(city) = ?', [mb_strtolower($branchName)])
+                    ->first();
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('RemittanceController hub query: ' . $e->getMessage());
+                $hub = null;
+            }
+
+            $tz = 'Asia/Manila';
+            $todayStr = Carbon::now($tz)->toDateString();
+            $dateStr = $request->query('date', $todayStr);
+
+            try {
+                $selectedDate = Carbon::createFromFormat('Y-m-d', $dateStr, $tz);
+            } catch (\Throwable $e) {
+                $selectedDate = Carbon::now($tz);
+                $dateStr = $todayStr;
+            }
+
+            $cutoffTime = $hub?->remit_cutoff_time ?: '20:00:00';
+            $nowTimeStr = Carbon::now($tz)->format('H:i:s');
+            $isPastCutoff = $selectedDate->toDateString() === $todayStr && $nowTimeStr >= $cutoffTime;
+            try {
+                $cutoffFormatted = Carbon::parse($cutoffTime, $tz)->format('g:i A');
+            } catch (\Throwable $e) {
+                $cutoffFormatted = '8:00 PM';
+            }
+
+            try {
+                // Fetch all active riders assigned to this hub
+                $riders = RiderProfile::with(['user', 'hub'])
+                    ->forBranch($branchName)
+                    ->where('registration_status', 'approved')
                     ->get();
             } catch (\Throwable $e) {
-                $allParcels = collect();
+                \Illuminate\Support\Facades\Log::warning('RemittanceController riders query: ' . $e->getMessage());
+                $riders = collect();
             }
 
-            $deliveredCodParcels = $allParcels->filter(function (Parcel $p) {
-                $meta = is_array($p->metadata) ? $p->metadata : (is_string($p->metadata) ? json_decode($p->metadata, true) : []);
-                $meta = is_array($meta) ? $meta : [];
-                $isCod = (bool) ($meta['is_cod'] ?? false);
-                $codVal = (float) ($meta['cod_amount'] ?? ($p->order?->total ?? ($p->order?->total_amount ?? 0)));
-                return $p->status === 'delivered' && $isCod && $codVal > 0;
-            });
-
-            $totalAssignedCodCount = $allParcels->filter(function (Parcel $p) {
-                $meta = is_array($p->metadata) ? $p->metadata : (is_string($p->metadata) ? json_decode($p->metadata, true) : []);
-                $meta = is_array($meta) ? $meta : [];
-                return (bool) ($meta['is_cod'] ?? false);
-            })->count();
-
-            $serverExpectedCentavos = $deliveredCodParcels->sum(function (Parcel $p) {
-                $meta = is_array($p->metadata) ? $p->metadata : (is_string($p->metadata) ? json_decode($p->metadata, true) : []);
-                $meta = is_array($meta) ? $meta : [];
-                $codVal = (float) ($meta['cod_amount'] ?? ($p->order?->total ?? ($p->order?->total_amount ?? 0)));
-                return (int) round($codVal * 100);
-            });
-
-            $expectedAmount = round($serverExpectedCentavos / 100, 2);
-
-            // If remittance record exists, use its data; otherwise generate virtual row
-            if ($remittance) {
-                $status = $remittance->status;
-                $declaredAmount = $remittance->declared_amount;
-                $countedAmount = $remittance->counted_amount;
-                $difference = $remittance->difference;
-                $balanceDue = $remittance->balance_due;
-                $remittanceId = $remittance->id;
-                $submittedAt = $remittance->submitted_at;
-                $confirmedAt = $remittance->confirmed_at;
-                $cashierName = $remittance->cashier?->name;
-                $cashierNote = $remittance->cashier_note;
-                $riderNote = $remittance->rider_note;
-                $coveredParcels = $remittance->parcels ?? collect();
-            } else {
-                $status = $expectedAmount > 0 ? Remittance::STATUS_NOT_REMITTED : Remittance::STATUS_NOTHING_DUE;
-                $declaredAmount = 0.00;
-                $countedAmount = null;
-                $difference = 0.00;
-                $balanceDue = $expectedAmount;
-                $remittanceId = null;
-                $submittedAt = null;
-                $confirmedAt = null;
-                $cashierName = null;
-                $cashierNote = null;
-                $riderNote = null;
-                $coveredParcels = collect();
+            try {
+                // Fetch existing remittances for this hub and date
+                $remittances = \Illuminate\Support\Facades\Schema::hasTable('remittances')
+                    ? Remittance::with(['rider.user', 'cashier', 'parcels'])
+                        ->forBranch($branchName)
+                        ->forDate($selectedDate)
+                        ->get()
+                        ->keyBy('rider_profile_id')
+                    : collect();
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('RemittanceController remittances query: ' . $e->getMessage());
+                $remittances = collect();
             }
 
-            return (object) [
-                'rider_id' => $rider->id,
-                'remittance_id' => $remittanceId,
-                'name' => $rider->user?->name ?? 'Courier',
-                'phone' => $rider->phone ?: ($rider->user?->email ?? ''),
-                'delivered_cod_count' => $deliveredCodParcels->count(),
-                'total_cod_count' => max($totalAssignedCodCount, $deliveredCodParcels->count()),
-                'expected_amount' => $expectedAmount,
-                'declared_amount' => $declaredAmount,
-                'counted_amount' => $countedAmount,
-                'difference' => $difference,
-                'balance_due' => $balanceDue,
-                'status' => $status,
-                'status_label' => match ($status) {
-                    Remittance::STATUS_NOT_REMITTED => 'Not remitted',
-                    Remittance::STATUS_AWAITING_CASHIER => 'Awaiting cashier',
-                    Remittance::STATUS_REMITTED => 'Remitted',
-                    Remittance::STATUS_SHORT => 'Short',
-                    Remittance::STATUS_OVER => 'Over',
-                    Remittance::STATUS_NOTHING_DUE => 'Nothing due',
-                    default => ucfirst($status),
-                },
-                'submitted_at' => $submittedAt,
-                'confirmed_at' => $confirmedAt,
-                'cashier_name' => $cashierName,
-                'cashier_note' => $cashierNote,
-                'rider_note' => $riderNote,
-                'delivered_cod_parcels' => $deliveredCodParcels->values(),
-                'covered_parcels' => $coveredParcels,
+            // Build composite row for each rider
+            $riderRows = $riders->map(function (RiderProfile $rider) use ($selectedDate, $remittances, $branchName) {
+                try {
+                    $remittance = $remittances->get($rider->id);
+
+                    // Fetch parcels for this rider on this date
+                    try {
+                        $allParcels = Parcel::where('assigned_rider_id', $rider->id)
+                            ->forDate($selectedDate)
+                            ->get();
+                    } catch (\Throwable $e) {
+                        $allParcels = collect();
+                    }
+
+                    $deliveredCodParcels = $allParcels->filter(function (Parcel $p) {
+                        $meta = is_array($p->metadata) ? $p->metadata : (is_string($p->metadata) ? json_decode($p->metadata, true) : []);
+                        $meta = is_array($meta) ? $meta : [];
+                        $isCod = (bool) ($meta['is_cod'] ?? false);
+                        $codVal = (float) ($meta['cod_amount'] ?? ($p->order?->total ?? ($p->order?->total_amount ?? 0)));
+                        return $p->status === 'delivered' && $isCod && $codVal > 0;
+                    });
+
+                    $totalAssignedCodCount = $allParcels->filter(function (Parcel $p) {
+                        $meta = is_array($p->metadata) ? $p->metadata : (is_string($p->metadata) ? json_decode($p->metadata, true) : []);
+                        $meta = is_array($meta) ? $meta : [];
+                        return (bool) ($meta['is_cod'] ?? false);
+                    })->count();
+
+                    $serverExpectedCentavos = $deliveredCodParcels->sum(function (Parcel $p) {
+                        $meta = is_array($p->metadata) ? $p->metadata : (is_string($p->metadata) ? json_decode($p->metadata, true) : []);
+                        $meta = is_array($meta) ? $meta : [];
+                        $codVal = (float) ($meta['cod_amount'] ?? ($p->order?->total ?? ($p->order?->total_amount ?? 0)));
+                        return (int) round($codVal * 100);
+                    });
+
+                    $expectedAmount = round($serverExpectedCentavos / 100, 2);
+
+                    // If remittance record exists, use its data; otherwise generate virtual row
+                    if ($remittance) {
+                        $status = (string) ($remittance->status ?? Remittance::STATUS_NOT_REMITTED);
+                        $declaredAmount = (float) ($remittance->declared_amount ?? 0.0);
+                        $countedAmount = $remittance->counted_amount !== null ? (float) $remittance->counted_amount : null;
+                        $difference = (float) ($remittance->difference ?? 0.0);
+                        $balanceDue = (float) ($remittance->balance_due ?? 0.0);
+                        $remittanceId = $remittance->id;
+                        $submittedAt = $remittance->submitted_at;
+                        $confirmedAt = $remittance->confirmed_at;
+                        $cashierName = $remittance->cashier?->name;
+                        $cashierNote = $remittance->cashier_note;
+                        $riderNote = $remittance->rider_note;
+                        $coveredParcels = $remittance->parcels ?? collect();
+                    } else {
+                        $status = $expectedAmount > 0 ? Remittance::STATUS_NOT_REMITTED : Remittance::STATUS_NOTHING_DUE;
+                        $declaredAmount = 0.00;
+                        $countedAmount = null;
+                        $difference = 0.00;
+                        $balanceDue = $expectedAmount;
+                        $remittanceId = null;
+                        $submittedAt = null;
+                        $confirmedAt = null;
+                        $cashierName = null;
+                        $cashierNote = null;
+                        $riderNote = null;
+                        $coveredParcels = collect();
+                    }
+
+                    return (object) [
+                        'rider_id' => $rider->id,
+                        'remittance_id' => $remittanceId,
+                        'name' => $rider->user?->name ?? 'Courier',
+                        'phone' => $rider->phone ?: ($rider->user?->email ?? ''),
+                        'delivered_cod_count' => $deliveredCodParcels->count(),
+                        'total_cod_count' => max($totalAssignedCodCount, $deliveredCodParcels->count()),
+                        'expected_amount' => (float) $expectedAmount,
+                        'declared_amount' => (float) $declaredAmount,
+                        'counted_amount' => $countedAmount,
+                        'difference' => (float) $difference,
+                        'balance_due' => (float) $balanceDue,
+                        'status' => $status,
+                        'status_label' => match ($status) {
+                            Remittance::STATUS_NOT_REMITTED => 'Not remitted',
+                            Remittance::STATUS_AWAITING_CASHIER => 'Awaiting cashier',
+                            Remittance::STATUS_REMITTED => 'Remitted',
+                            Remittance::STATUS_SHORT => 'Short',
+                            Remittance::STATUS_OVER => 'Over',
+                            Remittance::STATUS_NOTHING_DUE => 'Nothing due',
+                            default => ucfirst(str_replace('_', ' ', $status)),
+                        },
+                        'submitted_at' => $submittedAt,
+                        'confirmed_at' => $confirmedAt,
+                        'cashier_name' => $cashierName,
+                        'cashier_note' => $cashierNote,
+                        'rider_note' => $riderNote,
+                        'delivered_cod_parcels' => $deliveredCodParcels->values(),
+                        'covered_parcels' => $coveredParcels,
+                    ];
+                } catch (\Throwable $riderErr) {
+                    \Illuminate\Support\Facades\Log::warning("Remittance row error for rider {$rider->id}: " . $riderErr->getMessage());
+                    return (object) [
+                        'rider_id' => $rider->id,
+                        'remittance_id' => null,
+                        'name' => $rider->user?->name ?? 'Courier',
+                        'phone' => $rider->phone ?: '',
+                        'delivered_cod_count' => 0,
+                        'total_cod_count' => 0,
+                        'expected_amount' => 0.00,
+                        'declared_amount' => 0.00,
+                        'counted_amount' => null,
+                        'difference' => 0.00,
+                        'balance_due' => 0.00,
+                        'status' => Remittance::STATUS_NOTHING_DUE,
+                        'status_label' => 'Nothing due',
+                        'submitted_at' => null,
+                        'confirmed_at' => null,
+                        'cashier_name' => null,
+                        'cashier_note' => null,
+                        'rider_note' => null,
+                        'delivered_cod_parcels' => collect(),
+                        'covered_parcels' => collect(),
+                    ];
+                }
+            });
+
+            // Summary Cards Calculations
+            $totalCodCollected = (float) $riderRows->sum('expected_amount');
+            $codRidersCount = $riderRows->where('expected_amount', '>', 0)->count();
+            $codParcelsTotal = (int) $riderRows->sum('delivered_cod_count');
+
+            $remittedConfirmedAmount = (float) $riderRows->whereIn('status', [Remittance::STATUS_REMITTED, Remittance::STATUS_SHORT, Remittance::STATUS_OVER])
+                ->sum('counted_amount');
+
+            $awaitingCashierAmount = (float) $riderRows->where('status', Remittance::STATUS_AWAITING_CASHIER)
+                ->sum('declared_amount');
+
+            $notRemittedAmount = (float) $riderRows->where('status', Remittance::STATUS_NOT_REMITTED)
+                ->sum('expected_amount');
+
+            $shortagesSum = (float) $riderRows->where('status', Remittance::STATUS_SHORT)
+                ->sum(fn ($r) => abs((float) ($r->difference ?? 0)));
+
+            $totalNotRemittedIncludingShort = $notRemittedAmount + $shortagesSum;
+
+            // Status Tabs Counts
+            $tabCounts = [
+                'all' => $riderRows->count(),
+                'not_remitted' => $riderRows->where('status', Remittance::STATUS_NOT_REMITTED)->count(),
+                'awaiting_cashier' => $riderRows->where('status', Remittance::STATUS_AWAITING_CASHIER)->count(),
+                'confirmed' => $riderRows->whereIn('status', [Remittance::STATUS_REMITTED, Remittance::STATUS_SHORT, Remittance::STATUS_OVER])->count(),
             ];
-        });
 
-        // Summary Cards Calculations
-        $totalCodCollected = $riderRows->sum('expected_amount');
-        $codRidersCount = $riderRows->where('expected_amount', '>', 0)->count();
-        $codParcelsTotal = $riderRows->sum('delivered_cod_count');
+            // Filter Rows by Tab
+            $currentTab = $request->query('tab', 'all');
+            $search = strtolower(trim((string) $request->query('q', '')));
 
-        $remittedConfirmedAmount = $riderRows->whereIn('status', [Remittance::STATUS_REMITTED, Remittance::STATUS_SHORT, Remittance::STATUS_OVER])
-            ->sum('counted_amount');
+            $filteredRows = $riderRows->filter(function ($r) use ($currentTab, $search) {
+                if ($currentTab === 'not_remitted' && $r->status !== Remittance::STATUS_NOT_REMITTED) return false;
+                if ($currentTab === 'awaiting_cashier' && $r->status !== Remittance::STATUS_AWAITING_CASHIER) return false;
+                if ($currentTab === 'confirmed' && ! in_array($r->status, [Remittance::STATUS_REMITTED, Remittance::STATUS_SHORT, Remittance::STATUS_OVER], true)) return false;
 
-        $awaitingCashierAmount = $riderRows->where('status', Remittance::STATUS_AWAITING_CASHIER)
-            ->sum('declared_amount');
+                if ($search !== '') {
+                    $haystack = strtolower(($r->name ?? '') . ' ' . ($r->phone ?? ''));
+                    if (! str_contains($haystack, $search)) return false;
+                }
 
-        $notRemittedAmount = $riderRows->where('status', Remittance::STATUS_NOT_REMITTED)
-            ->sum('expected_amount');
+                return true;
+            })->values();
 
-        $shortagesSum = $riderRows->where('status', Remittance::STATUS_SHORT)
-            ->sum(fn ($r) => abs((float) ($r->difference ?? 0)));
+            // Selected row for detail panel (default: first awaiting cashier, or requested rider_id, or first row)
+            $selectedRiderId = (int) $request->query('rider_id', 0);
+            $selectedRow = $selectedRiderId > 0
+                ? ($riderRows->firstWhere('rider_id', $selectedRiderId) ?? $filteredRows->first())
+                : ($filteredRows->firstWhere('status', Remittance::STATUS_AWAITING_CASHIER) ?? $filteredRows->first());
 
-        $totalNotRemittedIncludingShort = $notRemittedAmount + $shortagesSum;
-
-        // Status Tabs Counts
-        $tabCounts = [
-            'all' => $riderRows->count(),
-            'not_remitted' => $riderRows->where('status', Remittance::STATUS_NOT_REMITTED)->count(),
-            'awaiting_cashier' => $riderRows->where('status', Remittance::STATUS_AWAITING_CASHIER)->count(),
-            'confirmed' => $riderRows->whereIn('status', [Remittance::STATUS_REMITTED, Remittance::STATUS_SHORT, Remittance::STATUS_OVER])->count(),
-        ];
-
-        // Filter Rows by Tab
-        $currentTab = $request->query('tab', 'all');
-        $search = strtolower(trim((string) $request->query('q', '')));
-
-        $filteredRows = $riderRows->filter(function ($r) use ($currentTab, $search) {
-            if ($currentTab === 'not_remitted' && $r->status !== Remittance::STATUS_NOT_REMITTED) return false;
-            if ($currentTab === 'awaiting_cashier' && $r->status !== Remittance::STATUS_AWAITING_CASHIER) return false;
-            if ($currentTab === 'confirmed' && ! in_array($r->status, [Remittance::STATUS_REMITTED, Remittance::STATUS_SHORT, Remittance::STATUS_OVER], true)) return false;
-
-            if ($search !== '') {
-                $haystack = strtolower($r->name . ' ' . $r->phone);
-                if (! str_contains($haystack, $search)) return false;
+            // Activity Today Feed
+            try {
+                $activityLogs = AuditLog::with('user')
+                    ->where('auditable_type', Remittance::class)
+                    ->whereDate('created_at', $selectedDate->format('Y-m-d'))
+                    ->latest('id')
+                    ->take(15)
+                    ->get();
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('RemittanceController activityLogs: ' . $e->getMessage());
+                $activityLogs = collect();
             }
 
-            return true;
-        })->values();
+            try {
+                $activeHubs = Hub::where('is_active', true)->get();
+            } catch (\Throwable $e) {
+                $activeHubs = collect();
+            }
 
-        // Selected row for detail panel (default: first awaiting cashier, or requested rider_id, or first row)
-        $selectedRiderId = (int) $request->query('rider_id', 0);
-        $selectedRow = $selectedRiderId > 0
-            ? ($riderRows->firstWhere('rider_id', $selectedRiderId) ?? $filteredRows->first())
-            : ($filteredRows->firstWhere('status', Remittance::STATUS_AWAITING_CASHIER) ?? $filteredRows->first());
+            return view('remittance.index', [
+                'hubName' => $branchName,
+                'hub' => $hub,
+                'isMasterAdmin' => $isMasterAdmin,
+                'activeHubs' => $activeHubs,
+                'selectedDate' => $selectedDate,
+                'dateStr' => $dateStr,
+                'todayStr' => $todayStr,
+                'isPastCutoff' => $isPastCutoff,
+                'cutoffFormatted' => $cutoffFormatted,
+                'cutoffTime' => $cutoffTime,
+                'totalCodCollected' => $totalCodCollected,
+                'codRidersCount' => $codRidersCount,
+                'codParcelsTotal' => $codParcelsTotal,
+                'remittedConfirmedAmount' => $remittedConfirmedAmount,
+                'awaitingCashierAmount' => $awaitingCashierAmount,
+                'notRemittedAmount' => $notRemittedAmount,
+                'shortagesSum' => $shortagesSum,
+                'totalNotRemittedIncludingShort' => $totalNotRemittedIncludingShort,
+                'tabCounts' => $tabCounts,
+                'currentTab' => $currentTab,
+                'search' => $search,
+                'riderRows' => $riderRows,
+                'filteredRows' => $filteredRows,
+                'selectedRow' => $selectedRow,
+                'activityLogs' => $activityLogs,
+            ]);
+        } catch (\Throwable $fatalError) {
+            \Illuminate\Support\Facades\Log::error('RemittanceController::index fatal error caught: ' . $fatalError->getMessage() . "\n" . $fatalError->getTraceAsString());
 
-        // Activity Today Feed
-        try {
-            $activityLogs = AuditLog::with('user')
-                ->where('auditable_type', Remittance::class)
-                ->whereDate('created_at', $selectedDate->format('Y-m-d'))
-                ->where(function ($q) use ($branchName) {
-                    $q->where('metadata->branch', $branchName)
-                      ->orWhereNull('metadata->branch');
-                })
-                ->latest('id')
-                ->take(15)
-                ->get();
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('RemittanceController activityLogs: ' . $e->getMessage());
-            $activityLogs = collect();
+            $tz = 'Asia/Manila';
+            $today = Carbon::now($tz);
+            $userBranch = $request->user()?->getBranchName() ?: 'Pila';
+
+            return view('remittance.index', [
+                'hubName' => $userBranch,
+                'hub' => null,
+                'isMasterAdmin' => (bool) ($request->user()?->isMasterAdmin() ?? false),
+                'activeHubs' => collect(),
+                'selectedDate' => $today,
+                'dateStr' => $today->toDateString(),
+                'todayStr' => $today->toDateString(),
+                'isPastCutoff' => false,
+                'cutoffFormatted' => '8:00 PM',
+                'cutoffTime' => '20:00:00',
+                'totalCodCollected' => 0.00,
+                'codRidersCount' => 0,
+                'codParcelsTotal' => 0,
+                'remittedConfirmedAmount' => 0.00,
+                'awaitingCashierAmount' => 0.00,
+                'notRemittedAmount' => 0.00,
+                'shortagesSum' => 0.00,
+                'totalNotRemittedIncludingShort' => 0.00,
+                'tabCounts' => ['all' => 0, 'not_remitted' => 0, 'awaiting_cashier' => 0, 'confirmed' => 0],
+                'currentTab' => 'all',
+                'search' => '',
+                'riderRows' => collect(),
+                'filteredRows' => collect(),
+                'selectedRow' => null,
+                'activityLogs' => collect(),
+            ])->withErrors(['error' => 'Notice: Remittance data is initializing. Details: ' . $fatalError->getMessage()]);
         }
-
-        try {
-            $activeHubs = Hub::where('is_active', true)->get();
-        } catch (\Throwable $e) {
-            $activeHubs = collect();
-        }
-
-        return view('remittance.index', [
-            'hubName' => $branchName,
-            'hub' => $hub,
-            'isMasterAdmin' => $isMasterAdmin,
-            'activeHubs' => $activeHubs,
-            'selectedDate' => $selectedDate,
-            'dateStr' => $dateStr,
-            'todayStr' => $todayStr,
-            'isPastCutoff' => $isPastCutoff,
-            'cutoffFormatted' => $cutoffFormatted,
-            'cutoffTime' => $cutoffTime,
-            'totalCodCollected' => $totalCodCollected,
-            'codRidersCount' => $codRidersCount,
-            'codParcelsTotal' => $codParcelsTotal,
-            'remittedConfirmedAmount' => $remittedConfirmedAmount,
-            'awaitingCashierAmount' => $awaitingCashierAmount,
-            'notRemittedAmount' => $notRemittedAmount,
-            'shortagesSum' => $shortagesSum,
-            'totalNotRemittedIncludingShort' => $totalNotRemittedIncludingShort,
-            'tabCounts' => $tabCounts,
-            'currentTab' => $currentTab,
-            'search' => $search,
-            'riderRows' => $riderRows,
-            'filteredRows' => $filteredRows,
-            'selectedRow' => $selectedRow,
-            'activityLogs' => $activityLogs,
-        ]);
     }
 
     public function confirm(Request $request, int $id): JsonResponse|RedirectResponse

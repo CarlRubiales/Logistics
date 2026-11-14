@@ -200,7 +200,7 @@
 </head>
 <body class="logistics-page">
 @php
-    $fmt = fn (float|int $amount) => '₱' . number_format($amount, 2);
+    $fmt = fn (mixed $amount) => '₱' . number_format((float) ($amount ?? 0), 2);
     $baseQuery = array_filter([
         'date' => $dateStr,
         'tab' => $currentTab !== 'all' ? $currentTab : null,
@@ -407,8 +407,15 @@
                                         <td style="padding: 14px 16px;">
                                             <div style="font-weight: 800; color: var(--plum);">{{ $row->name }}</div>
                                             <div style="font-size: 11.5px; color: var(--muted);">
-                                                @if($row->status === \App\Models\Remittance::STATUS_AWAITING_CASHIER && $row->submitted_at)
-                                                    Submitted at {{ \Carbon\Carbon::parse($row->submitted_at)->timezone('Asia/Manila')->format('g:i A') }}
+                                                @if($row->status === \App\Models\Remittance::STATUS_AWAITING_CASHIER && !empty($row->submitted_at))
+                                                    @php
+                                                        try {
+                                                            $submittedTimeStr = \Carbon\Carbon::parse($row->submitted_at)->timezone('Asia/Manila')->format('g:i A');
+                                                        } catch (\Throwable $e) {
+                                                            $submittedTimeStr = 'Earlier';
+                                                        }
+                                                    @endphp
+                                                    Submitted at {{ $submittedTimeStr }}
                                                 @elseif(in_array($row->status, [\App\Models\Remittance::STATUS_REMITTED, \App\Models\Remittance::STATUS_SHORT, \App\Models\Remittance::STATUS_OVER]) && $row->cashier_name)
                                                     Confirmed by {{ $row->cashier_name }}
                                                 @else
@@ -590,7 +597,14 @@
                                         ✓ Reconciled & Remitted
                                     </div>
                                     <div style="font-size: 11.5px; color: #047857; line-height: 1.4;">
-                                        Cashier {{ $selectedRow->cashier_name ?? 'Branch Cashier' }} confirmed the intake of {{ $fmt($selectedRow->counted_amount ?? $selectedRow->expected_amount) }} on {{ \Carbon\Carbon::parse($selectedRow->confirmed_at)->format('M d, Y · g:i A') }}.
+                                        @php
+                                            try {
+                                                $confirmedTimeStr = !empty($selectedRow->confirmed_at) ? \Carbon\Carbon::parse($selectedRow->confirmed_at)->format('M d, Y · g:i A') : 'Today';
+                                            } catch (\Throwable $e) {
+                                                $confirmedTimeStr = 'Today';
+                                            }
+                                        @endphp
+                                        Cashier {{ $selectedRow->cashier_name ?? 'Branch Cashier' }} confirmed the intake of {{ $fmt($selectedRow->counted_amount ?? $selectedRow->expected_amount) }} on {{ $confirmedTimeStr }}.
                                     </div>
                                 </div>
                             @elseif($selectedRow->status === \App\Models\Remittance::STATUS_NOT_REMITTED)
@@ -618,8 +632,9 @@
                                 <div style="max-height: 240px; overflow-y: auto;">
                                     @forelse($selectedRow->delivered_cod_parcels as $p)
                                         @php
-                                            $meta = $p->metadata ?? [];
-                                            $codVal = (float) ($meta['cod_amount'] ?? ($p->order?->total_amount ?? 0));
+                                            $meta = is_array($p->metadata) ? $p->metadata : (is_string($p->metadata) ? json_decode($p->metadata, true) : []);
+                                            $meta = is_array($meta) ? $meta : [];
+                                            $codVal = (float) ($meta['cod_amount'] ?? ($p->order?->total ?? ($p->order?->total_amount ?? 0)));
                                         @endphp
                                         <div class="parcel-item">
                                             <div>
@@ -660,7 +675,15 @@
                 <div style="background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px;">
                     @forelse($activityLogs as $log)
                         @php
-                            $evt = strtolower($log->event ?? '');
+                            $evt = strtolower((string) ($log->event ?? ''));
+                            $logMeta = is_array($log->metadata) ? $log->metadata : (is_string($log->metadata) ? json_decode($log->metadata, true) : []);
+                            $logMeta = is_array($logMeta) ? $logMeta : [];
+                            $logNote = $logMeta['note'] ?? ($logMeta['cashier_note'] ?? null);
+                            try {
+                                $logTimeStr = \Carbon\Carbon::parse($log->created_at ?? now())->timezone('Asia/Manila')->format('g:i A');
+                            } catch (\Throwable $e) {
+                                $logTimeStr = 'Today';
+                            }
                         @endphp
                         <div class="activity-feed-item">
                             <span style="font-size: 15px;">
@@ -674,16 +697,16 @@
                             </span>
                             <div style="flex: 1;">
                                 <div style="color: var(--plum); font-weight: 700;">
-                                    {{ $log->user?->name ?? 'System' }}: {{ ucwords(str_replace(['remittance_', '_'], ['', ' '], $log->event ?? 'Activity')) }}
+                                    {{ $log->user?->name ?? 'System' }}: {{ ucwords(str_replace(['remittance_', '_'], ['', ' '], (string) ($log->event ?? 'Activity'))) }}
                                 </div>
-                                @if(!empty($log->metadata['note']) || !empty($log->metadata['cashier_note']))
+                                @if(!empty($logNote))
                                     <div style="font-size: 11px; color: var(--muted); margin-top: 2px;">
-                                        Note: "{{ $log->metadata['note'] ?? $log->metadata['cashier_note'] }}"
+                                        Note: "{{ $logNote }}"
                                     </div>
                                 @endif
                             </div>
                             <div style="color: var(--muted); font-size: 11px; white-space: nowrap;">
-                                {{ \Carbon\Carbon::parse($log->created_at ?? now())->timezone('Asia/Manila')->format('g:i A') }}
+                                {{ $logTimeStr }}
                             </div>
                         </div>
                     @empty
@@ -803,7 +826,7 @@
     document.addEventListener('DOMContentLoaded', () => {
         const input = document.getElementById('counted_amount');
         if (input) {
-            checkDifference(input.value, {{ $selectedRow ? $selectedRow->expected_amount : 0 }});
+            checkDifference(input.value, {{ $selectedRow ? ((float) ($selectedRow->expected_amount ?? 0)) : 0 }});
         }
         setInterval(pollRemittances, 30000);
     });
