@@ -750,7 +750,7 @@ class RiderApiController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Parcel not found.'], 404);
         }
 
-        if ($dbStatus !== 'exception' && $this->statusRank($parcel->status) > $this->statusRank($dbStatus)) {
+        if ($dbStatus !== 'exception' && $dbStatus !== 'returned' && $this->statusRank($parcel->status) > $this->statusRank($dbStatus)) {
             $dbStatus = $parcel->status;
         }
 
@@ -1308,7 +1308,7 @@ class RiderApiController extends Controller
         $rawStatus = $request->input('status') ?? $request->input('stage') ?? 'in_transit';
         $dbStatus = $this->mapToDbStatus($rawStatus);
 
-        if ($dbStatus !== 'exception' && $this->statusRank($parcel->status) > $this->statusRank($dbStatus)) {
+        if ($dbStatus !== 'exception' && $dbStatus !== 'returned' && $this->statusRank($parcel->status) > $this->statusRank($dbStatus)) {
             $dbStatus = $parcel->status;
         }
 
@@ -1548,7 +1548,7 @@ class RiderApiController extends Controller
             'delivered', 'delivery', 'completed' => 'delivered',
             'delivery_failed', 'failed', 'exception', 'rescheduled', 'return_refund', 'return/refund', 'return_and_refund' => 'exception',
             'returning_to_hub', 'returning', 'in_transit', 'intransit' => 'in_transit',
-            'returned_to_hub', 'returned', 'hub_returned' => 'exception',
+            'returned_to_hub', 'returned', 'hub_returned' => 'returned',
             default => 'in_transit',
         };
     }
@@ -1674,6 +1674,28 @@ class RiderApiController extends Controller
         $codAmount = (float) ($metadata['cod_amount'] ?? ($p->order?->total_amount ?? 250.00));
         $isCod = (bool) ($metadata['is_cod'] ?? ($codAmount > 0));
 
+        $evidence = is_array($metadata['return_evidence'] ?? null) ? $metadata['return_evidence'] : [];
+        $evidencePhoto = null;
+        $evidenceVideo = null;
+        foreach ($evidence as $ev) {
+            $evUrl = is_array($ev) ? ($ev['url'] ?? '') : (is_string($ev) ? $ev : '');
+            $evMime = is_array($ev) ? ($ev['mime_type'] ?? '') : '';
+            if (! $evidencePhoto && $evUrl && ! str_contains($evMime, 'video') && ! preg_match('/\.(mp4|mov|avi|webm)$/i', $evUrl)) {
+                $evidencePhoto = $evUrl;
+            }
+            if (! $evidenceVideo && $evUrl && (str_contains($evMime, 'video') || preg_match('/\.(mp4|mov|avi|webm)$/i', $evUrl))) {
+                $evidenceVideo = $evUrl;
+            }
+        }
+
+        $photoUrl = ! empty($metadata['return_photo_path']) || ! empty($metadata['return_photo_data'])
+            ? url("/returns/media/{$p->id}/photo")
+            : ($metadata['proof_url'] ?? $evidencePhoto);
+
+        $videoUrl = ! empty($metadata['return_video_path']) || ! empty($metadata['return_video_data'])
+            ? url("/returns/media/{$p->id}/video")
+            : ($metadata['proof_video_url'] ?? $evidenceVideo);
+
         return [
             'id' => $p->parcel_number,
             'db_id' => $p->id,
@@ -1703,26 +1725,22 @@ class RiderApiController extends Controller
             'order_number' => $metadata['waybill_order_number'] ?? null,
             'stop_order' => (int) ($metadata['stop_order'] ?? 1),
             'failure_reason' => $metadata['failure_reason'] ?? ($metadata['return_reason'] ?? null),
-            'failure_notes' => $metadata['failure_notes'] ?? ($metadata['return_notes'] ?? null),
+            'failure_notes' => $metadata['failure_notes'] ?? ($metadata['return_notes'] ?? ($metadata['return_details'] ?? null)),
             'return_reason' => $metadata['return_reason'] ?? ($metadata['failure_reason'] ?? null),
-            'return_notes' => $metadata['return_notes'] ?? ($metadata['failure_notes'] ?? null),
+            'return_notes' => $metadata['return_notes'] ?? ($metadata['failure_notes'] ?? ($metadata['return_details'] ?? null)),
+            'return_details' => $metadata['return_details'] ?? ($metadata['return_notes'] ?? ($metadata['failure_notes'] ?? null)),
+            'seller_note' => $metadata['seller_note'] ?? null,
             'is_return_refund' => (bool) ($metadata['is_return_refund'] ?? false),
             'return_status' => $metadata['return_status'] ?? null,
             'return_items' => $metadata['return_items'] ?? null,
-            'pod_photo_path' => ! empty($metadata['return_photo_path']) || ! empty($metadata['return_photo_data'])
-                ? url("/returns/media/{$p->id}/photo")
-                : ($metadata['proof_url'] ?? null),
-            'pod_video_path' => ! empty($metadata['return_video_path']) || ! empty($metadata['return_video_data'])
-                ? url("/returns/media/{$p->id}/video")
-                : ($metadata['proof_video_url'] ?? null),
-            'return_photo_url' => ! empty($metadata['return_photo_path']) || ! empty($metadata['return_photo_data'])
-                ? url("/returns/media/{$p->id}/photo")
-                : null,
-            'return_video_url' => ! empty($metadata['return_video_path']) || ! empty($metadata['return_video_data'])
-                ? url("/returns/media/{$p->id}/video")
-                : null,
+            'return_evidence' => $evidence,
+            'pod_photo_path' => $photoUrl,
+            'pod_video_path' => $videoUrl,
+            'return_photo_url' => $photoUrl,
+            'return_video_url' => $videoUrl,
             'rider_id' => $p->assigned_rider_id,
             'sort_bin' => $p->sort_bin ?? '',
+            'metadata' => $metadata,
             'updated_at' => $p->updated_at?->toIso8601String(),
         ];
     }

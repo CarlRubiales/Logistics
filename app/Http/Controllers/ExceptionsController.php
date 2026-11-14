@@ -162,6 +162,21 @@ class ExceptionsController extends Controller
         $photoUrl = $hasPhoto ? route('returns.media', ['parcel' => $parcel->id, 'type' => 'photo']) : null;
         $videoUrl = $hasVideo ? route('returns.media', ['parcel' => $parcel->id, 'type' => 'video']) : null;
 
+        if ((! $hasPhoto || ! $hasVideo) && is_array($meta['return_evidence'] ?? null)) {
+            foreach ($meta['return_evidence'] as $ev) {
+                $evUrl = is_array($ev) ? ($ev['url'] ?? '') : (is_string($ev) ? $ev : '');
+                $evMime = is_array($ev) ? ($ev['mime_type'] ?? '') : '';
+                if (! $hasPhoto && $evUrl && ! str_contains($evMime, 'video') && ! preg_match('/\.(mp4|mov|avi|webm)$/i', $evUrl)) {
+                    $hasPhoto = true;
+                    $photoUrl = $evUrl;
+                }
+                if (! $hasVideo && $evUrl && (str_contains($evMime, 'video') || preg_match('/\.(mp4|mov|avi|webm)$/i', $evUrl))) {
+                    $hasVideo = true;
+                    $videoUrl = $evUrl;
+                }
+            }
+        }
+
         $reason = $meta['return_reason'] ?? $meta['failure_reason'] ?? 'Return / Refund Requested';
         $notes = $meta['return_notes'] ?? $meta['failure_notes'] ?? '';
         $trackId = $parcel->shipment?->lumora_tracking_id ?: $parcel->parcel_number;
