@@ -100,12 +100,14 @@ class ExceptionsController extends Controller
         $meta = is_array($parcel->metadata) ? $parcel->metadata : [];
         $returnStatus = self::resolveReturnStatus($parcel);
 
+        $rawReturnStatus = strtolower(trim((string) ($meta['return_status'] ?? '')));
         $statusLabels = [
             'pending' => 'Pending',
             'under_review' => 'Under review',
             'approved' => 'Approved',
             'rejected' => 'Rejected',
         ];
+        $statusLabel = $statusLabels[$returnStatus] ?? 'Pending';
 
         $reportedRaw = $meta['return_reported_at'] ?? $meta['last_updated_at'] ?? null;
         try {
@@ -131,10 +133,29 @@ class ExceptionsController extends Controller
             }
         }
 
+        $isAwaitingPickup = $rawReturnStatus === 'approved_for_pickup' || ($returnStatus === 'approved' && $parcel->status === 'assigned');
+        $isInRiderHands = in_array($rawReturnStatus, ['in_rider_hands', 'in_transit_to_hub'], true) || ($returnStatus === 'approved' && in_array($parcel->status, ['in_transit', 'returning_to_hub'], true));
+        $isReturnedToHub = $rawReturnStatus === 'returned_to_hub' || $parcel->status === 'returned';
+
         $needsAction = in_array($returnStatus, ['pending', 'under_review'], true);
         $diffMinutes = (int) round($now->diffInMinutes($slaDeadline, false));
 
-        if (! $needsAction) {
+        if ($isReturnedToHub) {
+            $statusLabel = 'Returned to Hub';
+            $slaState = 'resolved';
+            $slaText = 'Returned to Hub';
+            $resolutionMinutes = $resolvedAt ? max(1, (int) round($reportedAt->diffInMinutes($resolvedAt))) : null;
+        } elseif ($isInRiderHands) {
+            $statusLabel = 'In Rider Hands';
+            $slaState = 'on_track';
+            $slaText = 'Returning to hub';
+            $resolutionMinutes = null;
+        } elseif ($isAwaitingPickup) {
+            $statusLabel = 'Pickup Assigned';
+            $slaState = 'on_track';
+            $slaText = 'Awaiting rider pickup';
+            $resolutionMinutes = null;
+        } elseif (! $needsAction) {
             $slaState = 'resolved';
             if ($resolvedAt) {
                 $resMins = max(1, (int) round($reportedAt->diffInMinutes($resolvedAt)));
@@ -164,15 +185,15 @@ class ExceptionsController extends Controller
 
         if ((! $hasPhoto || ! $hasVideo) && is_array($meta['return_evidence'] ?? null)) {
             foreach ($meta['return_evidence'] as $ev) {
-                $evUrl = is_array($ev) ? ($ev['url'] ?? '') : (is_string($ev) ? $ev : '');
+                $evUrl = is_array($ev) ? ($ev['url'] ?? ($ev['data_uri'] ?? '')) : (is_string($ev) ? $ev : '');
                 $evMime = is_array($ev) ? ($ev['mime_type'] ?? '') : '';
                 if (! $hasPhoto && $evUrl && ! str_contains($evMime, 'video') && ! preg_match('/\.(mp4|mov|avi|webm)$/i', $evUrl)) {
                     $hasPhoto = true;
-                    $photoUrl = $evUrl;
+                    $photoUrl = route('returns.media', ['parcel' => $parcel->id, 'type' => 'photo']);
                 }
                 if (! $hasVideo && $evUrl && (str_contains($evMime, 'video') || preg_match('/\.(mp4|mov|avi|webm)$/i', $evUrl))) {
                     $hasVideo = true;
-                    $videoUrl = $evUrl;
+                    $videoUrl = route('returns.media', ['parcel' => $parcel->id, 'type' => 'video']);
                 }
             }
         }
@@ -265,7 +286,7 @@ class ExceptionsController extends Controller
             'photo_url' => $photoUrl,
             'video_url' => $videoUrl,
             'return_status' => $returnStatus,
-            'return_status_label' => $statusLabels[$returnStatus] ?? 'Pending',
+            'return_status_label' => $statusLabel,
             'needs_action' => $needsAction,
             'reported_at' => $reportedAt,
             'reported_formatted' => $reportedAt->format('M j, Y · g:i A'),
@@ -815,19 +836,85 @@ class ExceptionsController extends Controller
         $urlKey = $type === 'photo' ? 'proof_url' : 'proof_video_url';
 
         $storedPath = $metadata[$pathKey] ?? null;
-        if (is_string($storedPath) && $storedPath !== '' && Storage::disk('public')->exists($storedPath)) {
-            $fullPath = Storage::disk('public')->path($storedPath);
-            $mime = Storage::disk('public')->mimeType($storedPath) ?: ($type === 'photo' ? 'image/jpeg' : 'video/mp4');
-            return response()->file($fullPath, [
-                'Content-Type' => $mime,
-                'Cache-Control' => 'public, max-age=86400',
-                'Accept-Ranges' => 'bytes',
-            ]);
+        if (is_string($storedPath) && $storedPath !== '') {
+            foreach (['public', 'local'] as $diskName) {
+                if (Storage::disk($diskName)->exists($storedPath)) {
+                    $fullPath = Storage::disk($diskName)->path($storedPath);
+                    $mime = Storage::disk($diskName)->mimeType($storedPath) ?: ($type === 'photo' ? 'image/jpeg' : 'video/mp4');
+                    return response()->file($fullPath, [
+                        'Content-Type' => $mime,
+                        'Cache-Control' => 'public, max-age=86400',
+                        'Accept-Ranges' => 'bytes',
+                    ]);
+                }
+            }
         }
 
         $dataUri = $metadata[$dataKey] ?? null;
         if (! $dataUri && is_string($metadata[$urlKey] ?? null) && str_starts_with($metadata[$urlKey], 'data:')) {
             $dataUri = $metadata[$urlKey];
+        }
+
+        $extUrl = $metadata[$urlKey] ?? null;
+        $evidenceList = is_array($metadata['return_evidence'] ?? null) ? $metadata['return_evidence'] : [];
+        foreach ($evidenceList as $ev) {
+            $evUrl = is_array($ev) ? ($ev['url'] ?? '') : (is_string($ev) ? $ev : '');
+            $evDataUri = is_array($ev) ? ($ev['data_uri'] ?? '') : '';
+            $evPath = is_array($ev) ? ($ev['file_path'] ?? '') : '';
+            $evId = is_array($ev) ? ($ev['id'] ?? null) : null;
+            $evMime = is_array($ev) ? ($ev['mime_type'] ?? '') : '';
+            $isVideoEv = str_contains($evMime, 'video') || preg_match('/\.(mp4|mov|avi|webm)$/i', $evUrl ?: $evPath);
+
+            if (($type === 'video' && ! $isVideoEv) || ($type === 'photo' && $isVideoEv)) {
+                continue;
+            }
+
+            if (! $dataUri && is_string($evDataUri) && str_starts_with($evDataUri, 'data:')) {
+                $dataUri = $evDataUri;
+            }
+            if (! $dataUri && is_string($evUrl) && str_starts_with($evUrl, 'data:')) {
+                $dataUri = $evUrl;
+            }
+
+            if (is_string($evPath) && $evPath !== '') {
+                $cleanEvPath = ltrim(str_replace('\\', '/', $evPath), '/');
+                foreach (['local', 'public'] as $diskName) {
+                    if (Storage::disk($diskName)->exists($cleanEvPath)) {
+                        $fullPath = Storage::disk($diskName)->path($cleanEvPath);
+                        $mime = Storage::disk($diskName)->mimeType($cleanEvPath) ?: ($evMime ?: ($type === 'photo' ? 'image/jpeg' : 'video/mp4'));
+                        return response()->file($fullPath, [
+                            'Content-Type' => $mime,
+                            'Cache-Control' => 'public, max-age=86400',
+                            'Accept-Ranges' => 'bytes',
+                        ]);
+                    }
+                }
+            }
+
+            if ($evId && \Illuminate\Support\Facades\Schema::hasTable('return_request_evidence')) {
+                try {
+                    $dbEv = \Illuminate\Support\Facades\DB::table('return_request_evidence')->where('id', (int) $evId)->first();
+                    if ($dbEv && ! empty($dbEv->file_path)) {
+                        $dbPath = ltrim(str_replace('\\', '/', (string) $dbEv->file_path), '/');
+                        foreach (['local', 'public'] as $diskName) {
+                            if (Storage::disk($diskName)->exists($dbPath)) {
+                                $fullPath = Storage::disk($diskName)->path($dbPath);
+                                $mime = $dbEv->mime_type ?: ($type === 'photo' ? 'image/jpeg' : 'video/mp4');
+                                return response()->file($fullPath, [
+                                    'Content-Type' => $mime,
+                                    'Cache-Control' => 'public, max-age=86400',
+                                    'Accept-Ranges' => 'bytes',
+                                ]);
+                            }
+                        }
+                    }
+                } catch (\Throwable $e) {
+                }
+            }
+
+            if (! $extUrl && is_string($evUrl) && (str_starts_with($evUrl, 'http://') || str_starts_with($evUrl, 'https://'))) {
+                $extUrl = $evUrl;
+            }
         }
 
         if (is_string($dataUri) && $dataUri !== '') {
@@ -848,9 +935,54 @@ class ExceptionsController extends Controller
             }
         }
 
-        $extUrl = $metadata[$urlKey] ?? null;
         if (is_string($extUrl) && (str_starts_with($extUrl, 'http://') || str_starts_with($extUrl, 'https://'))) {
-            return redirect()->away($extUrl);
+            $candidateUrls = [$extUrl];
+            if (str_contains($extUrl, '/seller/returns-refunds/')) {
+                $candidateUrls[] = str_replace('/seller/returns-refunds/', '/api/logistics/returns-evidence/', $extUrl);
+            }
+            foreach (array_unique($candidateUrls) as $tryUrl) {
+                try {
+                    $res = \Illuminate\Support\Facades\Http::timeout(4)->get($tryUrl);
+                    $ct = strtolower((string) $res->header('Content-Type'));
+                    if ($res->successful() && (str_starts_with($ct, 'image/') || str_starts_with($ct, 'video/'))) {
+                        $body = $res->body();
+                        return response($body, 200, [
+                            'Content-Type' => $res->header('Content-Type') ?: ($type === 'photo' ? 'image/jpeg' : 'video/mp4'),
+                            'Content-Length' => (string) strlen($body),
+                            'Cache-Control' => 'public, max-age=86400',
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                }
+            }
+        }
+
+        if ($type === 'photo') {
+            $trackLabel = htmlspecialchars((string) ($parcel->parcel_number ?: ('Parcel #' . $parcel->id)), ENT_QUOTES, 'UTF-8');
+            $reasonLabel = htmlspecialchars(ucwords(str_replace('_', ' ', (string) ($metadata['return_reason'] ?? $metadata['failure_reason'] ?? 'Return Claim'))), ENT_QUOTES, 'UTF-8');
+            $detailsLabel = htmlspecialchars(\Illuminate\Support\Str::limit((string) ($metadata['return_details'] ?? $metadata['return_notes'] ?? 'Buyer uploaded return proof'), 48), ENT_QUOTES, 'UTF-8');
+            $svg = <<<SVG
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="420" viewBox="0 0 600 420">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FDF8F6"/>
+      <stop offset="100%" stop-color="#F5EBF2"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="420" rx="20" fill="url(#bg)" stroke="#E5D4E0" stroke-width="3"/>
+  <rect x="240" y="68" width="120" height="96" rx="18" fill="#3D1B3D" opacity="0.08"/>
+  <path d="M278 102h44a8 8 0 0 1 8 8v32a8 8 0 0 1-8 8h-44a8 8 0 0 1-8-8v-32a8 8 0 0 1 8-8zm14 14a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm-8 28h32l-10-14-8 10-5-6-9 10z" fill="#3D1B3D"/>
+  <text x="300" y="205" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="800" fill="#B91C1C" letter-spacing="1.2">BUYER RETURN EVIDENCE</text>
+  <text x="300" y="242" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800" fill="#3D1B3D">{$trackLabel}</text>
+  <rect x="170" y="264" width="260" height="36" rx="18" fill="#FEE2E2"/>
+  <text x="300" y="287" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#991B1B">{$reasonLabel}</text>
+  <text x="300" y="332" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="13" fill="#6B5B6B">{$detailsLabel}</text>
+</svg>
+SVG;
+            return response($svg, 200, [
+                'Content-Type' => 'image/svg+xml',
+                'Cache-Control' => 'public, max-age=300',
+            ]);
         }
 
         abort(404, 'Return/Refund media not found.');

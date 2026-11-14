@@ -138,6 +138,22 @@ class LogisticsReturnApiController extends Controller
             $metadata['return_details'] = $details;
             $metadata['return_items'] = $items;
             $metadata['return_evidence'] = $evidence;
+            if (is_array($evidence)) {
+                foreach ($evidence as $ev) {
+                    if (! is_array($ev)) {
+                        continue;
+                    }
+                    $evDataUri = $ev['data_uri'] ?? null;
+                    $evMime = (string) ($ev['mime_type'] ?? '');
+                    if (is_string($evDataUri) && str_starts_with($evDataUri, 'data:')) {
+                        if (str_contains($evMime, 'video') && empty($metadata['return_video_data'])) {
+                            $metadata['return_video_data'] = $evDataUri;
+                        } elseif (! str_contains($evMime, 'video') && empty($metadata['return_photo_data'])) {
+                            $metadata['return_photo_data'] = $evDataUri;
+                        }
+                    }
+                }
+            }
             $metadata['seller_note'] = $sellerNote;
             $metadata['assigned_rider_id'] = $deliveringRiderId;
             $metadata['delivering_rider_id'] = $deliveringRiderId;

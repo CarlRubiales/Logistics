@@ -497,37 +497,25 @@ class RiderApiController extends Controller
             $user = $tokenRecord?->tokenable;
         }
 
+        // Cross-server failover: match explicit rider email or ID header/param sent by the app
         if (! $user) {
-            // 1. Prefer rider who has parcels assigned today
-            $todayAssignedRiderId = Parcel::forDate(Carbon::now('Asia/Manila'))
-                ->whereNotNull('assigned_rider_id')
-                ->latest('updated_at')
-                ->value('assigned_rider_id');
-            if ($todayAssignedRiderId) {
-                $user = RiderProfile::with('user')->find($todayAssignedRiderId)?->user;
+            $riderEmail = trim((string) ($request->header('X-Rider-Email') ?: $request->input('rider_email', '')));
+            if ($riderEmail !== '') {
+                $user = User::whereRaw('LOWER(email) = ?', [strtolower($riderEmail)])->first();
             }
         }
 
         if (! $user) {
-            // 2. Prefer most recent flutter-rider-app token owner on this server
-            $recentRiderToken = \Laravel\Sanctum\PersonalAccessToken::with('tokenable')
-                ->where('name', 'flutter-rider-app')
-                ->latest('id')
-                ->first();
-            $user = $recentRiderToken?->tokenable;
+            $riderName = trim((string) ($request->header('X-Rider-Name') ?: $request->input('rider_name', '')));
+            if ($riderName !== '') {
+                $user = User::whereRaw('LOWER(name) = ?', [strtolower($riderName)])->first();
+            }
         }
 
         if (! $user) {
-            // 3. Prefer cj rubiales or any approved rider
-            $user = User::whereRaw('LOWER(name) = ?', ['cj rubiales'])->first();
-            if (! $user) {
-                $fallbackProfile = RiderProfile::with('user')
-                    ->where('registration_status', 'approved')
-                    ->orderBy('id')
-                    ->first();
-                $user = $fallbackProfile?->user
-                    ?? User::where('role', 'rider')->orderByDesc('id')->first()
-                    ?? User::orderBy('id')->first();
+            $riderUserId = $request->header('X-Rider-User-Id') ?: $request->input('rider_user_id');
+            if (is_numeric($riderUserId) && (int) $riderUserId > 0) {
+                $user = User::where('id', (int) $riderUserId)->where('role', 'rider')->first();
             }
         }
 
@@ -643,19 +631,15 @@ class RiderApiController extends Controller
         }
 
         $parcels = Parcel::with(['area', 'shipment', 'order'])
-            ->where(function ($q) use ($profile, $isToday, $selectedDate) {
-                $q->where(function ($sq) use ($profile, $isToday) {
-                    $sq->where('assigned_rider_id', $profile->id);
-                    if ($isToday) {
-                        $sq->orWhereNotNull('assigned_rider_id');
-                    }
-                })->where(function ($dq) use ($selectedDate) {
-                    $dq->forDate($selectedDate)
-                       ->orWhere(function ($rq) {
-                           $rq->whereIn('status', ['assigned', 'in_transit', 'out_for_delivery', 'returning_to_hub'])
-                              ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.is_return_refund')) = 'true'");
-                       });
-                });
+            ->where(function ($q) use ($profile, $selectedDate) {
+                $q->where('assigned_rider_id', $profile->id)
+                    ->where(function ($dq) use ($selectedDate) {
+                        $dq->forDate($selectedDate)
+                           ->orWhere(function ($rq) {
+                               $rq->whereIn('status', ['assigned', 'in_transit', 'out_for_delivery', 'returning_to_hub'])
+                                  ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.is_return_refund')) = 'true'");
+                           });
+                    });
             })
             ->latest('assigned_at')
             ->latest('updated_at')
@@ -1624,32 +1608,8 @@ class RiderApiController extends Controller
             return $todayMatch;
         }
 
-        // 3. If $code is an LM-TRK code and didn't match today's parcel_number directly,
-        // check if there is an active assigned parcel for today (cross-server LM-TRK mismatch)
-        if (preg_match('/^LM-TRK-/i', (string) $code)) {
-            if ($profile) {
-                $activeForRider = Parcel::forDate($todayPht)
-                    ->where('assigned_rider_id', $profile->id)
-                    ->whereIn('status', ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'])
-                    ->latest('updated_at')
-                    ->first();
-                if ($activeForRider) {
-                    return $activeForRider;
-                }
-            }
-
-            $anyActiveAssigned = Parcel::forDate($todayPht)
-                ->whereNotNull('assigned_rider_id')
-                ->whereIn('status', ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'])
-                ->latest('updated_at')
-                ->first();
-            if ($anyActiveAssigned) {
-                return $anyActiveAssigned;
-            }
-        }
-
-        // 4. Fallback to full table search
-        return Parcel::where('parcel_number', $code)
+        // 3. Exact match across full table (including return pickups for older orders)
+        $exactMatch = Parcel::where('parcel_number', $code)
             ->orWhere('parcel_number', $clean)
             ->orWhere('parcel_number', '#' . $clean)
             ->orWhere('barcode', $code)
@@ -1666,6 +1626,21 @@ class RiderApiController extends Controller
             })
             ->latest('id')
             ->first();
+
+        if ($exactMatch) {
+            return $exactMatch;
+        }
+
+        // 4. Fallback only for the authenticated rider's own single active parcel if LM-TRK differed across servers
+        if (preg_match('/^LM-TRK-/i', (string) $code) && $profile) {
+            return Parcel::forDate($todayPht)
+                ->where('assigned_rider_id', $profile->id)
+                ->whereIn('status', ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'])
+                ->latest('updated_at')
+                ->first();
+        }
+
+        return null;
     }
 
     /**
@@ -1720,24 +1695,33 @@ class RiderApiController extends Controller
         $evidence = is_array($metadata['return_evidence'] ?? null) ? $metadata['return_evidence'] : [];
         $evidencePhoto = null;
         $evidenceVideo = null;
+        $normalizedEvidence = [];
         foreach ($evidence as $ev) {
-            $evUrl = is_array($ev) ? ($ev['url'] ?? '') : (is_string($ev) ? $ev : '');
+            $evUrl = is_array($ev) ? ($ev['url'] ?? ($ev['data_uri'] ?? '')) : (is_string($ev) ? $ev : '');
             $evMime = is_array($ev) ? ($ev['mime_type'] ?? '') : '';
-            if (! $evidencePhoto && $evUrl && ! str_contains($evMime, 'video') && ! preg_match('/\.(mp4|mov|avi|webm)$/i', $evUrl)) {
-                $evidencePhoto = $evUrl;
+            $isVid = str_contains($evMime, 'video') || preg_match('/\.(mp4|mov|avi|webm)$/i', $evUrl);
+            if (! $evidencePhoto && $evUrl && ! $isVid) {
+                $evidencePhoto = url("/returns/media/{$p->id}/photo");
             }
-            if (! $evidenceVideo && $evUrl && (str_contains($evMime, 'video') || preg_match('/\.(mp4|mov|avi|webm)$/i', $evUrl))) {
-                $evidenceVideo = $evUrl;
+            if (! $evidenceVideo && $evUrl && $isVid) {
+                $evidenceVideo = url("/returns/media/{$p->id}/video");
+            }
+            if (is_array($ev)) {
+                $ev['url'] = $isVid ? url("/returns/media/{$p->id}/video") : url("/returns/media/{$p->id}/photo");
+                $normalizedEvidence[] = $ev;
             }
         }
+        if (! empty($normalizedEvidence)) {
+            $evidence = $normalizedEvidence;
+        }
 
-        $photoUrl = ! empty($metadata['return_photo_path']) || ! empty($metadata['return_photo_data'])
+        $photoUrl = (! empty($metadata['return_photo_path']) || ! empty($metadata['return_photo_data']) || $evidencePhoto)
             ? url("/returns/media/{$p->id}/photo")
-            : ($metadata['proof_url'] ?? $evidencePhoto);
+            : ($metadata['proof_url'] ?? null);
 
-        $videoUrl = ! empty($metadata['return_video_path']) || ! empty($metadata['return_video_data'])
+        $videoUrl = (! empty($metadata['return_video_path']) || ! empty($metadata['return_video_data']) || $evidenceVideo)
             ? url("/returns/media/{$p->id}/video")
-            : ($metadata['proof_video_url'] ?? $evidenceVideo);
+            : ($metadata['proof_video_url'] ?? null);
 
         return [
             'id' => $p->parcel_number,
@@ -1873,15 +1857,21 @@ class RiderApiController extends Controller
                 continue;
             }
 
-            // Prefer the currently authenticated rider profile if names match
-            $targetRiderId = $profile->id;
-            if ($riderNameLower !== '' && $riderNameLower !== strtolower($assignedRiderName)) {
+            // Resolve the exact rider profile that owns this parcel on Cloud; never reassign another rider's parcel to $profile
+            $targetRiderId = null;
+            if ($riderNameLower !== '' && $riderNameLower === strtolower($assignedRiderName)) {
+                $targetRiderId = $profile->id;
+            } else {
                 $matchedRider = RiderProfile::whereHas('user', function ($q) use ($assignedRiderName) {
                     $q->whereRaw('LOWER(name) = ?', [strtolower($assignedRiderName)]);
                 })->first();
                 if ($matchedRider) {
                     $targetRiderId = $matchedRider->id;
                 }
+            }
+
+            if (! $targetRiderId) {
+                continue;
             }
 
             if (! $localParcel) {
