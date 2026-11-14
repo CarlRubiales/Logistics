@@ -630,22 +630,45 @@ class RiderApiController extends Controller
             $this->syncCloudParcelsForRider($request, $profile);
         }
 
-        $parcels = Parcel::with(['area', 'shipment', 'order'])
-            ->where(function ($q) use ($profile, $selectedDate) {
-                $q->where('assigned_rider_id', $profile->id)
-                    ->where(function ($dq) use ($selectedDate) {
-                        $dq->forDate($selectedDate)
-                           ->orWhere(function ($rq) {
-                               $rq->whereIn('status', ['assigned', 'in_transit', 'out_for_delivery', 'returning_to_hub'])
-                                  ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.is_return_refund')) = 'true'");
-                           });
-                    });
+        $parcels = Parcel::with(['area', 'shipment', 'order', 'rider.user'])
+            ->where('assigned_rider_id', $profile->id)
+            ->where('status', '!=', 'returned')
+            ->where(function ($dq) use ($selectedDate) {
+                $dq->forDate($selectedDate)
+                   ->orWhere(function ($rq) {
+                       $rq->whereIn('status', ['assigned', 'in_transit', 'out_for_delivery', 'returning_to_hub'])
+                          ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.is_return_refund')) = 'true'");
+                   });
             })
             ->latest('assigned_at')
             ->latest('updated_at')
             ->get();
 
-        $data = $parcels->values()->map(function (Parcel $p, int $idx) {
+        $riderNameClean = strtolower(trim((string) ($user?->name ?? '')));
+        $filteredParcels = $parcels->filter(function (Parcel $p) use ($profile, $riderNameClean) {
+            if ((int) $p->assigned_rider_id !== (int) $profile->id) {
+                return false;
+            }
+            $meta = is_array($p->metadata) ? $p->metadata : [];
+            if ($p->status === 'returned' || ($meta['return_status'] ?? '') === 'returned_to_hub') {
+                return false;
+            }
+            if (! empty($meta['delivering_rider_id']) && (int) $meta['delivering_rider_id'] !== (int) $profile->id) {
+                return false;
+            }
+            $metaRiderName = strtolower(trim((string) ($meta['assigned_rider_name'] ?? '')));
+            if (
+                $metaRiderName !== ''
+                && ! in_array($metaRiderName, ['assigned courier', 'assigned delivery courier', 'unassigned'], true)
+                && $riderNameClean !== ''
+                && $metaRiderName !== $riderNameClean
+            ) {
+                return false;
+            }
+            return true;
+        });
+
+        $data = $filteredParcels->values()->map(function (Parcel $p, int $idx) {
             $transformed = $this->transformParcel($p);
             if (empty($transformed['stop_order']) || $transformed['stop_order'] <= 1) {
                 $transformed['stop_order'] = $idx + 1;
@@ -725,86 +748,11 @@ class RiderApiController extends Controller
     }
 
     /**
-     * Update delivery progress stage (pickedUp / out_for_delivery / delivered / failed).
+     * Update delivery progress stage (pickedUp / out_for_delivery / delivered / failed / return stages).
      */
     public function updateDeliveryStatus(Request $request, $id): JsonResponse
     {
-        $user = $this->resolveRiderUser($request);
-        $profile = $user?->riderProfile;
-
-        $rawStatus = $request->input('status') ?? $request->input('stage') ?? 'in_transit';
-        $dbStatus = $this->mapToDbStatus($rawStatus);
-
-        $parcel = $this->findParcel($id, $profile, $request);
-
-        if (! $parcel) {
-            return response()->json(['status' => 'error', 'message' => 'Parcel not found.'], 404);
-        }
-
-        if ($dbStatus !== 'exception' && $dbStatus !== 'returned' && $this->statusRank($parcel->status) > $this->statusRank($dbStatus)) {
-            $dbStatus = $parcel->status;
-        }
-
-        // Merge incoming payload into parcel metadata
-        $metadata = $parcel->metadata ?? [];
-        $metadata['last_status_code'] = $rawStatus;
-        if ($request->filled('latitude')) {
-            $metadata['latitude'] = (float) $request->input('latitude');
-        }
-        if ($request->filled('longitude')) {
-            $metadata['longitude'] = (float) $request->input('longitude');
-        }
-        if ($request->filled('codAmount') || $request->filled('cod_amount')) {
-            $metadata['cod_amount'] = (float) ($request->input('codAmount') ?? $request->input('cod_amount'));
-            $metadata['is_cod'] = true;
-        }
-        $metadata = $this->extractAndStoreReturnMedia($request, $parcel, $metadata, $dbStatus);
-        $metadata['last_updated_at'] = $request->input('timestamp', now()->toIso8601String());
-
-        $parcel->update([
-            'status' => $dbStatus,
-            'metadata' => $metadata,
-            'rider_received_at' => in_array($dbStatus, ['rider_received', 'in_transit', 'out_for_delivery']) && ! $parcel->rider_received_at ? now() : $parcel->rider_received_at,
-        ]);
-
-        $riderName = $user?->name ?? ($parcel->rider?->user?->name ?? 'Courier');
-        $noteText = 'Status updated to ' . ucwords(str_replace('_', ' ', $dbStatus)) . ' by rider ' . $riderName;
-        if (! empty($metadata['failure_reason'])) {
-            $noteText .= ' (Reason: ' . $metadata['failure_reason'] . ')';
-        }
-        if (isset($metadata['latitude']) && isset($metadata['longitude'])) {
-            $noteText .= " [GPS: {$metadata['latitude']}, {$metadata['longitude']}]";
-        }
-
-        ParcelScan::create([
-            'parcel_id' => $parcel->id,
-            'user_id' => $user?->id ?? $parcel->rider?->user_id,
-            'scan_type' => $dbStatus,
-            'barcode' => $parcel->barcode ?: $parcel->parcel_number,
-            'result' => 'success',
-            'note' => $noteText,
-            'scanned_at' => now(),
-        ]);
-
-        // Explicitly trigger shipment tracking sync
-        app(\App\Services\ParcelShipmentSyncService::class)->sync($parcel->fresh());
-        $this->syncStatusToCloud($request, $parcel, $dbStatus, $metadata);
-
-        // If delivered, automatically recalculate real commission in real-time
-        if ($dbStatus === 'delivered' && $parcel->assigned_rider_id) {
-            try {
-                $calc = app(\App\Services\CommissionCalculatorService::class);
-                $calc->syncPeriodCommissions($calc->resolvePeriod());
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('Commission sync error on parcel delivery: ' . $e->getMessage());
-            }
-        }
-
-        return response()->json([
-            'status' => 'success',
-            'message' => "Parcel {$parcel->parcel_number} status updated to " . ucwords(str_replace('_', ' ', $dbStatus)),
-            'data' => $this->transformParcel($parcel->fresh(['area', 'shipment'])),
-        ]);
+        return $this->updateParcelStatus($request, $id);
     }
 
     /**
@@ -1303,22 +1251,31 @@ class RiderApiController extends Controller
         $metadata['last_status_code'] = $rawStatus;
 
         $rawNormalized = strtolower(str_replace(['-', ' '], '_', trim((string) $rawStatus)));
-        $isReturnClaim = ! empty($metadata['is_return_refund']) || $request->input('is_return_refund') == true;
+        $isReturnClaim = ! empty($metadata['is_return_refund'])
+            || $request->boolean('isReturnRefund')
+            || $request->boolean('is_return_refund')
+            || in_array($rawNormalized, ['returning_to_hub', 'returningtohub', 'returned_to_hub', 'returnedtohub', 'in_rider_hands', 'item_in_hand', 'hub_returned'], true);
 
         $riderName = $user?->name ?? ($parcel->rider?->user?->name ?? 'Courier');
         $note = $request->input('notes') ?? $request->input('note');
 
         if ($isReturnClaim) {
-            if (in_array($rawNormalized, ['returning_to_hub', 'in_rider_hands', 'item_in_hand', 'collected', 'picked_up'])) {
+            if (in_array($rawNormalized, ['returning_to_hub', 'returningtohub', 'in_rider_hands', 'item_in_hand', 'collected', 'picked_up'], true)) {
                 $dbStatus = 'in_transit';
                 $metadata['is_return_refund'] = true;
                 $metadata['return_status'] = 'in_rider_hands';
+                $metadata['return_stage'] = 'in_rider_hands';
+                $metadata['return_resolution'] = 'Item in Rider Hands · Returning to Hub';
                 $metadata['item_in_hand_at'] = now()->toIso8601String();
                 $note = "Rider {$riderName} confirmed return item is in hand. In transit to hub.";
-            } elseif (in_array($rawNormalized, ['returned_to_hub', 'returned', 'hub_returned', 'handed_in_to_hub'])) {
+            } elseif (in_array($rawNormalized, ['returned_to_hub', 'returnedtohub', 'returned', 'hub_returned', 'handed_in_to_hub'], true)) {
                 $dbStatus = 'returned';
                 $metadata['is_return_refund'] = true;
                 $metadata['return_status'] = 'returned_to_hub';
+                $metadata['return_stage'] = 'returned_to_hub';
+                $metadata['return_resolution'] = 'Returned to Hub by Rider';
+                $metadata['return_resolved_by'] = $riderName;
+                $metadata['return_resolved_at'] = now()->toIso8601String();
                 $metadata['returned_to_hub_at'] = now()->toIso8601String();
                 $note = "Rider {$riderName} confirmed parcel handed in to hub. Return intake completed.";
             }
@@ -1338,8 +1295,6 @@ class RiderApiController extends Controller
         $metadata = $this->extractAndStoreReturnMedia($request, $parcel, $metadata, $dbStatus);
         $metadata['last_updated_at'] = $request->input('timestamp', now()->toIso8601String());
 
-        $riderName = $user?->name ?? ($parcel->rider?->user?->name ?? 'Courier');
-        $note = $request->input('notes') ?? $request->input('note');
         if (! $note) {
             $note = 'Status updated to ' . ucwords(str_replace('_', ' ', $dbStatus)) . ' by rider ' . $riderName;
             if (! empty($metadata['failure_reason'])) {
@@ -1383,6 +1338,11 @@ class RiderApiController extends Controller
                     'earned_at' => now(),
                 ]
             );
+            try {
+                $calc = app(\App\Services\CommissionCalculatorService::class);
+                $calc->syncPeriodCommissions($calc->resolvePeriod());
+            } catch (\Throwable $e) {
+            }
         }
 
         return response()->json([
@@ -1766,6 +1726,7 @@ class RiderApiController extends Controller
             'return_photo_url' => $photoUrl,
             'return_video_url' => $videoUrl,
             'rider_id' => $p->assigned_rider_id,
+            'assigned_rider_name' => $p->rider?->user?->name ?? ($metadata['assigned_rider_name'] ?? null),
             'sort_bin' => $p->sort_bin ?? '',
             'metadata' => $metadata,
             'updated_at' => $p->updated_at?->toIso8601String(),
@@ -1976,12 +1937,23 @@ class RiderApiController extends Controller
 
             $riderName = $this->resolveRiderUser($request)?->name ?? ($parcel->rider?->user?->name ?? 'Assigned Rider');
             $audit = is_array($metadata['return_audit_trail'] ?? null) ? $metadata['return_audit_trail'] : [];
+            $curReturnStatus = $metadata['return_status'];
+            $auditAction = match ($curReturnStatus) {
+                'in_rider_hands' => 'Confirmed Return Item in Hand',
+                'returned_to_hub' => 'Returned Parcel to Hub',
+                default => 'Submitted Return / Refund',
+            };
+            $auditNote = match ($curReturnStatus) {
+                'in_rider_hands' => "Rider {$riderName} confirmed the return parcel is in hand and in transit to the hub.",
+                'returned_to_hub' => "Rider {$riderName} handed the return parcel in at the hub.",
+                default => trim(($metadata['return_reason'] ?? 'Return / Refund') . (! empty($metadata['return_notes']) ? ' — ' . $metadata['return_notes'] : '')),
+            };
             $audit[] = [
                 'actor' => $riderName,
                 'role' => 'Rider',
-                'action' => 'Submitted Return / Refund',
-                'status' => 'pending',
-                'note' => trim(($metadata['return_reason'] ?? 'Return / Refund') . (! empty($metadata['return_notes']) ? ' — ' . $metadata['return_notes'] : '')),
+                'action' => $auditAction,
+                'status' => $curReturnStatus,
+                'note' => $auditNote,
                 'timestamp' => $reportedAt->toIso8601String(),
             ];
             $metadata['return_audit_trail'] = $audit;
@@ -2096,6 +2068,8 @@ class RiderApiController extends Controller
             'rider_received', 'in_transit' => 5,
             'out_for_delivery' => 6,
             'delivered' => 7,
+            'exception' => 8,
+            'returned' => 9,
             default => 0,
         };
     }

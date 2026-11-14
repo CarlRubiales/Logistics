@@ -376,9 +376,10 @@ class ScannerApiController extends Controller
 
             $oldStatus = $parcel->status;
             $forceStatus = $request->input('force_status');
-            if ($forceStatus && in_array($forceStatus, ['assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered', 'exception'], true)) {
-                $ranks = ['received' => 1, 'scanned' => 2, 'sorted' => 3, 'assigned' => 4, 'rider_received' => 5, 'in_transit' => 5, 'out_for_delivery' => 6, 'delivered' => 7];
-                if ($forceStatus !== 'exception' && ($ranks[$oldStatus] ?? 0) > ($ranks[$forceStatus] ?? 0)) {
+            if ($forceStatus && in_array($forceStatus, ['assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered', 'exception', 'returned'], true)) {
+                $ranks = ['received' => 1, 'scanned' => 2, 'sorted' => 3, 'assigned' => 4, 'rider_received' => 5, 'in_transit' => 5, 'out_for_delivery' => 6, 'delivered' => 7, 'exception' => 8, 'returned' => 9];
+                $isReturnFlow = ! empty($parcel->metadata['is_return_refund']) || ! empty($request->input('metadata.is_return_refund'));
+                if (! $isReturnFlow && ! in_array($forceStatus, ['exception', 'returned'], true) && ($ranks[$oldStatus] ?? 0) > ($ranks[$forceStatus] ?? 0)) {
                     $forceStatus = $oldStatus;
                 }
                 $existingMeta = is_array($parcel->metadata) ? $parcel->metadata : [];
@@ -452,7 +453,7 @@ class ScannerApiController extends Controller
                 && ! $pendingRiderAutoAssign
                 && ! $pendingLinehaulDispatch
                 && ($parcel->metadata['transfer_state'] ?? '') !== 'in_transit_to_hub'
-                && in_array($oldStatus, ['scanned', 'sorted', 'assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered']);
+                && in_array($oldStatus, ['scanned', 'sorted', 'assigned', 'rider_received', 'in_transit', 'out_for_delivery', 'delivered', 'exception', 'returned']);
 
             if ($isAlreadyScanned) {
                 if (! empty($branchUpdate)) {

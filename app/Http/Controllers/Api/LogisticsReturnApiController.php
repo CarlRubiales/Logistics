@@ -24,7 +24,8 @@ class LogisticsReturnApiController extends Controller
     {
         $orderId = $request->input('order_id');
         $orderNumber = $request->input('order_number') ?: ($orderId ? ('#' . $orderId) : null);
-        $trackingNumber = $request->input('tracking_number') ?: $request->input('barcode');
+        $trackingNumber = $request->input('tracking_number');
+        $barcode = $request->input('barcode') ?: ($orderId ? (string) $orderId : $trackingNumber);
         $deliveringRiderName = $request->input('delivering_rider');
         $reason = $request->input('reason') ?: $request->input('reason_label', 'Return/Refund Request');
         $details = $request->input('details', '');
@@ -33,29 +34,42 @@ class LogisticsReturnApiController extends Controller
         $evidence = $request->input('evidence', []);
         $customer = $request->input('customer', []);
 
-        if (! $orderId && ! $orderNumber && ! $trackingNumber) {
+        if (! $orderId && ! $orderNumber && ! $trackingNumber && ! $barcode) {
             return response()->json(['error' => 'Order ID, number or tracking code is required.'], 422);
         }
 
         return DB::transaction(function () use (
-            $orderId, $orderNumber, $trackingNumber, $deliveringRiderName,
+            $orderId, $orderNumber, $trackingNumber, $barcode, $deliveringRiderName,
             $reason, $details, $sellerNote, $items, $evidence, $customer, $request
         ) {
-            // 1. Locate existing parcel
-            $parcelQuery = Parcel::query();
-            if ($orderId) {
-                $parcelQuery->where('order_id', $orderId);
-            }
-            if ($orderNumber) {
-                $parcelQuery->orWhere('parcel_number', $orderNumber)->orWhere('parcel_number', '#' . $orderId);
-            }
-            if ($trackingNumber) {
-                $parcelQuery->orWhere('barcode', $trackingNumber);
-            }
+            // 1. Locate existing delivered parcel across all identifier columns
+            $parcel = Parcel::where(function ($parcelQuery) use ($orderId, $orderNumber, $trackingNumber, $barcode) {
+                if ($barcode) {
+                    $parcelQuery->orWhere('barcode', (string) $barcode);
+                }
+                if ($trackingNumber) {
+                    $parcelQuery->orWhere('parcel_number', $trackingNumber)
+                        ->orWhere('barcode', $trackingNumber);
+                }
+                if ($orderId) {
+                    $paddedTrk = 'LM-TRK-' . str_pad((string) $orderId, 6, '0', STR_PAD_LEFT);
+                    $parcelQuery->orWhere('order_id', $orderId)
+                        ->orWhere('barcode', (string) $orderId)
+                        ->orWhere('parcel_number', $paddedTrk)
+                        ->orWhere('parcel_number', '#' . $orderId)
+                        ->orWhere('metadata->waybill_order_id', (int) $orderId)
+                        ->orWhere('metadata->waybill_order_id', (string) $orderId);
+                }
+                if ($orderNumber) {
+                    $parcelQuery->orWhere('parcel_number', $orderNumber)
+                        ->orWhere('metadata->waybill_order_number', $orderNumber);
+                }
+            })
+            ->orderByRaw('CASE WHEN assigned_rider_id IS NOT NULL THEN 0 ELSE 1 END')
+            ->orderByDesc('updated_at')
+            ->first();
 
-            $parcel = $parcelQuery->first();
-
-            // 2. Identify the delivering rider
+            // 2. Identify the exact delivering rider who delivered this parcel
             $deliveringRiderId = null;
             $deliveringRiderObj = null;
 
@@ -64,8 +78,26 @@ class LogisticsReturnApiController extends Controller
                 $deliveringRiderObj = RiderProfile::with('user')->find($deliveringRiderId);
             }
 
-            // Fallback: match by delivering rider name
-            if (! $deliveringRiderObj && ! empty($deliveringRiderName)) {
+            if (! $deliveringRiderObj && $parcel) {
+                $deliveredScan = ParcelScan::where('parcel_id', $parcel->id)
+                    ->whereIn('scan_type', ['delivered', 'out_for_delivery', 'assigned'])
+                    ->whereNotNull('user_id')
+                    ->latest('id')
+                    ->first();
+                if ($deliveredScan && $deliveredScan->user_id) {
+                    $deliveringRiderObj = RiderProfile::with('user')->where('user_id', $deliveredScan->user_id)->first();
+                    if ($deliveringRiderObj) {
+                        $deliveringRiderId = $deliveringRiderObj->id;
+                    }
+                }
+            }
+
+            // Fallback: match by delivering rider name if explicit and not generic placeholder
+            if (
+                ! $deliveringRiderObj
+                && ! empty($deliveringRiderName)
+                && ! in_array(strtolower(trim($deliveringRiderName)), ['assigned delivery courier', 'assigned courier', 'delivery courier'], true)
+            ) {
                 $deliveringRiderObj = RiderProfile::with('user')
                     ->whereHas('user', fn ($q) => $q->where('name', 'like', "%{$deliveringRiderName}%"))
                     ->first();
