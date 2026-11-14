@@ -643,13 +643,20 @@ class RiderApiController extends Controller
         }
 
         $parcels = Parcel::with(['area', 'shipment', 'order'])
-            ->where(function ($q) use ($profile, $isToday) {
-                $q->where('assigned_rider_id', $profile->id);
-                if ($isToday) {
-                    $q->orWhereNotNull('assigned_rider_id');
-                }
+            ->where(function ($q) use ($profile, $isToday, $selectedDate) {
+                $q->where(function ($sq) use ($profile, $isToday) {
+                    $sq->where('assigned_rider_id', $profile->id);
+                    if ($isToday) {
+                        $sq->orWhereNotNull('assigned_rider_id');
+                    }
+                })->where(function ($dq) use ($selectedDate) {
+                    $dq->forDate($selectedDate)
+                       ->orWhere(function ($rq) {
+                           $rq->whereIn('status', ['assigned', 'in_transit', 'out_for_delivery', 'returning_to_hub'])
+                              ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.is_return_refund')) = 'true'");
+                       });
+                });
             })
-            ->forDate($selectedDate)
             ->latest('assigned_at')
             ->latest('updated_at')
             ->get();
@@ -1308,12 +1315,32 @@ class RiderApiController extends Controller
         $rawStatus = $request->input('status') ?? $request->input('stage') ?? 'in_transit';
         $dbStatus = $this->mapToDbStatus($rawStatus);
 
-        if ($dbStatus !== 'exception' && $dbStatus !== 'returned' && $this->statusRank($parcel->status) > $this->statusRank($dbStatus)) {
-            $dbStatus = $parcel->status;
-        }
-
         $metadata = $parcel->metadata ?? [];
         $metadata['last_status_code'] = $rawStatus;
+
+        $rawNormalized = strtolower(str_replace(['-', ' '], '_', trim((string) $rawStatus)));
+        $isReturnClaim = ! empty($metadata['is_return_refund']) || $request->input('is_return_refund') == true;
+
+        $riderName = $user?->name ?? ($parcel->rider?->user?->name ?? 'Courier');
+        $note = $request->input('notes') ?? $request->input('note');
+
+        if ($isReturnClaim) {
+            if (in_array($rawNormalized, ['returning_to_hub', 'in_rider_hands', 'item_in_hand', 'collected', 'picked_up'])) {
+                $dbStatus = 'in_transit';
+                $metadata['is_return_refund'] = true;
+                $metadata['return_status'] = 'in_rider_hands';
+                $metadata['item_in_hand_at'] = now()->toIso8601String();
+                $note = "Rider {$riderName} confirmed return item is in hand. In transit to hub.";
+            } elseif (in_array($rawNormalized, ['returned_to_hub', 'returned', 'hub_returned', 'handed_in_to_hub'])) {
+                $dbStatus = 'returned';
+                $metadata['is_return_refund'] = true;
+                $metadata['return_status'] = 'returned_to_hub';
+                $metadata['returned_to_hub_at'] = now()->toIso8601String();
+                $note = "Rider {$riderName} confirmed parcel handed in to hub. Return intake completed.";
+            }
+        } elseif ($dbStatus !== 'exception' && $dbStatus !== 'returned' && $this->statusRank($parcel->status) > $this->statusRank($dbStatus)) {
+            $dbStatus = $parcel->status;
+        }
         if ($request->filled('latitude')) {
             $metadata['latitude'] = (float) $request->input('latitude');
         }
@@ -1651,25 +1678,41 @@ class RiderApiController extends Controller
         $barcode = ! empty($p->barcode) ? $p->barcode : $p->parcel_number;
         $areaName = $p->area?->name ?? 'Central Area';
 
-        $statusCode = match ($p->status) {
-            'assigned' => 'ASSIGNED_TO_RIDER',
-            'rider_received' => 'PICKED_UP_FROM_HUB',
-            'in_transit' => 'PICKED_UP_FROM_HUB',
-            'out_for_delivery' => 'OUT_FOR_DELIVERY',
-            'delivered' => 'DELIVERED',
-            'returned' => 'RETURNED',
-            'exception' => 'DELIVERY_FAILED',
-            default => 'ASSIGNED_TO_RIDER',
-        };
+        $isReturnRefund = (bool) ($metadata['is_return_refund'] ?? false);
+        $returnStatus = (string) ($metadata['return_status'] ?? '');
 
-        $stage = match ($p->status) {
-            'rider_received', 'in_transit' => 'pickedUp',
-            'out_for_delivery' => 'outForDelivery',
-            'delivered' => 'delivered',
-            'returned' => 'returnedToHub',
-            'exception' => 'failed',
-            default => 'accepted',
-        };
+        if ($isReturnRefund) {
+            if ($p->status === 'returned' || $returnStatus === 'returned_to_hub') {
+                $statusCode = 'RETURNED_TO_HUB';
+                $stage = 'returnedToHub';
+            } elseif ($p->status === 'in_transit' || $p->status === 'returning_to_hub' || $returnStatus === 'in_rider_hands' || $returnStatus === 'in_transit_to_hub') {
+                $statusCode = 'RETURNING_TO_HUB';
+                $stage = 'returningToHub';
+            } else {
+                $statusCode = 'ASSIGNED_FOR_RETURN';
+                $stage = 'accepted';
+            }
+        } else {
+            $statusCode = match ($p->status) {
+                'assigned' => 'ASSIGNED_TO_RIDER',
+                'rider_received' => 'PICKED_UP_FROM_HUB',
+                'in_transit' => 'PICKED_UP_FROM_HUB',
+                'out_for_delivery' => 'OUT_FOR_DELIVERY',
+                'delivered' => 'DELIVERED',
+                'returned' => 'RETURNED',
+                'exception' => 'DELIVERY_FAILED',
+                default => 'ASSIGNED_TO_RIDER',
+            };
+
+            $stage = match ($p->status) {
+                'rider_received', 'in_transit' => 'pickedUp',
+                'out_for_delivery' => 'outForDelivery',
+                'delivered' => 'delivered',
+                'returned' => 'returnedToHub',
+                'exception' => 'failed',
+                default => 'accepted',
+            };
+        }
 
         $codAmount = (float) ($metadata['cod_amount'] ?? ($p->order?->total_amount ?? 250.00));
         $isCod = (bool) ($metadata['is_cod'] ?? ($codAmount > 0));

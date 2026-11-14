@@ -128,11 +128,12 @@ class LogisticsReturnApiController extends Controller
             // 4. Update parcel metadata with return items, seller approval, and courier assignment
             $metadata = is_array($parcel->metadata) ? $parcel->metadata : [];
             $metadata['is_return_refund'] = true;
-            $metadata['return_status'] = 'approved';
+            $metadata['return_status'] = 'approved_for_pickup';
+            $metadata['return_stage'] = 'assigned_for_pickup';
             $metadata['return_approved_by'] = 'seller';
             $metadata['return_approved_at'] = now()->toIso8601String();
             $metadata['return_reported_at'] = now()->toIso8601String();
-            $metadata['return_resolution'] = 'Approved by Seller · Assigned to Courier';
+            $metadata['return_resolution'] = 'Approved by Seller · Assigned to Courier for Pickup';
             $metadata['return_reason'] = $reason;
             $metadata['return_details'] = $details;
             $metadata['return_items'] = $items;
@@ -148,15 +149,17 @@ class LogisticsReturnApiController extends Controller
                 'actor' => 'Seller (' . ($request->input('seller_name') ?: 'Store Seller') . ')',
                 'role' => 'seller',
                 'action' => 'Approved Return Request',
-                'status' => 'approved',
-                'note' => "Seller approved return claim. Automatically assigned to courier {$riderDisplayName} for pickup.",
+                'status' => 'approved_for_pickup',
+                'note' => "Seller approved return claim. Automatically assigned to courier {$riderDisplayName} for pickup from buyer.",
                 'timestamp' => now()->toIso8601String(),
             ];
             $metadata['return_audit_trail'] = $audit;
 
             $parcel->update([
-                'status' => 'returned',
+                'status' => 'assigned',
                 'assigned_rider_id' => $deliveringRiderId ?: $parcel->assigned_rider_id,
+                'assigned_at' => now(),
+                'updated_at' => now(),
                 'metadata' => $metadata,
             ]);
 
@@ -164,10 +167,10 @@ class LogisticsReturnApiController extends Controller
             ParcelScan::create([
                 'parcel_id' => $parcel->id,
                 'user_id' => $deliveringRiderObj?->user_id ?? (auth()->id() ?: 1),
-                'scan_type' => 'returned',
+                'scan_type' => 'assigned',
                 'barcode' => $parcel->barcode ?: $parcel->parcel_number,
                 'result' => 'success',
-                'note' => "Return approved by seller. Automatically assigned to courier {$riderDisplayName} for return intake.",
+                'note' => "Return approved by seller. Automatically assigned to courier {$riderDisplayName} for return pickup from buyer.",
                 'scanned_at' => now(),
             ]);
 
@@ -193,8 +196,8 @@ class LogisticsReturnApiController extends Controller
                 'success' => true,
                 'parcel_id' => $parcel->id,
                 'parcel_number' => $parcel->parcel_number,
-                'status' => 'returned',
-                'return_status' => 'approved',
+                'status' => 'assigned',
+                'return_status' => 'approved_for_pickup',
                 'assigned_rider_id' => $deliveringRiderId,
                 'assigned_rider' => $riderDisplayName,
                 'items_count' => count($items),
