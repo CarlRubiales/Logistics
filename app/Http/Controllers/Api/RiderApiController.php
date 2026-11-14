@@ -1353,20 +1353,63 @@ class RiderApiController extends Controller
     }
 
     /**
+     * Resolve the rider's Branch Hub and Hub Admin contact information.
+     */
+    private function resolveRiderHubInfo(?User $user): array
+    {
+        $rider = $user?->riderProfile;
+        $branch = $user?->branch
+            ?: ($rider?->hub?->branch
+            ?: ($rider?->areas?->first()?->branch
+            ?: ($rider?->parcels()->with('area')->latest('id')->first()?->area?->branch ?: 'Pila')));
+
+        $branchClean = preg_replace('/\s+hub$/i', '', trim((string) $branch));
+        if ($branchClean === '') {
+            $branchClean = 'Pila';
+        }
+
+        $hubAdmin = User::whereRaw('LOWER(branch) = ?', [strtolower($branchClean)])
+            ->whereIn('role', ['admin', 'operations_manager', 'warehouse_staff'])
+            ->orderBy('id')
+            ->first()
+            ?? User::getMasterAdmin()
+            ?? User::whereIn('role', ['admin', 'operations_manager'])->orderBy('id')->first();
+
+        $hubName = $branchClean . ' Hub';
+
+        return [
+            'branch' => $branchClean,
+            'hub_name' => $hubName,
+            'hub_title' => $hubName . ' · Operations & Dispatch',
+            'admin_id' => $hubAdmin?->id ?? 1,
+            'admin_name' => $hubAdmin?->name ?? ($hubName . ' Admin'),
+            'admin_email' => $hubAdmin?->email ?? (strtolower(str_replace(' ', '', $branchClean)) . '@lumora.party'),
+        ];
+    }
+
+    /**
      * Return rider messages with operations / sorting center staff.
      */
     public function messages(Request $request): JsonResponse
     {
         $user = $this->resolveRiderUser($request);
         if (! $user) {
-            return response()->json(['status' => 'success', 'data' => []]);
+            return response()->json(['status' => 'success', 'data' => [], 'unread_count' => 0]);
         }
         $userId = $user->id;
+        $hubInfo = $this->resolveRiderHubInfo($user);
 
-        // Automatically mark incoming messages to this rider as read
-        ErpMessage::where('recipient_id', $userId)
+        $unreadCount = ErpMessage::where('recipient_id', $userId)
             ->whereNull('read_at')
-            ->update(['read_at' => now()]);
+            ->count();
+
+        // Mark incoming messages as read unless caller explicitly requests a non-destructive poll (mark_read=0)
+        if ($request->boolean('mark_read', true)) {
+            ErpMessage::where('recipient_id', $userId)
+                ->whereNull('read_at')
+                ->update(['read_at' => now()]);
+            $unreadCount = 0;
+        }
 
         $query = ErpMessage::with(['sender', 'recipient', 'parcel'])
             ->where(function ($q) use ($userId) {
@@ -1383,19 +1426,21 @@ class RiderApiController extends Controller
             }
         }
 
-        $messages = $query->latest()->take(50)->get()->reverse()->values();
+        $messages = $query->latest()->take(80)->get()->reverse()->values();
 
-        $data = $messages->map(function ($msg) use ($userId) {
+        $data = $messages->map(function ($msg) use ($userId, $hubInfo) {
+            $isMine = $msg->sender_id === $userId;
             return [
                 'id' => $msg->id,
                 'sender_id' => $msg->sender_id,
-                'sender_name' => $msg->sender?->name ?? 'System',
+                'sender_name' => $isMine ? ($msg->sender?->name ?? 'You') : ($hubInfo['hub_name'] . ' (' . ($msg->sender?->name ?? 'Dispatch') . ')'),
                 'recipient_id' => $msg->recipient_id,
-                'recipient_name' => $msg->recipient?->name ?? 'Sorting Center',
-                'is_mine' => $msg->sender_id === $userId,
+                'recipient_name' => $msg->recipient?->name ?? $hubInfo['hub_name'],
+                'is_mine' => $isMine,
+                'is_read' => $msg->read_at !== null,
                 'message' => $msg->message,
                 'text' => $msg->message,
-                'parcel_id' => $msg->parcel_id,
+                'parcel_id' => $msg->parcel?->parcel_number ?? $msg->parcel_id,
                 'parcel_number' => $msg->parcel?->parcel_number,
                 'created_at' => $msg->created_at?->toIso8601String(),
                 'time' => $msg->created_at ? $msg->created_at->format('h:i A') : '',
@@ -1405,6 +1450,8 @@ class RiderApiController extends Controller
 
         return response()->json([
             'status' => 'success',
+            'hub' => $hubInfo,
+            'unread_count' => $unreadCount,
             'data' => $data,
         ]);
     }
@@ -1424,26 +1471,16 @@ class RiderApiController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Rider not found.'], 404);
         }
 
-        $recipientId = $request->input('recipient_id');
-        if (! $recipientId) {
-            $rider = $user->riderProfile;
-            $branch = $rider?->branch ?: $rider?->areas?->first()?->branch;
-            if ($branch) {
-                $branchAdmin = User::where('branch', $branch)->whereIn('role', ['admin', 'operations_manager'])->first();
-                if ($branchAdmin) {
-                    $recipientId = $branchAdmin->id;
-                }
-            }
-        }
-        if (! $recipientId) {
-            $recipientId = User::whereIn('role', ['admin', 'operations_manager'])->orderBy('id')->value('id') ?? 1;
-        }
+        $hubInfo = $this->resolveRiderHubInfo($user);
+        $recipientId = $request->input('recipient_id') ?: $hubInfo['admin_id'];
 
         $parcelId = null;
+        $parcelNumber = null;
         $parcelCode = $request->input('parcel_id') ?? $request->input('parcelId');
         if (! empty($parcelCode)) {
             $parcel = $this->findParcel($parcelCode, $user->riderProfile, $request);
             $parcelId = $parcel?->id;
+            $parcelNumber = $parcel?->parcel_number ?? (string) $parcelCode;
         }
 
         $msg = ErpMessage::create([
@@ -1456,14 +1493,19 @@ class RiderApiController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => 'Message sent successfully.',
+            'hub' => $hubInfo,
             'data' => [
                 'id' => $msg->id,
                 'sender_id' => $msg->sender_id,
                 'sender_name' => $user->name,
+                'recipient_id' => $recipientId,
+                'recipient_name' => $hubInfo['hub_name'],
                 'is_mine' => true,
+                'is_read' => false,
                 'message' => $msg->message,
                 'text' => $msg->message,
-                'parcel_id' => $msg->parcel_id,
+                'parcel_id' => $parcelNumber ?? $msg->parcel_id,
+                'parcel_number' => $parcelNumber,
                 'created_at' => $msg->created_at?->toIso8601String(),
                 'time' => $msg->created_at->format('h:i A'),
             ],
@@ -1477,6 +1519,7 @@ class RiderApiController extends Controller
     {
         $user = $this->resolveRiderUser($request);
         $userId = $user?->id ?? 0;
+        $hubInfo = $this->resolveRiderHubInfo($user);
 
         $lastSupportMessage = ErpMessage::where(function ($q) use ($userId) {
             $q->where('sender_id', $userId)->orWhere('recipient_id', $userId);
@@ -1487,16 +1530,21 @@ class RiderApiController extends Controller
         $conversations = [
             [
                 'id' => 'operations',
-                'name' => 'Sorting Center Operations',
-                'description' => 'Rider Support',
+                'name' => $hubInfo['hub_title'],
+                'description' => $hubInfo['admin_name'] . ' · ' . $hubInfo['admin_email'],
+                'hub_name' => $hubInfo['hub_name'],
+                'branch' => $hubInfo['branch'],
                 'unread' => $unreadCount,
-                'preview' => $lastSupportMessage ? $lastSupportMessage->message : 'Contact sorting center operations',
+                'preview' => $lastSupportMessage
+                    ? (($lastSupportMessage->sender_id === $userId ? 'You: ' : '') . $lastSupportMessage->message)
+                    : ('Direct channel to ' . $hubInfo['hub_name'] . ' operations & dispatch'),
                 'updated_at' => $lastSupportMessage ? $lastSupportMessage->created_at->toIso8601String() : now()->toIso8601String(),
             ],
         ];
 
         return response()->json([
             'status' => 'success',
+            'hub' => $hubInfo,
             'data' => $conversations,
         ]);
     }

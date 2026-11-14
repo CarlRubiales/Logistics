@@ -431,12 +431,22 @@
                         >
                     </div>
 
+                    @php
+                        $branchUnreadTotal = $branchSummaries->sum('unread_count');
+                        $riderUnreadTotal = $riderSummaries->sum('unread_count');
+                    @endphp
                     <div class="roster-tabs">
-                        <button type="button" class="roster-tab active" onclick="switchCategory('branch', this)">
+                        <button type="button" class="roster-tab {{ ($selectedType ?? 'branch') === 'branch' ? 'active' : '' }}" onclick="switchCategory('branch', this)">
                             {{ $isMasterAdmin ? 'Branches (' . $branchSummaries->count() . ')' : 'Headquarters' }}
+                            @if($branchUnreadTotal > 0)
+                                <span class="roster-badge" style="margin-left: 4px;">{{ $branchUnreadTotal }}</span>
+                            @endif
                         </button>
-                        <button type="button" class="roster-tab" onclick="switchCategory('rider', this)">
+                        <button type="button" class="roster-tab {{ ($selectedType ?? 'branch') === 'rider' ? 'active' : '' }}" onclick="switchCategory('rider', this)">
                             Couriers ({{ $riderSummaries->count() }})
+                            @if($riderUnreadTotal > 0)
+                                <span class="roster-badge" style="margin-left: 4px;">{{ $riderUnreadTotal }}</span>
+                            @endif
                         </button>
                     </div>
 
@@ -448,7 +458,7 @@
                                 $isSelected = ($selectedContact && $selectedContact->id === $bUser->id);
                                 $initials = strtoupper(substr($item['branch'], 0, 2));
                             @endphp
-                            <li class="contact-entry" data-category="branch">
+                            <li class="contact-entry" data-category="branch" style="{{ ($selectedType ?? 'branch') === 'rider' ? 'display: none;' : '' }}">
                                 <a
                                     href="{{ route('messages.index', ['contact_user_id' => $bUser->id]) }}"
                                     class="roster-item {{ $isSelected ? 'active' : '' }}"
@@ -486,7 +496,7 @@
                                 </a>
                             </li>
                         @empty
-                            <li class="contact-entry" data-category="branch" style="padding: 24px 16px; text-align: center; color: #8A7B7E; font-size: 12px;">
+                            <li class="contact-entry" data-category="branch" style="{{ ($selectedType ?? 'branch') === 'rider' ? 'display: none;' : '' }} padding: 24px 16px; text-align: center; color: #8A7B7E; font-size: 12px;">
                                 No branch accounts registered yet.
                             </li>
                         @endforelse
@@ -500,7 +510,7 @@
                                 $isOnline = in_array($rider->availability, ['online', 'available']);
                                 $initials = strtoupper(substr($rUser->name, 0, 2));
                             @endphp
-                            <li class="contact-entry" data-category="rider" style="display: none;">
+                            <li class="contact-entry" data-category="rider" style="{{ ($selectedType ?? 'branch') === 'rider' ? '' : 'display: none;' }}">
                                 <a
                                     href="{{ route('messages.index', ['contact_user_id' => $rUser->id]) }}"
                                     class="roster-item {{ $isSelected ? 'active' : '' }}"
@@ -538,7 +548,7 @@
                                 </a>
                             </li>
                         @empty
-                            <li class="contact-entry" data-category="rider" style="display: none; padding: 24px 16px; text-align: center; color: #8A7B7E; font-size: 12px;">
+                            <li class="contact-entry" data-category="rider" style="{{ ($selectedType ?? 'branch') === 'rider' ? '' : 'display: none;' }} padding: 24px 16px; text-align: center; color: #8A7B7E; font-size: 12px;">
                                 No couriers available in this workspace.
                             </li>
                         @endforelse
@@ -593,7 +603,9 @@
                         <div class="chat-stream" id="chatStream">
                             @forelse($threadMessages as $msg)
                                 @php
-                                    $isMine = ($msg->sender_id === auth()->id());
+                                    $isMine = ($selectedType ?? 'branch') === 'rider'
+                                        ? ($msg->sender_id !== $selectedContact->id)
+                                        : ($msg->sender_id === auth()->id());
                                 @endphp
                                 <div class="chat-bubble-row {{ $isMine ? 'mine' : 'theirs' }}" id="msg-{{ $msg->id }}">
                                     @if($msg->parcel)
@@ -642,7 +654,20 @@
                         <div class="chat-composer-wrap">
                             <!-- Quick Presets -->
                             <div class="quick-presets">
-                                @if($isMasterAdmin)
+                                @if(($selectedType ?? 'branch') === 'rider')
+                                    <button type="button" class="preset-chip" onclick="insertPreset('📦 Your parcels are sorted and ready for pickup at the hub.')">
+                                        📦 Parcels ready at hub
+                                    </button>
+                                    <button type="button" class="preset-chip" onclick="insertPreset('📍 Please share your live delivery status update for your active run.')">
+                                        📍 Status update
+                                    </button>
+                                    <button type="button" class="preset-chip" onclick="insertPreset('📞 Please call the buyer before flagging a delivery exception.')">
+                                        📞 Call buyer first
+                                    </button>
+                                    <button type="button" class="preset-chip" onclick="insertPreset('✓ Return parcel handover received and confirmed at the hub.')">
+                                        ✓ Return confirmed
+                                    </button>
+                                @elseif($isMasterAdmin)
                                     <button type="button" class="preset-chip" onclick="insertPreset('📦 Please prioritize intake and sorting for the incoming manifest.')">
                                         📦 Prioritize intake
                                     </button>

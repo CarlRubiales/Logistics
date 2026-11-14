@@ -48,7 +48,8 @@ class RiderProfile extends Model
                    $hq->whereRaw('LOWER(branch) = ?', [$branchLower])
                       ->orWhereRaw('LOWER(city) = ?', [$branchLower])
                       ->orWhereRaw('LOWER(name) = ?', [$branchLower . ' hub']);
-               });
+               })
+               ->orWhereHas('parcels', fn ($pq) => $pq->forBranch($branch));
         });
     }
 

@@ -68,20 +68,18 @@ class MessagesController extends Controller
 
         // 2. Gather Courier / Rider Contacts
         $areas = DestinationArea::where('is_active', true)->forBranch($branch)->pluck('id');
-        $ridersQuery = RiderProfile::with(['user', 'areas'])->where('registration_status', 'approved');
-        if ($branch && $areas->isNotEmpty()) {
-            $ridersQuery->whereHas('areas', fn ($aq) => $aq->whereIn('destination_areas.id', $areas));
-        }
+        $ridersQuery = RiderProfile::with(['user', 'hub', 'areas'])
+            ->whereHas('user')
+            ->forBranch($branch, $areas);
         $riders = $ridersQuery->get();
 
-        $riderSummaries = $riders->map(function ($rider) use ($authUserId) {
-            $latestMsg = ErpMessage::where(function ($q) use ($rider, $authUserId) {
-                $q->where(fn ($sq) => $sq->where('sender_id', $rider->user_id)->where('recipient_id', $authUserId))
-                  ->orWhere(fn ($sq) => $sq->where('sender_id', $authUserId)->where('recipient_id', $rider->user_id));
+        $riderSummaries = $riders->map(function ($rider) use ($branch) {
+            $latestMsg = ErpMessage::where(function ($q) use ($rider) {
+                $q->where('sender_id', $rider->user_id)
+                  ->orWhere('recipient_id', $rider->user_id);
             })->latest()->first();
 
             $unreadCount = ErpMessage::where('sender_id', $rider->user_id)
-                ->where('recipient_id', $authUserId)
                 ->whereNull('read_at')
                 ->count();
 
@@ -89,13 +87,18 @@ class MessagesController extends Controller
                 ->whereIn('status', ['assigned', 'rider_received', 'in_transit', 'out_for_delivery'])
                 ->count();
 
+            $riderBranch = $rider->user?->branch
+                ?: ($rider->hub?->branch
+                ?: ($rider->areas->first()?->branch
+                ?: ($branch ?: 'Pila')));
+
             return [
                 'type' => 'rider',
                 'rider' => $rider,
                 'user' => $rider->user,
                 'name' => $rider->user->name,
-                'sub_label' => ($rider->vehicle_type ?: 'Motorcycle') . ' · ' . ($rider->areas->pluck('name')->join(', ') ?: 'Branch Courier'),
-                'branch' => $rider->areas->first()?->branch ?? 'General',
+                'sub_label' => ($rider->vehicle_type ?: 'Motorcycle') . ' · ' . ($rider->areas->pluck('name')->join(', ') ?: ($riderBranch . ' Hub Courier')),
+                'branch' => $riderBranch,
                 'latest_message' => $latestMsg,
                 'unread_count' => $unreadCount,
                 'active_deliveries' => $activeDeliveriesCount,
@@ -146,20 +149,36 @@ class MessagesController extends Controller
         $selectedContactParcels = collect();
 
         if ($selectedContact) {
-            // Mark incoming unread messages as read
-            ErpMessage::where('sender_id', $selectedContact->id)
-                ->where('recipient_id', $authUserId)
-                ->whereNull('read_at')
-                ->update(['read_at' => now()]);
+            if ($selectedType === 'rider') {
+                // Mark all incoming unread messages from this rider as read
+                ErpMessage::where('sender_id', $selectedContact->id)
+                    ->whereNull('read_at')
+                    ->update(['read_at' => now()]);
 
-            $threadMessages = ErpMessage::with(['sender', 'recipient', 'parcel'])
-                ->where(function ($q) use ($selectedContact, $authUserId) {
-                    $q->where(fn ($sq) => $sq->where('sender_id', $selectedContact->id)->where('recipient_id', $authUserId))
-                      ->orWhere(fn ($sq) => $sq->where('sender_id', $authUserId)->where('recipient_id', $selectedContact->id));
-                })
-                ->when($request->filled('parcel_id'), fn ($q) => $q->where('parcel_id', $request->input('parcel_id')))
-                ->orderBy('created_at', 'asc')
-                ->get();
+                $threadMessages = ErpMessage::with(['sender', 'recipient', 'parcel'])
+                    ->where(function ($q) use ($selectedContact) {
+                        $q->where('sender_id', $selectedContact->id)
+                          ->orWhere('recipient_id', $selectedContact->id);
+                    })
+                    ->when($request->filled('parcel_id'), fn ($q) => $q->where('parcel_id', $request->input('parcel_id')))
+                    ->orderBy('created_at', 'asc')
+                    ->get();
+            } else {
+                // Mark incoming unread messages as read
+                ErpMessage::where('sender_id', $selectedContact->id)
+                    ->where('recipient_id', $authUserId)
+                    ->whereNull('read_at')
+                    ->update(['read_at' => now()]);
+
+                $threadMessages = ErpMessage::with(['sender', 'recipient', 'parcel'])
+                    ->where(function ($q) use ($selectedContact, $authUserId) {
+                        $q->where(fn ($sq) => $sq->where('sender_id', $selectedContact->id)->where('recipient_id', $authUserId))
+                          ->orWhere(fn ($sq) => $sq->where('sender_id', $authUserId)->where('recipient_id', $selectedContact->id));
+                    })
+                    ->when($request->filled('parcel_id'), fn ($q) => $q->where('parcel_id', $request->input('parcel_id')))
+                    ->orderBy('created_at', 'asc')
+                    ->get();
+            }
 
             // If contact is rider, load parcels assigned to them
             if ($selectedContact->riderProfile) {
@@ -184,7 +203,9 @@ class MessagesController extends Controller
                 'selected_contact_id' => $selectedContact?->id,
                 'messages' => $threadMessages->map(fn ($m) => [
                     'id' => $m->id,
-                    'is_mine' => $m->sender_id === $authUserId,
+                    'is_mine' => $selectedType === 'rider'
+                        ? ($m->sender_id !== $selectedContact->id)
+                        : ($m->sender_id === $authUserId),
                     'sender_name' => $m->sender?->name ?? 'User',
                     'message' => $m->message,
                     'created_at_human' => $m->created_at->diffForHumans(),
@@ -231,8 +252,15 @@ class MessagesController extends Controller
         $recipientId = $data['recipient_id'] ?? null;
         if (! $recipientId) {
             if ($request->user()->role === 'rider') {
-                $recipientId = User::whereIn('role', ['admin', 'operations_manager'])->orderBy('id')->value('id')
-                    ?? User::where('role', 'admin')->value('id')
+                $rider = $request->user()->riderProfile;
+                $riderBranch = $request->user()->branch
+                    ?: ($rider?->hub?->branch
+                    ?: ($rider?->areas?->first()?->branch ?: 'Pila'));
+                $recipientId = User::whereRaw('LOWER(branch) = ?', [strtolower($riderBranch)])
+                    ->whereIn('role', ['admin', 'operations_manager', 'warehouse_staff'])
+                    ->orderBy('id')
+                    ->value('id')
+                    ?? User::whereIn('role', ['admin', 'operations_manager'])->orderBy('id')->value('id')
                     ?? 1;
             } elseif (! $request->user()->isMasterAdmin()) {
                 // Branch operator sending to Master Admin HQ
@@ -276,28 +304,64 @@ class MessagesController extends Controller
 
     public function riderIndex(Request $request)
     {
-        $rider = $request->user()->riderProfile;
+        $user = $request->user();
+        $rider = $user->riderProfile;
         abort_unless($rider && $rider->registration_status === 'approved', 403, 'Rider account not approved.');
 
+        $riderBranch = $user->branch
+            ?: ($rider->hub?->branch
+            ?: ($rider->areas->first()?->branch ?: 'Pila'));
+
+        $hubAdmin = User::whereRaw('LOWER(branch) = ?', [strtolower($riderBranch)])
+            ->whereIn('role', ['admin', 'operations_manager', 'warehouse_staff'])
+            ->orderBy('id')
+            ->first()
+            ?? User::getMasterAdmin()
+            ?? User::whereIn('role', ['admin', 'operations_manager'])->orderBy('id')->first();
+
+        // Mark incoming messages as read
+        ErpMessage::where('recipient_id', $user->id)
+            ->whereNull('read_at')
+            ->update(['read_at' => now()]);
+
         $query = ErpMessage::with(['sender', 'recipient', 'parcel'])
-            ->where(function ($q) use ($request) {
-                $q->where('sender_id', $request->user()->id)
-                    ->orWhere('recipient_id', $request->user()->id);
+            ->where(function ($q) use ($user) {
+                $q->where('sender_id', $user->id)
+                    ->orWhere('recipient_id', $user->id);
             });
 
         if ($request->filled('parcel_id')) {
             $query->where('parcel_id', $request->input('parcel_id'));
         }
 
+        $threadMessages = $query->orderBy('created_at', 'asc')->get();
+
+        if ($request->wantsJson() || $request->query('format') === 'json') {
+            return response()->json([
+                'status' => 'success',
+                'messages' => $threadMessages->map(fn ($m) => [
+                    'id' => $m->id,
+                    'is_mine' => $m->sender_id === $user->id,
+                    'sender_name' => $m->sender?->name ?? ($riderBranch . ' Hub'),
+                    'message' => $m->message,
+                    'created_at_human' => $m->created_at->diffForHumans(),
+                    'created_at_time' => $m->created_at->format('g:i A'),
+                    'is_read' => $m->read_at !== null,
+                    'parcel' => $m->parcel ? [
+                        'id' => $m->parcel->id,
+                        'number' => $m->parcel->parcel_number,
+                        'recipient' => $m->parcel->recipient_name,
+                        'city' => $m->parcel->city,
+                        'status' => $m->parcel->status,
+                    ] : null,
+                ]),
+                'last_message_id' => $threadMessages->last()?->id,
+            ]);
+        }
+
         $messages = $query->latest()->paginate(30)->withQueryString();
-
-        // Mark incoming messages as read
-        ErpMessage::where('recipient_id', $request->user()->id)
-            ->whereNull('read_at')
-            ->update(['read_at' => now()]);
-
         $assignedParcels = $rider->parcels()->latest('assigned_at')->take(25)->get();
 
-        return view('riders.messages', compact('messages', 'rider', 'assignedParcels'));
+        return view('riders.messages', compact('messages', 'threadMessages', 'rider', 'riderBranch', 'hubAdmin', 'assignedParcels'));
     }
 }
