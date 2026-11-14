@@ -371,12 +371,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .login-card h2 { margin: 9px 0 8px; color: var(--plum); font-family: 'Playfair Display', Georgia, serif; font-size: 30px; letter-spacing: -.03em; }
 .login-intro { margin: 0 0 25px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .login-form label:not(.remember-label) { display: flex; flex-direction: column; gap: 8px; margin-bottom: 17px; color: var(--ink); font-size: 10px; font-weight: 700; }
-.login-form input[type='email'], .login-form input[type='password'] { width: 100%; height: 43px; padding: 0 13px; color: var(--ink); border: 1px solid var(--line); border-radius: 10px; outline: 0; background: var(--cream); font-size: 12px; font-weight: 400; transition: border .18s var(--ease-out), box-shadow .18s var(--ease-out); }
+.login-form input[type='email'], .login-form input[type='password'], .login-form input[type='text'] { width: 100%; height: 43px; padding: 0 13px; color: var(--ink); border: 1px solid var(--line); border-radius: 10px; outline: 0; background: var(--cream); font-size: 12px; font-weight: 400; box-sizing: border-box; transition: border .18s var(--ease-out), box-shadow .18s var(--ease-out); }
 .login-form input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(226, 112, 58, .15); }
-.password-field { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--cream); transition: border .18s var(--ease-out), box-shadow .18s var(--ease-out); }
+.password-field { display: flex; align-items: center; width: 100%; min-height: 43px; border: 1px solid var(--line); border-radius: 10px; background: var(--cream); box-sizing: border-box; transition: border .18s var(--ease-out), box-shadow .18s var(--ease-out); }
 .password-field:focus-within { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(226, 112, 58, .15); }
-.password-field input { border: 0 !important; box-shadow: none !important; background: transparent !important; }
-.password-field button { margin-right: 10px; padding: 4px; color: var(--orange); border: 0; background: transparent; font-size: 10px; font-weight: 700; }
+.password-field input { flex: 1 1 auto; min-width: 0; width: 100%; height: 43px; padding: 0 13px; border: 0 !important; outline: 0 !important; box-shadow: none !important; background: transparent !important; font-size: 12px; font-weight: 400; color: var(--ink); }
+.password-field button { flex-shrink: 0; margin-right: 10px; padding: 4px 6px; color: var(--orange); border: 0; outline: 0; background: transparent; font-size: 10px; font-weight: 700; cursor: pointer; }
 .login-options { display: flex; justify-content: space-between; align-items: center; margin: 1px 0 22px; color: var(--muted); font-size: 10px; }
 .remember-label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .remember-label input { accent-color: var(--plum); }
@@ -761,7 +761,8 @@ a:where(:hover) { color: var(--plum-light); }
 input::placeholder, textarea::placeholder, .search-field input::placeholder, .orders-search input::placeholder { color: var(--muted); opacity: 1; }
 :is(input, select, textarea):focus, :is(.password-field, .search-field, .orders-search):focus-within { border-color: var(--orange); }
 :is(button, a, input, select, textarea):focus-visible { outline: 2px solid var(--plum-light); outline-offset: 3px; }
-.login-form input:focus-visible, .tracking-search input:focus-visible { outline: 2px solid var(--orange); }
+.login-form input:not(#password):focus-visible, .tracking-search input:focus-visible { outline: 2px solid var(--orange); }
+.password-field input:focus-visible { outline: none !important; }
 input[type='checkbox'], input[type='radio'] { accent-color: var(--plum); }
 :is(.primary-button, .secondary-button, .ghost-button, .outline-button):focus-visible { outline: 2px solid var(--plum-light); outline-offset: 3px; }
 .outline-button:hover { color: var(--cream); border-color: var(--plum); background: var(--plum); }

@@ -100,6 +100,46 @@
             text-align: center;
         }
 
+        .login-form input[type='email'],
+        .login-form input[type='password'],
+        .login-form input[type='text'] {
+            width: 100%;
+            height: 43px;
+            padding: 0 13px;
+            box-sizing: border-box;
+            font-size: 12px;
+            font-weight: 400;
+        }
+
+        .password-field {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            min-height: 43px;
+            box-sizing: border-box;
+        }
+
+        .password-field input,
+        .password-field input[type='password'],
+        .password-field input[type='text'] {
+            flex: 1 1 auto;
+            min-width: 0;
+            width: 100%;
+            height: 43px;
+            padding: 0 13px;
+            border: 0 !important;
+            outline: 0 !important;
+            box-shadow: none !important;
+            background: transparent !important;
+        }
+
+        .password-field button {
+            flex-shrink: 0;
+            margin-right: 10px;
+            padding: 4px 6px;
+            cursor: pointer;
+        }
+
         /* Responsive handling for tablets & mobile */
         @media (max-width: 860px) {
             body.login-page {
